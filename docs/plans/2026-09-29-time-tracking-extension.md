@@ -35,10 +35,11 @@ Ejecución: una tarea por subagente, en orden; cada tarea la revisa otro subagen
 - Verificación: `npm run test:emulator` verde.
 
 ## Tarea 3 — Cloud Functions
-- `functions/src`: `joinOrg`, `onInvitationCreated`, `purgeOldScreenshots`, `autoCloseStaleSessions` (spec §6), Firebase Functions v2, región arriba. Lógica de negocio en funciones puras testeables separadas de los handlers.
+- `functions/src`: `joinOrg`, `onInvitationWritten`, `purgeOldScreenshots`, `autoCloseStaleSessions` (spec §6), Firebase Functions v2, región arriba. Lógica de negocio en funciones puras testeables separadas de los handlers.
 - Correo: nodemailer con secretos `SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_FROM` (defineSecret); si faltan o en emulador → `logger.info` con el contenido. Link de instalación configurable `EXTENSION_INSTALL_URL`.
 - Config por defecto de `config/org` creada por `joinOrg` si no existe (primer admin bootstrap).
 - Tests con emuladores (firestore, auth, storage, functions) llamando las funciones reales o sus núcleos con Admin SDK contra emulador.
+- Empaquetado: esbuild `src/index.ts` → `lib/index.js` con `@timetracking/shared` incluido (no se publica); dependencias de runtime externas con versión exacta. `predeploy` en `firebase.json` corre `npm run build:functions`.
 - Verificación: build de functions + tests verdes.
 
 ## Tarea 4 — Extensión: núcleo de medición

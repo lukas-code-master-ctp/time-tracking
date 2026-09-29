@@ -93,8 +93,8 @@ Reglas:
 - Storage: colaborador sube solo a `screenshots/{suUid}/…`, `image/jpeg`, <1 MB; admin lee todo; colaborador lee lo suyo.
 
 ## 6. Cloud Functions
-- `joinOrg` (callable): valida dominio + invitación/bootstrap admin; crea `users/{uid}`, marca invitación `accepted`. Idempotente.
-- `onInvitationCreated` (trigger Firestore): envía correo con link de instalación; si no hay SMTP configurado, log.
+- `joinOrg` (callable): exige correo verificado, valida dominio (`config/org.allowedDomain` o `ALLOWED_DOMAIN`) + invitación `pending|accepted` o bootstrap admin; crea `users/{uid}`, marca invitación `accepted`. Idempotente (si ya existe devuelve el perfil; si está `disabled` rechaza). Responde `{ profile }`; errores `HttpsError` en español con `details.reason` (`unauthenticated`, `no-email`, `email-not-verified`, `domain-not-allowed`, `no-invitation`, `invitation-revoked`, `user-disabled`).
+- `onInvitationWritten` (trigger Firestore): envía correo con link de instalación cuando la invitación queda `pending` (creada, reinvitada desde otro estado o con `invitedAt` nuevo); si no hay SMTP configurado o corre en emulador, log.
 - `purgeOldScreenshots` (programada diaria): borra archivos y docs más antiguos que `screenshotRetentionDays`.
 - `autoCloseStaleSessions` (programada cada hora): cierra jornadas sin latido hace >30 min o >16 h abiertas, `endedAt = lastHeartbeatAt`, `endReason = auto`.
 

@@ -10,7 +10,12 @@
     {
       "source": "functions",
       "codebase": "default",
-      "ignore": ["node_modules", ".git", "*.log", "src", "test"]
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules", ".git", "*.log", "src", "test", "build.mjs", "tsconfig.json",
+        "vitest.config.ts", "vitest.emulator.config.ts", ".secret.local*"
+      ],
+      "predeploy": ["npm run build:functions"]
     }
   ],
   "hosting": {

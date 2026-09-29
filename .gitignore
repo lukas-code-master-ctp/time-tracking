@@ -33,3 +33,5 @@ coverage/
 .vite/
 .DS_Store
 Thumbs.db
+# Emulator-only functions config (demo project, no secrets)
+!functions/.env.demo-timetracking

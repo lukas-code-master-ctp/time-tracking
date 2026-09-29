@@ -1,0 +1,26 @@
+{
+  "name": "@timetracking/functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run -c vitest.config.ts",
+    "test:emulator": "vitest run -c vitest.emulator.config.ts"
+  },
+  "dependencies": {
+    "firebase-admin": "14.5.0",
+    "firebase-functions": "7.4.0",
+    "nodemailer": "10.0.12"
+  },
+  "devDependencies": {
+    "@timetracking/shared": "*",
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2"
+  }
+}
