@@ -42,3 +42,5 @@ extension/dist-dev/
 # Portal build config (not secret; placeholders documented inside)
 !portal/.env.development
 !portal/.env.production
+# Vercel CLI link
+.vercel
