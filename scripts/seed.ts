@@ -89,7 +89,10 @@ async function main(): Promise<void> {
     updatedAt: now,
     updatedBy: admin.uid,
   };
-  await db.doc(`${COLLECTIONS.config}/org`).set(config);
+  // Only when missing: on re-runs (e.g. with emulators:persist) keep the settings the admin changed.
+  const configRef = db.doc(`${COLLECTIONS.config}/org`);
+  const configCreated = !(await configRef.get()).exists;
+  if (configCreated) await configRef.set(config);
 
   const existingCreatedAt = async (uid: string, fallback: number): Promise<number> => {
     const v = (await db.doc(`${COLLECTIONS.users}/${uid}`).get()).get('createdAt') as unknown;
@@ -187,6 +190,7 @@ async function main(): Promise<void> {
       `  admin: ${ADMIN_EMAIL} (uid ${admin.uid})`,
       `  colaboradores: ${PEOPLE.map((p) => `${p.displayName} <${p.email}>`).join(', ')}`,
       `  invitaciones: ${PEOPLE.length} aceptadas, 1 pendiente (${PENDING_INVITE})`,
+      configCreated ? '  config/org: creada (capturas difuminadas activas)' : '  config/org: ya existía, se dejó tal cual',
       `  jornadas: ${data.sessions.length} (${open} abierta ahora), bloques de actividad: ${data.activity.length}, capturas: ${shots}`,
       removed + removedFiles > 0 ? `  reemplazados de la corrida anterior: ${removed} documentos, ${removedFiles} archivos` : '',
       '  Portal dev: npm run dev -w portal → http://127.0.0.1:5173 → "Entrar (emulador)" con el correo del admin.',

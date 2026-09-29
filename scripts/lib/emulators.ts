@@ -41,14 +41,31 @@ async function reachable(url: string): Promise<boolean> {
   }
 }
 
+const EMULATOR_VARS = ['FIRESTORE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST', 'FIREBASE_STORAGE_EMULATOR_HOST'] as const;
+
+/**
+ * Safety net so these scripts never write to a real project: throws unless
+ * every `*_EMULATOR_HOST` points to this machine and the project (ours and
+ * `GCLOUD_PROJECT` / `GOOGLE_CLOUD_PROJECT`, if set) is a `demo-` project,
+ * which Firebase never maps to real resources.
+ */
+export function assertLocalDemo(env: NodeJS.ProcessEnv = process.env, project: string = PROJECT): void {
+  if (!project.startsWith('demo-')) throw new Error(`el proyecto ${project} no es demo-*; este script solo corre contra emuladores.`);
+  for (const v of ['GCLOUD_PROJECT', 'GOOGLE_CLOUD_PROJECT'] as const) {
+    const p = env[v];
+    if (p && p !== project) throw new Error(`${v}=${p} no es el proyecto demo ${project}; este script solo corre contra emuladores.`);
+  }
+  for (const v of EMULATOR_VARS) {
+    if (!isLocal(env[v])) throw new Error(`${v}=${env[v] ?? ''} no es un emulador local; este script solo corre contra emuladores.`);
+  }
+}
+
 /**
  * Throws unless the emulators are local and answering. `functions` also
  * checks the Functions emulator (joinOrg, invitation e-mails).
  */
 export async function assertEmulators(opts: { functions?: boolean } = {}): Promise<void> {
-  for (const v of ['FIRESTORE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST', 'FIREBASE_STORAGE_EMULATOR_HOST']) {
-    if (!isLocal(process.env[v])) throw new Error(`${v}=${process.env[v] ?? ''} no es un emulador local; este script solo corre contra emuladores.`);
-  }
+  assertLocalDemo();
   const checks: [string, string][] = [
     ['Firestore', `${firestoreUrl()}/`],
     ['Auth', `${authUrl()}/`],
@@ -66,8 +83,14 @@ export async function assertEmulators(opts: { functions?: boolean } = {}): Promi
 
 /** Deletes every Firestore document and Auth account of the demo project. */
 export async function clearEmulators(): Promise<void> {
-  await fetch(`${firestoreUrl()}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: 'DELETE' });
-  await fetch(`${authUrl()}/emulator/v1/projects/${PROJECT}/accounts`, { method: 'DELETE' });
+  assertLocalDemo();
+  for (const url of [
+    `${firestoreUrl()}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`,
+    `${authUrl()}/emulator/v1/projects/${PROJECT}/accounts`,
+  ]) {
+    const res = await fetch(url, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`no se pudo vaciar el emulador (${url}): HTTP ${res.status}`);
+  }
 }
 
 /** Firestore REST fields → plain values (strings, numbers, booleans, null, maps, arrays). */

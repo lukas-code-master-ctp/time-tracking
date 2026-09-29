@@ -225,10 +225,20 @@ async function main(): Promise<void> {
     if (errors.length > 0) throw new Error(`errores en las páginas:\n${errors.join('\n')}`);
     console.log('E2E INTEGRADO OK: admin invita → colaborador mide en la extensión → admin ve horas, actividad y captura.');
   } finally {
-    await ext?.close();
-    await adminBrowser.close();
-    await portal?.close();
-    site.close();
+    // Close everything even if one step fails (no Chromium / Vite left behind on Windows).
+    const closers: [string, () => Promise<unknown> | undefined][] = [
+      ['extensión', () => ext?.close()],
+      ['Chromium del portal', () => adminBrowser.close()],
+      ['Vite', () => portal?.close()],
+      ['sitio local', () => new Promise((r) => site.close(r))],
+    ];
+    for (const [what, close] of closers) {
+      try {
+        await close();
+      } catch (err) {
+        console.warn(`Aviso: no se pudo cerrar ${what}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 }
 

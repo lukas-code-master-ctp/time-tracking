@@ -39,12 +39,12 @@ export async function launchExtension(extDir: string = EXTENSION_DEV_DIR): Promi
       extId: new URL(sw.url()).host,
       async close() {
         await ctx.close();
-        rmSync(profile, { recursive: true, force: true });
+        rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
       },
     };
   } catch (err) {
     await ctx.close();
-    rmSync(profile, { recursive: true, force: true });
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     throw err;
   }
 }

@@ -63,12 +63,14 @@ firestore.rules · storage.rules · firestore.indexes.json
 - **Node.js ≥ 22.18** (probado con Node 24) y npm.
 - **Java 11+** (lo usa el emulador de Firestore).
 - **Google Chrome** para usar la extensión a mano.
-- Para los tests de navegador: **Chromium de Playwright** (`npx playwright install chromium`). Google Chrome de marca ignora `--load-extension` desde la v137, por eso los scripts usan Chromium. También puedes indicar otro con `SMOKE_CHROMIUM=<ruta a chrome>`.
+- Para los tests de navegador: **Chromium de Playwright** (`npx playwright install chromium`). Google Chrome de marca ignora `--load-extension` desde la v137, por eso los scripts usan Chromium. También puedes indicar otro con la variable `SMOKE_CHROMIUM` (en PowerShell: `$env:SMOKE_CHROMIUM="C:\ruta\chrome.exe"` antes del comando).
 - Firebase CLI: viene como dependencia (`npx firebase …`); no hace falta instalarla global.
 
 ## Correr en local
 
 Todo corre contra los **emuladores de Firebase** del proyecto demo `demo-timetracking` (no toca ningún proyecto real). Con la configuración dev, el login es un **correo simulado** (botón "Entrar (emulador)").
+
+Abre una terminal (PowerShell en Windows) en la carpeta del proyecto para cada paso marcado como "Terminal"; las que quedan corriendo se detienen con Ctrl+C.
 
 ```bash
 npm install
@@ -90,8 +92,10 @@ npm run dev -w portal
 
 - Admin inicial **`jefa@compratuparcela.cl`** (está en `BOOTSTRAP_ADMINS` de `functions/.env.demo-timetracking`).
 - 3 colaboradores con invitación aceptada y aviso aceptado: `ana.rojas@…` (con una **jornada abierta ahora**), `beto.diaz@…`, `carla.soto@…`; y 1 invitación pendiente: `diego.munoz@…`.
-- `config/org` con capturas difuminadas activas.
+- `config/org` con capturas difuminadas activas (solo si no existe: si ya cambiaste la configuración en el portal, se respeta).
 - Jornadas de los últimos 7 días hábiles en horario laboral de Chile (con pausa de almuerzo, un día libre y un cierre automático), actividad variable, sitios típicos (`mail.google.com`, `docs.google.com`, `sheets.google.com`, `drive.google.com`, `calendar.google.com`, `meet.google.com`…), tiempo fuera de Chrome y unas 20 capturas de ejemplo difuminadas en Storage.
+
+El seed y los e2e **se niegan a correr** si las variables `*_EMULATOR_HOST` no apuntan a este computador o si el proyecto no es `demo-timetracking`: nunca escriben en un proyecto real.
 
 Las cuentas se crean con el mismo token simulado que el login dev, así que puedes entrar como cualquiera de ellas en el portal o en la extensión. La jornada abierta de Ana se ve "En jornada" durante unos 30 minutos (después su último latido queda viejo); vuelve a correr `npm run seed` si la necesitas.
 
@@ -125,9 +129,9 @@ Los tres `e2e*` levantan y apagan sus propios emuladores: no los corras con `npm
 
 ### 1. Proyecto de Firebase
 
-1. En [console.firebase.google.com](https://console.firebase.google.com) crea un proyecto (por ejemplo `registro-jornada-cp`). Anota el **ID del proyecto**.
+1. Con una cuenta de la empresa (para que el proyecto quede dentro de la organización de Google Workspace; si no, en el paso 2 no aparece la opción **Interno**), en [console.firebase.google.com](https://console.firebase.google.com) crea un proyecto (por ejemplo `registro-jornada-cp`). Anota el **ID del proyecto**.
 2. Cámbialo al plan **Blaze** (pago por uso): Cloud Functions y Cloud Storage lo exigen. Configura una **alerta de presupuesto** (p. ej. USD 10) en Google Cloud → Facturación → Presupuestos.
-3. **Firestore Database** → Crear base de datos → modo producción → ubicación **`southamerica-west1` (Santiago)**. La ubicación no se puede cambiar después.
+3. **Firestore Database** → Crear base de datos → modo producción → ubicación **`southamerica-west1` (Santiago)**. La ubicación no se puede cambiar después y debe ser esa: las Cloud Functions corren en `southamerica-west1` y el disparador de Firestore del correo de invitación (`onInvitationWritten`) no se despliega si la base está en otra región.
 4. **Storage** → Comenzar → misma ubicación si está disponible (si no, la más cercana).
 5. **Authentication** → Comenzar → Método de acceso → **Google: habilitar**. En **Configuración → Dominios autorizados** confirma que están `<proyecto>.web.app` y `<proyecto>.firebaseapp.com` (y agrega tu dominio propio si vas a usar uno en Hosting).
 6. **Configuración del proyecto → Tus apps → Agregar app web** (sin Hosting todavía). Copia los valores de configuración (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `appId`, `messagingSenderId`). No son secretos.
@@ -141,13 +145,13 @@ En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) →
 
 1. Crea una cuenta de desarrollador de Chrome Web Store (pago único de USD 5), idealmente con una cuenta de la empresa.
 2. Rellena `extension/.env.production` (o `extension/.env.production.local`, que no se versiona) con los valores de la app web del paso 1.6. Deja `VITE_OAUTH_CLIENT_ID` vacío por ahora.
-3. `npm run build -w extension` → comprime el **contenido** de `extension/dist` en un .zip y súbelo en el [panel de desarrollador](https://chrome.google.com/webstore/devconsole) como ítem nuevo. Visibilidad: **No listada** (o **Privada** para tu dominio). Completa la ficha y la justificación de permisos (`tabs`, `idle`, `alarms`, `storage`, `identity`, `<all_urls>`: medir la pestaña activa y capturarla).
+3. `npm run build -w extension` → comprime el **contenido** de `extension/dist` en un .zip y súbelo en el [panel de desarrollador](https://chrome.google.com/webstore/devconsole) como ítem nuevo. Visibilidad: **No listada** (o **Privada** para tu dominio). Completa la ficha y la justificación de permisos (`tabs`, `idle`, `alarms`, `storage`, `unlimitedStorage`, `identity`, `scripting` y acceso a `<all_urls>`: medir la pestaña activa, guardar la cola sin conexión y capturar la pestaña visible).
 4. Anota el **ID del ítem** (32 letras) y el **enlace de la ficha** (`https://chromewebstore.google.com/detail/.../<ID>`).
 
 ### 4. Cliente OAuth de la extensión
 
 1. Google Cloud → **APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth → tipo "Extensión de Chrome"**, con el **ID del ítem** del paso 3. Créalo en el **mismo proyecto** de Firebase (si no, agrégalo en Firebase Auth → Google → *Safelist client IDs from external projects*).
-2. Pon el ID de cliente en `VITE_OAUTH_CLIENT_ID` de `extension/.env.production`, vuelve a correr `npm run build -w extension` y sube la nueva versión (sube `version` en el manifest si el panel lo pide). Detalles y notas en [extension/README.md](extension/README.md#login-con-google-en-producción-checklist).
+2. Pon el ID de cliente en `VITE_OAUTH_CLIENT_ID` de `extension/.env.production`, vuelve a correr `npm run build -w extension` y sube la nueva versión. Chrome Web Store exige un número de versión mayor en cada subida: súbelo en `"version"` de `extension/package.json` (el manifest se genera desde ahí) antes de compilar. Detalles y notas en [extension/README.md](extension/README.md#login-con-google-en-producción-checklist).
 
 ### 5. Configuración del portal y de functions
 
@@ -214,6 +218,8 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | "Pide a tu admin que te invite" | El correo no tiene invitación pendiente/aceptada (o fue revocada). Invítalo desde el portal. |
 | "Esta cuenta no es de la empresa" (prod) | El perfil de Chrome usa una cuenta personal: `getAuthToken` usa siempre la cuenta del perfil. |
 | "Google rechazó el acceso" (prod) | El cliente OAuth no corresponde al ID de la extensión o está en otro proyecto (ver paso 4). |
+| El primer `firebase deploy` de functions falla con un error de permisos de Eventarc o de "service agent" | Es normal en proyectos nuevos: Google tarda unos minutos en crear los permisos de los disparadores. Espera 5–10 minutos y vuelve a correr el mismo `npx firebase deploy`. |
+| `firebase deploy` pide valores de `SMTP_*` o falla por secretos | Faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). |
 | No llegan correos de invitación | Revisa los secretos SMTP y los logs de `onInvitationWritten` (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |
 | El portal no muestra capturas | Capturas desactivadas en Configuración, o el colaborador estaba fuera de Chrome / en una página que no es http(s) en el instante sorteado. |
 | Jornada "En jornada" que ya terminó | Sin señal hace > 30 min el portal la muestra "Fuera"; el cierre automático la cierra en la próxima hora. |
