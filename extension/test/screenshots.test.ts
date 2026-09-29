@@ -10,6 +10,7 @@ import {
   isCapturableUrl,
   isDue,
   planFor,
+  shotDataKey,
   shotQueueFromJSON,
   toScreenshotDoc,
   type PendingShot,
@@ -33,7 +34,6 @@ function shot(id: string, takenAt: number): PendingShot {
       width: 10,
       height: 10,
     },
-    data: 'AAAA',
     uploaded: false,
     attempts: 0,
   };
@@ -80,7 +80,9 @@ describe('capture plan (random instant per block)', () => {
 describe('screenshot queue (pure)', () => {
   it('keeps at most MAX_PENDING_SCREENSHOTS, dropping the oldest', () => {
     const q = emptyShotQueue();
-    for (let i = 0; i < MAX_PENDING_SCREENSHOTS + 3; i++) enqueueShot(q, shot(`u1_${i}`, 1_000 + i));
+    const dropped: string[] = [];
+    for (let i = 0; i < MAX_PENDING_SCREENSHOTS + 3; i++) dropped.push(...enqueueShot(q, shot(`u1_${i}`, 1_000 + i)).dropped);
+    expect(dropped).toEqual(['u1_0', 'u1_1', 'u1_2']);
     expect(q.items).toHaveLength(MAX_PENDING_SCREENSHOTS);
     expect(q.items[0]!.id).toBe('u1_3');
     expect(q.items.at(-1)!.id).toBe(`u1_${MAX_PENDING_SCREENSHOTS + 2}`);
@@ -88,10 +90,10 @@ describe('screenshot queue (pure)', () => {
 
   it('the same block id is queued once (idempotent)', () => {
     const q = emptyShotQueue();
-    expect(enqueueShot(q, shot('u1_1', 5))).toBe(true);
-    expect(enqueueShot(q, { ...shot('u1_1', 6), data: 'BBBB' })).toBe(false);
+    expect(enqueueShot(q, shot('u1_1', 5))).toEqual({ added: true, dropped: [] });
+    expect(enqueueShot(q, shot('u1_1', 6))).toEqual({ added: false, dropped: [] });
     expect(q.items).toHaveLength(1);
-    expect(q.items[0]!.data).toBe('AAAA');
+    expect(q.items[0]!.meta.takenAt).toBe(5);
   });
 
   it('validates what comes back from chrome.storage', () => {
@@ -281,6 +283,10 @@ describe('ScreenshotManager in the pulse', () => {
     expect(q.items[0]!.id).toBe(`u1_${SLOT0 + 3 * SLOT_MS}`);
     expect(q.failures).toBeGreaterThan(0);
     expect((await h.app.status()).pendingScreenshots).toBe(MAX_PENDING_SCREENSHOTS);
+    // One key per image; the index holds no image data; dropped ones are removed.
+    const keys = Object.keys(h.chrome.local.data).filter((k) => k.startsWith('tt.shot.'));
+    expect(keys.sort()).toEqual(q.items.map((i) => shotDataKey(i.id)).sort());
+    expect(JSON.stringify(h.chrome.local.data[STORAGE_KEYS.shots]).length).toBeLessThan(10_000);
 
     await h.app.session.stop();
     h.backend.offline = false;
@@ -290,6 +296,7 @@ describe('ScreenshotManager in the pulse', () => {
     await h.settle();
     expect(h.backend.screenshots.size).toBe(MAX_PENDING_SCREENSHOTS);
     expect(h.app.store.shots.items).toEqual([]);
+    expect(Object.keys(h.chrome.local.data).filter((k) => k.startsWith('tt.shot.'))).toEqual([]);
     await h.app.pulse();
     expect(h.chrome.world.alarms.has(PULSE_ALARM)).toBe(false);
   });
@@ -316,6 +323,50 @@ describe('ScreenshotManager in the pulse', () => {
     expect(h.app.store.shots.items).toEqual([]);
     expect(h.backend.files.size).toBe(0);
   });
+  it('the image survives a worker restart in its own key and is uploaded as captured', async () => {
+    await startDay();
+    h.backend.offline = true;
+    expect(await h.app.screenshots.maybeCapture(true)).toBe('captured');
+    const id = h.app.store.shots.items[0]!.id;
+    expect(typeof h.chrome.local.data[shotDataKey(id)]).toBe('string');
+    await h.restart();
+    h.backend.offline = false;
+    h.backend.failures = [];
+    await h.app.screenshots.drain(true);
+    expect(h.backend.files.get(h.backend.screenshots.get(id)!.storagePath)).toBe(7);
+    expect(h.chrome.local.data[shotDataKey(id)]).toBeUndefined();
+  });
+
+  it('a screenshot whose image key is missing is dropped (nothing uploaded)', async () => {
+    await startDay();
+    await h.app.screenshots.maybeCapture(true);
+    const id = h.app.store.shots.items[0]!.id;
+    delete h.chrome.local.data[shotDataKey(id)];
+    await h.app.screenshots.drain(true);
+    expect(h.app.store.shots.items).toEqual([]);
+    expect(h.backend.files.size).toBe(0);
+  });
+
+  it('never queued if the work day closed while capturing', async () => {
+    await startDay();
+    const orig = h.capturer.capture.bind(h.capturer);
+    h.capturer.capture = async (w) => {
+      const r = await orig(w);
+      await h.app.session.stop();
+      return r;
+    };
+    expect(await h.app.screenshots.maybeCapture(true)).toBe('no-session');
+    expect(h.app.store.shots.items).toEqual([]);
+    expect(Object.keys(h.chrome.local.data).filter((k) => k.startsWith('tt.shot.'))).toEqual([]);
+  });
+
+  it('a sharp image is never kept when blurring is required', async () => {
+    await startDay();
+    h.images.process = async () => ({ bytes: new Uint8Array([1]), width: 10, height: 10, blurred: false });
+    expect(await h.app.screenshots.maybeCapture(true)).toBe('failed');
+    expect(h.app.store.shots.items).toEqual([]);
+  });
+
 });
 
 describe('config/org cache', () => {
@@ -367,4 +418,5 @@ describe('config/org cache', () => {
     expect(g.backend.orgFetches).toBe(0);
     expect((await g.app.status()).capture).toBeNull();
   });
+
 });

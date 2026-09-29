@@ -12,6 +12,7 @@ import { dailyFromJSON, type DailySummary } from './daily';
 import { emptyQueue, queueFromJSON, type QueueState } from './queue';
 import {
   emptyShotQueue,
+  shotDataKey,
   shotPlanFromJSON,
   shotQueueFromJSON,
   type ShotPlan,
@@ -27,7 +28,7 @@ export const STORAGE_KEYS = {
   daily: 'tt.daily',
   /** Random capture instant of the current block (see screenshots.ts). */
   shotPlan: 'tt.shotPlan',
-  /** Screenshots waiting to be uploaded (JPEG as base64). */
+  /** Index of the screenshots waiting to be uploaded; each JPEG is in `tt.shot.<id>`. */
   shots: 'tt.shots',
 } as const;
 
@@ -106,6 +107,7 @@ function isLocalSession(v: unknown): v is LocalSession {
 export interface StorageAreaLike {
   get(keys: string | string[]): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
+  remove(keys: string | string[]): Promise<void>;
 }
 
 export interface StateStoreOptions {
@@ -205,6 +207,21 @@ export class StateStore {
       }
     }
     if (Object.keys(items).length > 0) await this.area.set(items);
+  }
+
+  /** Screenshot JPEG (base64) in its own key. Call inside `run()`. */
+  async putShotData(id: string, data: string): Promise<void> {
+    await this.area.set({ [shotDataKey(id)]: data });
+  }
+
+  async getShotData(id: string): Promise<string | null> {
+    const key = shotDataKey(id);
+    const v = (await this.area.get(key))[key];
+    return typeof v === 'string' ? v : null;
+  }
+
+  async removeShotData(ids: readonly string[]): Promise<void> {
+    if (ids.length > 0) await this.area.remove(ids.map(shotDataKey));
   }
 
   /** Schedules a debounced write of the accumulator (used for 1/s activity marks). */

@@ -14,8 +14,12 @@
  *   spec's decisions).
  * - Capture: `chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg' })`,
  *   then resize/blur/encode below 1 MB (image.ts, OffscreenCanvas).
- * - Queue: persistent (`tt.shots`, base64), max MAX_PENDING_SCREENSHOTS (the
- *   oldest are dropped). Deterministic id `${uid}_${slotStart}`, so retries
+ * - Queue: persistent, max MAX_PENDING_SCREENSHOTS (the oldest are dropped).
+ *   `tt.shots` only holds the small index (metadata, attempts); each JPEG
+ *   (base64) lives in its own key `tt.shot.<id>` ({@link shotDataKey}), so
+ *   loading the state on every wake-up and each queue update never read or
+ *   rewrite up to 20 images: the data key is written once and read only when
+ *   that screenshot is uploaded. Deterministic id `${uid}_${slotStart}`, so retries
  *   are idempotent: Storage never overwrites (rules), so a failed re-upload
  *   of an object that already exists counts as uploaded (checked with a
  *   metadata GET); the `screenshots/{id}` doc is written after the file with
@@ -77,11 +81,9 @@ export function shotPlanFromJSON(raw: unknown): ShotPlan | null {
 // ---------- queue (pure) ----------
 
 export interface PendingShot {
-  /** `${uid}_${slotStart}`: doc id and file name. */
+  /** `${uid}_${slotStart}`: doc id and file name. The JPEG is in {@link shotDataKey}(id). */
   id: string;
   meta: ScreenshotMeta;
-  /** JPEG, base64. */
-  data: string;
   /** The file is already in Storage; only the doc is missing. */
   uploaded: boolean;
   attempts: number;
@@ -101,13 +103,26 @@ export function screenshotId(uid: string, slotStart: number): string {
   return `${uid}_${slotStart}`;
 }
 
-/** Adds a screenshot (ignored if its id is already queued). Drops the oldest beyond the limit. Mutates `q`. */
-export function enqueueShot(q: ShotQueue, shot: PendingShot, max: number = MAX_PENDING_SCREENSHOTS): boolean {
-  if (q.items.some((i) => i.id === shot.id)) return false;
+/** `chrome.storage.local` key of the JPEG (base64) of a queued screenshot. */
+export function shotDataKey(id: string): string {
+  return `tt.shot.${id}`;
+}
+
+/**
+ * Adds a screenshot (ignored if its id is already queued). Drops the oldest
+ * beyond the limit. Mutates `q`; returns whether it was added and the ids
+ * dropped (their data keys must be removed).
+ */
+export function enqueueShot(
+  q: ShotQueue,
+  shot: PendingShot,
+  max: number = MAX_PENDING_SCREENSHOTS,
+): { added: boolean; dropped: string[] } {
+  if (q.items.some((i) => i.id === shot.id)) return { added: false, dropped: [] };
   q.items.push(shot);
   q.items.sort((a, b) => a.meta.takenAt - b.meta.takenAt);
-  if (q.items.length > max) q.items.splice(0, q.items.length - max);
-  return q.items.some((i) => i.id === shot.id);
+  const dropped = q.items.length > max ? q.items.splice(0, q.items.length - max).map((i) => i.id) : [];
+  return { added: !dropped.includes(shot.id), dropped };
 }
 
 const META_KEYS = ['uid', 'sessionId', 'takenAt', 'storagePath', 'blurred', 'width', 'height'] as const;
@@ -146,11 +161,10 @@ export function shotQueueFromJSON(raw: unknown): ShotQueue {
   for (const item of Array.isArray(r.items) ? r.items : []) {
     if (!item || typeof item !== 'object') continue;
     const i = item as PendingShot;
-    if (typeof i.id !== 'string' || typeof i.data !== 'string' || !isMeta(i.meta)) continue;
+    if (typeof i.id !== 'string' || !isMeta(i.meta)) continue;
     q.items.push({
       id: i.id,
       meta: i.meta,
-      data: i.data,
       uploaded: i.uploaded === true,
       attempts: typeof i.attempts === 'number' ? i.attempts : 0,
     });
@@ -300,6 +314,11 @@ export class ScreenshotManager {
       console.warn('[timetracking] no se pudo tomar la captura', err);
       return 'failed';
     }
+    // Never keep a sharp image when blurring is required.
+    if (job.blur && !processed.blurred) {
+      console.warn('[timetracking] captura descartada: no se pudo difuminar');
+      return 'failed';
+    }
 
     const uid = job.session.uid;
     const id = screenshotId(uid, job.slotStart);
@@ -314,21 +333,27 @@ export class ScreenshotManager {
         width: processed.width,
         height: processed.height,
       },
-      data: bytesToBase64(processed.bytes),
       uploaded: false,
       attempts: 0,
     };
-    const added = await this.store.run(async () => {
-      const ok = enqueueShot(this.store.shots, shot);
-      if (ok) await this.store.save('shots');
+    const data = bytesToBase64(processed.bytes);
+    return this.store.run(async () => {
+      // The work day may have been closed (or another one started) while capturing.
+      if (this.store.session?.id !== job.session.id) return 'no-session' as const;
       const plan = this.store.shotPlan;
+      const q = this.store.shots;
+      if (q.items.some((i) => i.id === id)) return 'duplicate' as const;
+      // Data first: the index never points to a missing image.
+      await this.store.putShotData(id, data);
+      const { added, dropped } = enqueueShot(q, shot);
+      await this.store.save('shots');
+      await this.store.removeShotData(dropped);
       if (plan && plan.slotStart === job.slotStart) {
         plan.taken = true;
         await this.store.save('shotPlan');
       }
-      return ok;
+      return added ? ('captured' as const) : ('duplicate' as const);
     });
-    return added ? 'captured' : 'duplicate';
   }
 
   /** Uploads pending screenshots (one at a time). Concurrent calls share one drain. */
@@ -394,14 +419,16 @@ export class ScreenshotManager {
           if (idx >= 0) q.items.splice(idx, 1);
           q.failures = 0;
           q.retryAt = 0;
-        } else {
-          if (item) {
-            item.attempts += 1;
-            if (uploadedNow) item.uploaded = true;
-          }
-          q.failures += 1;
-          q.retryAt = this.now() + backoffMs(q.failures);
+          await this.store.save('shots');
+          await this.store.removeShotData([head.id]);
+          return;
         }
+        if (item) {
+          item.attempts += 1;
+          if (uploadedNow) item.uploaded = true;
+        }
+        q.failures += 1;
+        q.retryAt = this.now() + backoffMs(q.failures);
         await this.store.save('shots');
       });
       if (outcome === 'retry') return;
@@ -410,8 +437,10 @@ export class ScreenshotManager {
 
   /** Upload; "already exists" (Storage never overwrites) counts as uploaded. */
   private async uploadOnce(shot: PendingShot): Promise<void> {
+    const data = await this.store.run(() => this.store.getShotData(shot.id));
+    if (data === null) throw Object.assign(new Error('imagen de la captura no encontrada'), { code: 'missing-data' });
     try {
-      await this.remote.uploadScreenshot(shot.meta.storagePath, base64ToBytes(shot.data));
+      await this.remote.uploadScreenshot(shot.meta.storagePath, base64ToBytes(data));
     } catch (err) {
       const code = errorCode(err);
       if (code !== 'permission-denied' && code !== 'already-exists') throw err;

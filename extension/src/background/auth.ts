@@ -132,7 +132,15 @@ function messageOf(err: unknown): string {
 /** chrome.identity rejection → AuthError (cancelled vs failure). */
 export function identityError(err: unknown): AuthError {
   const msg = messageOf(err);
-  if (/did not approve|canceled|cancelled|user interaction required|not signed in|closed/i.test(msg)) {
+  // "The user is not signed in.": the Chrome profile has no Google account
+  // (getAuthToken always uses the profile's primary account).
+  if (/not signed in/i.test(msg)) {
+    return new AuthError(
+      'chrome-signed-out',
+      'Chrome no tiene una cuenta Google iniciada. Inicia sesión en Chrome con tu cuenta de la empresa (ícono de perfil, arriba a la derecha) y vuelve a intentarlo.',
+    );
+  }
+  if (/did not approve|not granted|revoked|canceled|cancelled|user interaction required|closed/i.test(msg)) {
     return new AuthError('cancelled', 'Se canceló el inicio de sesión. Pulsa “Iniciar sesión con Google” para intentarlo de nuevo.');
   }
   if (/oauth2|client id|bad client/i.test(msg)) {

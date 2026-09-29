@@ -30,7 +30,19 @@ El build prod falla si su bundle contiene restos dev (login dev, mensajes `debug
 ## Configuración
 
 - `.env.development`: valores del proyecto demo de emuladores; no hay que tocarlo.
-- `.env.production`: configuración web del proyecto Firebase real, con placeholders `REEMPLAZAR_...` (no son secretos). Puedes dejar los valores reales en `.env.production.local` (no se versiona). Mientras queden placeholders el build avisa. `VITE_OAUTH_CLIENT_ID` (cliente OAuth "Extensión de Chrome" creado con el ID de la Web Store) agrega `oauth2` (scopes `openid email profile`) al manifest: sin él, "Iniciar sesión con Google" muestra que falta configurarlo. En Firebase Auth hay que habilitar el proveedor Google; si al iniciar sesión Firebase rechaza el token (`auth/invalid-credential`), agrega ese client ID en Google → "Safelist client IDs from external projects".
+- `.env.production`: configuración web del proyecto Firebase real, con placeholders `REEMPLAZAR_...` (no son secretos). Puedes dejar los valores reales en `.env.production.local` (no se versiona). Mientras queden placeholders el build avisa. `VITE_OAUTH_CLIENT_ID` agrega `oauth2` (scopes `openid email profile`) al manifest: sin él, "Iniciar sesión con Google" muestra que falta configurarlo.
+
+### Login con Google en producción (checklist)
+
+1. **Firebase Auth → Sign-in method → Google: habilitado.**
+2. **Pantalla de consentimiento OAuth** del proyecto de Google Cloud (el mismo proyecto de Firebase): tipo *Interno* si la empresa usa Google Workspace (solo cuentas del dominio, sin verificación de Google); scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
+3. **Cliente OAuth de tipo "Extensión de Chrome"** (Google Cloud → APIs y servicios → Credenciales) con el **ID del ítem de la Chrome Web Store**. Créalo **en el mismo proyecto de Google Cloud que Firebase**: así Firebase acepta el access token sin más. Si lo creas en otro proyecto, agrégalo en Firebase Auth → Google → *Safelist client IDs from external projects*; si no, `signInWithCredential` falla con `auth/invalid-credential` (la extensión lo muestra como "Google rechazó el acceso").
+4. Pon ese client ID en `VITE_OAUTH_CLIENT_ID` y haz `npm run build`.
+
+Notas:
+- El flujo es `chrome.identity.getAuthToken` (access token, no ID token) → `GoogleAuthProvider.credential(null, accessToken)` → `signInWithCredential` de `firebase/auth/web-extension`. Firebase obtiene el perfil con ese token; con el scope `email` el usuario queda con `emailVerified: true` y el ID token de Firebase trae `email_verified: true` (lo exige `joinOrg`). Sin el scope `email` Firebase no recibe el correo y `joinOrg` rechaza con `no-email`.
+- `getAuthToken` usa **siempre la cuenta principal del perfil de Chrome** (no hay selector de cuenta). El colaborador debe usar un perfil de Chrome con su cuenta de la empresa; con una cuenta personal verá "Esta cuenta no es de la empresa". Si el perfil no tiene cuenta, la extensión le pide iniciar sesión en Chrome.
+- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin publicar, crea un segundo cliente OAuth con el ID de esa copia (o publica como *no listada* / *privada* para el dominio).
 
 ## Arquitectura
 
@@ -68,7 +80,8 @@ icons/                   PNG 16/32/48/128 (normal y "on")
 
 ### Capturas
 - Por bloque de 10 min: instante aleatorio persistido (`tt.shotPlan`), un solo intento. En el pulso, si ya pasó el instante y hay jornada + `screenshotsEnabled` + ventana enfocada con pestaña http/https → `captureVisibleTab` → `image.ts` (≤ 1280 px, blur si `blurScreenshots`, JPEG < 1 MB). Fuera de Chrome o en páginas no http no se captura ni se registra nada.
-- Cola `tt.shots` (base64, máx. 20, se descartan las más antiguas; permiso `unlimitedStorage`). Id `{uid}_{slotStart}`: si el archivo ya existe (Storage no sobrescribe) se da por subido tras un GET de metadatos, y luego `setDoc(screenshots/{id})` con los 7 campos de las reglas.
+- Cola persistente (máx. 20, se descartan las más antiguas; permiso `unlimitedStorage`): `tt.shots` guarda solo el índice (metadatos, intentos) y cada JPEG va en base64 en su propia clave `tt.shot.<id>`, que se escribe una vez, se lee solo al subir esa captura y se borra al terminar. Así despertar el SW o actualizar la cola no lee ni reescribe hasta ~20 MB de imágenes.
+- Con difuminado activo, la imagen nítida solo existe en memoria durante el procesamiento; si por algún motivo no quedó difuminada, se descarta. Si la jornada se cerró mientras se capturaba, la captura no se encola. Id `{uid}_{slotStart}`: si el archivo ya existe (Storage no sobrescribe) se da por subido tras un GET de metadatos, y luego `setDoc(screenshots/{id})` con los 7 campos de las reglas.
 - `config/org` (Firestore lite, cacheado en `tt.meta.org`): al iniciar jornada, al despertar (si tiene > 1 min) y cada 5 min desde el pulso.
 
 ### Medición

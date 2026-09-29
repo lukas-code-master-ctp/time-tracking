@@ -67,7 +67,50 @@ function logo(size: 28 | 48): HTMLImageElement {
   return el('img', { src: `icons/icon-${size === 28 ? 32 : 48}.png`, alt: '', width: size, height: size });
 }
 
+/**
+ * Identifies the focused control so a re-render (every status change) does
+ * not throw keyboard focus back to the top of the popup.
+ */
+function keyOf(node: HTMLElement): string {
+  return node.id ? `#${node.id}` : `${node.tagName}:${node.textContent ?? ''}`;
+}
+
+/** Last control focused in the popup (kept while it is replaced by a disabled "busy" copy). */
+let lastFocus: string | null = null;
+root.addEventListener('focusin', (e) => {
+  if (e.target instanceof HTMLElement) lastFocus = keyOf(e.target);
+});
+root.addEventListener('focusout', (e) => {
+  // Focus moved to something else on purpose (not lost because the node was removed).
+  if (e.relatedTarget instanceof HTMLElement) lastFocus = null;
+});
+
+function focusKey(): string | null {
+  const a = document.activeElement;
+  if (a instanceof HTMLElement && root.contains(a)) return keyOf(a);
+  return lastFocus;
+}
+
+function restoreFocus(k: string | null): void {
+  if (!k) return;
+  for (const node of root.querySelectorAll<HTMLElement>('button, input')) {
+    if (keyOf(node) === k && !(node as HTMLButtonElement).disabled) {
+      node.focus();
+      return;
+    }
+  }
+}
+
 function render(): void {
+  const focused = focusKey();
+  try {
+    draw();
+  } finally {
+    restoreFocus(focused);
+  }
+}
+
+function draw(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
@@ -78,7 +121,8 @@ function render(): void {
     root.append(el('p', { className: 'loading', textContent: busy ? 'Procesando…' : 'Cargando…' }));
     return;
   }
-  if (s.notice) root.append(el('div', { className: 'banner warn', textContent: s.notice }));
+  // No aria-live on the whole popup (the timer would be announced every second): only the banners.
+  if (s.notice) root.append(el('div', { className: 'banner warn', role: 'status', textContent: s.notice }));
   if (lastError) root.append(el('div', { className: 'banner error', role: 'alert', textContent: lastError }));
 
   if (!s.user) return renderSignedOut(s);

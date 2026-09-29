@@ -95,7 +95,11 @@ describe('Google sign-in (chrome.identity → Firebase)', () => {
       },
     });
     await expect(googleSignIn(d)).rejects.toMatchObject({ reason: 'cancelled' });
-    expect(identityError(new Error('OAuth2 not granted or revoked.')).reason).toBe('oauth-config');
+    expect(identityError(new Error('Invalid OAuth2 Client ID.')).reason).toBe('oauth-config');
+    expect(identityError(new Error("OAuth2 request failed: Service responded with error: 'bad client id: x'")).reason).toBe('oauth-config');
+    // Access not granted / revoked by the user is not a configuration problem.
+    expect(identityError(new Error('OAuth2 not granted or revoked.')).reason).toBe('cancelled');
+    expect(identityError(new Error('The user is not signed in.')).reason).toBe('chrome-signed-out');
     expect(identityError(new Error('boom')).reason).toBe('identity-failed');
     expect(firebaseSignInError({ code: 'auth/network-request-failed' }).reason).toBe('network');
     expect(firebaseSignInError({ code: 'auth/user-disabled' }).reason).toBe('user-disabled');
