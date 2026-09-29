@@ -1,0 +1,228 @@
+/**
+ * Work day ("jornada") lifecycle and the 30-second pulse.
+ *
+ * - start: creates `sessions/{id}` (exactly uid, startedAt, endedAt:null,
+ *   endReason:null, lastHeartbeatAt), opens the accumulator (session + idle +
+ *   focus), badge "ON".
+ * - pulse (chrome.alarms, every 30 s): tick → flush. Closed blocks are added
+ *   to the persistent queue and the queue is written BEFORE the accumulator
+ *   (which no longer holds them), so a crash in between can only duplicate an
+ *   idempotent upsert, never lose a block. Every ~60 s the partial block and
+ *   the session heartbeat are queued too.
+ * - stop: closes the accumulator, queues the partial block right away and
+ *   `endedAt`/`endReason: 'manual'`. The pulse keeps running until the last
+ *   partial block comes out as closed (re-uploaded, idempotent).
+ * - closeLocally: the server refused a session write (auto-closed, user
+ *   disabled): stop measuring without writing the session again.
+ * - rehydrate: on every service-worker start (including a browser restart
+ *   with an open work day, which simply continues; the gap is not counted).
+ */
+import { ALARM_PERIOD_MS, SYNC_INTERVAL_MS, type ActivitySlot } from '@timetracking/shared';
+import type { AuthService } from './auth';
+import { enqueueOp, type SyncOp } from './queue';
+import type { StateStore } from './state';
+import type { SyncEngine } from './sync';
+import type { Tracker } from './tracker';
+
+export const PULSE_ALARM = 'tt-pulse';
+/** Upload the partial block when at least this much time passed (alarm jitter tolerance). */
+const SYNC_DUE_MS = SYNC_INTERVAL_MS - 5_000;
+export const BADGE_ON_COLOR = '#16a34a';
+
+export const AUTO_CLOSED_NOTICE =
+  'Tu jornada se cerró automáticamente (sin conexión con el servidor por mucho tiempo o jornada muy larga). Puedes iniciar una nueva.';
+
+export class SessionError extends Error {
+  constructor(
+    readonly reason: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SessionError';
+  }
+}
+
+/** Random document id (20 chars, like Firestore auto ids). */
+export function newSessionId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  let id = '';
+  for (const b of bytes) id += chars[b % chars.length];
+  return id;
+}
+
+export interface SessionManagerDeps {
+  store: StateStore;
+  tracker: Tracker;
+  sync: Pick<SyncEngine, 'kick'>;
+  auth: Pick<AuthService, 'ready' | 'currentUser'>;
+  now?: () => number;
+}
+
+export class SessionManager {
+  private readonly store: StateStore;
+  private readonly tracker: Tracker;
+  private readonly sync: Pick<SyncEngine, 'kick'>;
+  private readonly auth: Pick<AuthService, 'ready' | 'currentUser'>;
+  private readonly now: () => number;
+
+  constructor(deps: SessionManagerDeps) {
+    this.store = deps.store;
+    this.tracker = deps.tracker;
+    this.sync = deps.sync;
+    this.auth = deps.auth;
+    this.now = deps.now ?? Date.now;
+  }
+
+  async start(): Promise<void> {
+    await this.auth.ready();
+    await this.store.run(async () => {
+      if (this.store.session) throw new SessionError('already-open', 'Ya tienes una jornada iniciada.');
+      const user = this.auth.currentUser();
+      if (!user) throw new SessionError('signed-out', 'Inicia sesión para iniciar tu jornada.');
+      const { profile, profileUid } = this.store.meta;
+      if (!profile || profileUid !== user.uid) {
+        throw new SessionError('not-joined', 'Tu cuenta aún no está habilitada. Pide a tu admin que te invite.');
+      }
+      if (profile.status !== 'active') {
+        throw new SessionError('user-disabled', 'Tu cuenta está desactivada. Habla con tu administrador.');
+      }
+      const at = this.now();
+      const id = newSessionId();
+      await this.tracker.beginMeasuring(id, user.uid, at);
+      this.store.session = { id, uid: user.uid, startedAt: at };
+      enqueueOp(this.store.queue, {
+        kind: 'sessionCreate',
+        uid: user.uid,
+        sessionId: id,
+        session: { uid: user.uid, startedAt: at, endedAt: null, endReason: null, lastHeartbeatAt: at },
+      });
+      this.store.meta.lastCurrentSyncAt = at;
+      this.store.meta.notice = null;
+      await this.store.save('queue');
+      await this.store.save('acc', 'session', 'meta');
+      await this.applyBadge();
+      await this.ensureAlarm();
+    });
+    void this.sync.kick();
+  }
+
+  async stop(): Promise<void> {
+    await this.store.run(async () => {
+      const session = this.store.session;
+      if (!session) throw new SessionError('not-open', 'No hay una jornada iniciada.');
+      const at = this.now();
+      this.finishLocked(at, session.uid);
+      enqueueOp(this.store.queue, { kind: 'sessionClose', uid: session.uid, sessionId: session.id, endedAt: at });
+      this.store.session = null;
+      await this.store.save('queue');
+      await this.store.save('acc', 'session', 'meta');
+      await this.applyBadge();
+      await this.ensureAlarm();
+    });
+    void this.sync.kick();
+  }
+
+  /** The server no longer accepts writes to `sessionId` (see sync.ts). */
+  async closeLocally(sessionId: string, notice: string = AUTO_CLOSED_NOTICE): Promise<void> {
+    await this.store.run(async () => {
+      const session = this.store.session;
+      if (!session || session.id !== sessionId) return;
+      this.finishLocked(this.now(), session.uid);
+      this.store.session = null;
+      this.store.meta.notice = notice;
+      await this.store.save('queue');
+      await this.store.save('acc', 'session', 'meta');
+      await this.applyBadge();
+      await this.ensureAlarm();
+    });
+    void this.sync.kick();
+  }
+
+  /** chrome.alarms pulse. */
+  async pulse(): Promise<void> {
+    await this.store.run(async () => {
+      const at = this.now();
+      const result = await this.tracker.pulse(at);
+      const session = this.store.session;
+      if (result) {
+        for (const slot of result.closed) enqueueOp(this.store.queue, activityOp(slot));
+        // Closed blocks are gone from the accumulator: persist the queue first.
+        if (result.closed.length > 0) await this.store.save('queue');
+      }
+      if (session && at - this.store.meta.lastCurrentSyncAt >= SYNC_DUE_MS) {
+        if (result?.current) enqueueOp(this.store.queue, activityOp(result.current));
+        enqueueOp(this.store.queue, { kind: 'heartbeat', uid: session.uid, sessionId: session.id, at });
+        this.store.meta.lastCurrentSyncAt = at;
+      }
+      await this.store.save('queue');
+      await this.store.save('acc', 'meta');
+      await this.ensureAlarm();
+    });
+    await this.sync.kick();
+    // Nothing left to do (closed day, last block uploaded): stop waking up.
+    await this.store.run(() => this.ensureAlarm());
+  }
+
+  /**
+   * Service-worker start: badge + alarm from the persisted state. An open work
+   * day continues; if the signed-in user changed or is gone, it is closed
+   * locally (nobody to attribute the time to).
+   */
+  async rehydrate(): Promise<void> {
+    await this.store.run(async () => {
+      await this.applyBadge();
+      await this.ensureAlarm();
+    });
+    await this.auth.ready();
+    const session = await this.store.run(() => this.store.session);
+    if (session && this.auth.currentUser()?.uid !== session.uid) {
+      await this.closeLocally(session.id, 'Tu jornada se cerró porque la sesión de tu cuenta terminó.');
+    }
+    void this.sync.kick();
+  }
+
+  // ---------- helpers (inside store.run) ----------
+
+  /** Stops measuring at `at` and queues every block still held (closed and partial). */
+  private finishLocked(at: number, uid: string): void {
+    this.tracker.endMeasuring(at);
+    const acc = this.store.acc;
+    if (!acc || acc.uid !== uid) return;
+    const { closed, current } = acc.flush(at);
+    for (const slot of closed) enqueueOp(this.store.queue, activityOp(slot));
+    // Uploaded now; it will be uploaded again (identical) when it closes.
+    if (current) enqueueOp(this.store.queue, activityOp(current));
+  }
+
+  async applyBadge(): Promise<void> {
+    const on = this.store.session !== null;
+    try {
+      await chrome.action.setBadgeText({ text: on ? 'ON' : '' });
+      if (on) {
+        await chrome.action.setBadgeBackgroundColor({ color: BADGE_ON_COLOR });
+        await chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
+      }
+    } catch (err) {
+      console.warn('[timetracking] no se pudo actualizar la insignia', err);
+    }
+  }
+
+  /** The pulse runs while there is an open work day, a partial block or pending uploads. */
+  async ensureAlarm(): Promise<void> {
+    const needed =
+      this.store.session !== null || this.store.hasPendingSlots() || this.store.queue.items.length > 0;
+    const existing = await chrome.alarms.get(PULSE_ALARM);
+    if (needed && !existing) {
+      const minutes = ALARM_PERIOD_MS / 60_000;
+      await chrome.alarms.create(PULSE_ALARM, { periodInMinutes: minutes, delayInMinutes: minutes });
+    } else if (!needed && existing) {
+      await chrome.alarms.clear(PULSE_ALARM);
+    }
+  }
+}
+
+function activityOp(slot: ActivitySlot): SyncOp {
+  return { kind: 'activity', uid: slot.uid, slot };
+}

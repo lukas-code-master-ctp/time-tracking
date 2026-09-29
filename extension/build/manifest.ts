@@ -1,0 +1,67 @@
+/**
+ * Generates `manifest.json` (MV3) for each build flavour.
+ *
+ * Kept free of `@timetracking/shared` imports: Vite bundles config files with
+ * plain Node resolution, where the alias to the shared sources does not apply.
+ */
+
+export type AppEnv = 'dev' | 'prod';
+
+/**
+ * Public key (SPKI DER, base64) of the **dev** build only. It pins the
+ * unpacked extension ID to `DEV_EXTENSION_ID`, so emulator/OAuth settings and
+ * `chrome://extensions` shortcuts stay stable across machines and reloads.
+ * The matching private key was discarded on purpose: unpacked extensions only
+ * need the public key, and the Web Store assigns the production ID (the prod
+ * manifest never carries `key`). See `extension/README.md`.
+ */
+export const DEV_PUBLIC_KEY =
+  'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkCkb0Gw12pNV0SwoVzVlKX61bQDguq2fwKoycGn/TCEFQZnvXJP3gyNNkN0dAml2p0QZQ+h59fI4KqGDGm6S8+vL6DCogEz0tu9I5/GMmeCRFYLeFNOlxfJYYCQPDYfHiS8HVlmXQ2h6lgrYAnnfeemwfjW8cmjckKu1alsS86GzDESMGHKZ+4cPnhdJwWXEaHnZq8hFs0l2fce1re9EH1KbZehX87fiW0cs+MBk8bPLcwz0wd0dqtJvIPMIx07rcU1bflR6rVNuzzau4yqK6y+T/6XC6bHn2/7FioGmzzX7zCYAxmvVcIU6DqvnlxJWBzG+f/MsXJRH9khBbBJbQwIDAQAB';
+
+/** Extension ID derived from {@link DEV_PUBLIC_KEY}. */
+export const DEV_EXTENSION_ID = 'klmbbjhphdmmicdbbgkofkpgapcinbmd';
+
+export const BACKGROUND_FILE = 'background.js';
+export const CONTENT_FILE = 'content.js';
+export const POPUP_FILE = 'popup.html';
+
+export interface ManifestOptions {
+  appEnv: AppEnv;
+  version: string;
+  /** OAuth client ID ("Chrome extension" type) for chrome.identity (prod, Task 5). */
+  oauthClientId?: string | undefined;
+}
+
+export function buildManifest(opts: ManifestOptions): chrome.runtime.ManifestV3 {
+  const dev = opts.appEnv === 'dev';
+  const manifest: chrome.runtime.ManifestV3 = {
+    manifest_version: 3,
+    name: dev ? 'Registro de jornada (DEV)' : 'Registro de jornada',
+    short_name: 'Jornada',
+    description: 'Registra tu jornada y tu nivel de actividad mientras la jornada está iniciada.',
+    version: opts.version,
+    // 30-second chrome.alarms periods need Chrome 120+.
+    minimum_chrome_version: '120',
+    background: { service_worker: BACKGROUND_FILE, type: 'module' },
+    action: { default_popup: POPUP_FILE, default_title: 'Registro de jornada' },
+    permissions: ['storage', 'alarms', 'idle', 'tabs', 'identity', 'scripting'],
+    host_permissions: ['<all_urls>'],
+    incognito: 'not_allowed',
+    content_scripts: [
+      {
+        matches: ['<all_urls>'],
+        js: [CONTENT_FILE],
+        all_frames: false,
+        run_at: 'document_start',
+      },
+    ],
+  };
+  if (dev) manifest.key = DEV_PUBLIC_KEY;
+  if (!dev && opts.oauthClientId) {
+    manifest.oauth2 = {
+      client_id: opts.oauthClientId,
+      scopes: ['openid', 'email', 'profile'],
+    };
+  }
+  return manifest;
+}

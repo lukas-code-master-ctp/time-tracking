@@ -35,3 +35,7 @@ coverage/
 Thumbs.db
 # Emulator-only functions config (demo project, no secrets)
 !functions/.env.demo-timetracking
+# Extension build config (not secret; placeholders documented inside)
+!extension/.env.development
+!extension/.env.production
+extension/dist-dev/
