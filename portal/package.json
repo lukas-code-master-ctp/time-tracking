@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --mode development",
-    "build": "vite build --mode production && node scripts/check-build.ts",
+    "build": "vite build --mode production && node scripts/prerender-privacy.ts && node scripts/check-build.ts",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",

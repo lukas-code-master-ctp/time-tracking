@@ -27,6 +27,15 @@ describe('/privacidad', () => {
     expect(document.title).toContain('Política de privacidad');
   });
 
+  it('also answers at /privacidad.html (the prerendered file)', () => {
+    const getBackend = vi.fn((): Backend => {
+      throw new Error('Firebase no configurado');
+    });
+    renderRoot('/privacidad.html', getBackend);
+    expect(screen.getByRole('heading', { level: 1, name: 'Política de privacidad' })).toBeInTheDocument();
+    expect(getBackend).not.toHaveBeenCalled();
+  });
+
   it('has the key sections and facts', () => {
     renderRoot('/privacidad', () => backendOf(emptyDb(), ADMIN));
     for (const name of [
@@ -72,6 +81,14 @@ describe('/privacidad', () => {
     expect(link).toHaveAttribute('href', '/privacidad');
     await user.click(link);
     expect(await screen.findByRole('heading', { level: 1, name: 'Política de privacidad' })).toBeInTheDocument();
+  });
+
+  it.each(['/privacidad/extra', '/privacidadx', '/equipo', '/'])('%s goes through the admin gate', async (path) => {
+    const getBackend = vi.fn((): Backend => ({ data: fakeData(emptyDb()), auth: fakeAuth(null, ADMIN) }));
+    renderRoot(path, getBackend);
+    expect(await screen.findByRole('button', { name: 'Iniciar sesión con Google' })).toBeInTheDocument();
+    expect(getBackend).toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Política de privacidad' })).not.toBeInTheDocument();
   });
 
   it('other paths still go through the admin gate', async () => {

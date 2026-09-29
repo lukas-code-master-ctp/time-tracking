@@ -6,7 +6,7 @@ export const PRIVACY_PATH = '/privacidad';
 export const PRIVACY_UPDATED_AT = '29 de septiembre de 2026';
 export const PRIVACY_CONTACT = 'lukas@impulseai.cl';
 
-const TITLE = 'Política de privacidad · Registro de jornada';
+export const PRIVACY_TITLE = 'Política de privacidad · Registro de jornada';
 
 /**
  * Public privacy policy of the "Registro de jornada" extension and portal
@@ -17,7 +17,7 @@ const TITLE = 'Política de privacidad · Registro de jornada';
 export function PrivacyPage() {
   useEffect(() => {
     const previous = document.title;
-    document.title = TITLE;
+    document.title = PRIVACY_TITLE;
     return () => {
       document.title = previous;
     };
@@ -67,7 +67,8 @@ export function PrivacyPage() {
           <ul className="privacy-list yes">
             <li>
               <strong>Datos de tu cuenta Google de la empresa:</strong> correo, nombre y foto de perfil, al iniciar
-              sesión. También se guarda la fecha en que aceptaste el aviso de medición y su versión.
+              sesión. También se guarda la fecha en que aceptaste el aviso de medición y su versión. Si un
+              administrador te invita, tu correo queda en la lista de invitaciones del portal.
             </li>
             <li>
               <strong>Inicio y cierre de la jornada</strong>, su duración y una señal periódica de que la extensión
@@ -132,8 +133,8 @@ export function PrivacyPage() {
           <h2 id="pp-donde">Dónde se guardan</h2>
           <p>
             En <strong>Google Firebase</strong> (Google Cloud), en un proyecto de la empresa. La base de datos está en la
-            región de <strong>Santiago de Chile</strong> ({FUNCTIONS_REGION}); las capturas se guardan en Cloud Storage
-            del mismo proyecto, en esa región o, si no estuviera disponible, en la más cercana. Las tareas automáticas de
+            región de <strong>Santiago de Chile</strong> ({FUNCTIONS_REGION}) y las capturas se guardan en Cloud Storage
+            del mismo proyecto, también en Santiago. Las tareas automáticas de
             mantenimiento (borrar capturas antiguas y cerrar jornadas abandonadas) se ejecutan en {SCHEDULER_REGION}{' '}
             (São Paulo), porque esa programación no está disponible en Santiago.
           </p>
@@ -151,13 +152,14 @@ export function PrivacyPage() {
               <strong>Tú:</strong> ves tus horas y tu actividad del día en la extensión.
             </li>
             <li>
-              <strong>Los administradores del portal</strong> de tu empresa: ven las jornadas, la actividad, los sitios y
-              las capturas del equipo.
+              <strong>Los administradores del portal</strong> (personas de Impulse AI o Compra tu Parcela designadas como
+              administradoras): ven las jornadas, la actividad, los sitios y las capturas de todo el equipo.
             </li>
           </ul>
           <p>
             El acceso exige iniciar sesión con la cuenta de la empresa. Un colaborador no puede ver los datos de otros
-            colaboradores. Google, como proveedor de la infraestructura, trata los datos solo para prestar ese servicio.
+            colaboradores. Google, como proveedor de la infraestructura (y, si se usa, el servicio de correo que envía las
+            invitaciones), trata los datos solo para prestar ese servicio.
           </p>
         </section>
 

@@ -213,7 +213,7 @@ Vercel solo aloja el **portal**. Firebase (pasos 1, 5, 6 y 7 sin `hosting`) y la
 
 2. En [vercel.com](https://vercel.com) → **Add New → Project** → importa `lukas-code-master-ctp/time-tracking`.
    - **Root Directory**: déjalo en la raíz del repo (no `portal`): el portal usa `packages/shared`.
-   - Framework, instalación, build y carpeta de salida ya vienen en [`vercel.json`](vercel.json) (`npm ci`, `npm run build -w portal`, `portal/dist`, y la redirección de todas las rutas a `index.html`). No los cambies en el panel.
+   - Framework, instalación, build y carpeta de salida ya vienen en [`vercel.json`](vercel.json) (`npm ci`, `npm run build -w portal`, `portal/dist`, y la redirección de todas las rutas a `index.html`, salvo `/privacidad`, que se sirve con la política ya renderizada en `privacidad.html` para que se lea sin JavaScript). No los cambies en el panel.
    - **Node.js Version** (Settings → General): 22.x o superior.
 3. **Settings → Environment Variables** (entorno *Production*, y *Preview* si usarás vistas previas), con los valores de la app web del paso 1.6:
 

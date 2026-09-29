@@ -16,6 +16,8 @@ export function Root({ getBackend }: { getBackend: () => Backend }) {
   return (
     <Routes>
       <Route path={PRIVACY_PATH} element={<PrivacyPage />} />
+      {/* The prerendered file itself (dist/privacidad.html), if opened directly. */}
+      <Route path={`${PRIVACY_PATH}.html`} element={<PrivacyPage />} />
       <Route path="*" element={<AdminArea getBackend={getBackend} />} />
     </Routes>
   );
