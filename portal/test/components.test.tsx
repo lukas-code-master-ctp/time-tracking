@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -12,7 +12,10 @@ import { BackendProvider } from '../src/data/context';
 import { JoinError, type Backend } from '../src/data/types';
 import { dayBounds, startOfDay } from '../src/lib/dates';
 import { buildTimeline } from '../src/lib/timeline';
-import { InviteForm } from '../src/pages/InvitationsPage';
+import { InstallUrlWarning, InviteForm } from '../src/pages/InvitationsPage';
+import { RangePicker } from '../src/components/RangePicker';
+import { isPlaceholderInstallUrl } from '../src/env';
+import { presetRange } from '../src/lib/dates';
 import { SettingsForm } from '../src/pages/SettingsPage';
 import { ADMIN, backendOf, emptyDb, fakeAuth, fakeData, member, slot, type FakeDb } from './fakes';
 
@@ -401,5 +404,39 @@ describe('Lightbox', () => {
     expect(await screen.findByRole('heading', { name: 'Captura de las 09:12' })).toBeInTheDocument();
     expect(screen.queryByTestId('lightbox-img')).toBeNull();
     expect(within(screen.getByRole('dialog')).getByText('Cargando…')).toBeInTheDocument();
+  });
+});
+
+describe('Enlace de instalación', () => {
+  it('detects placeholder links', () => {
+    for (const url of ['', 'REEMPLAZAR_ENLACE_CHROME_WEB_STORE', 'https://chromewebstore.google.com/detail/dev-extension', 'http://x.cl', 'no es url']) {
+      expect(isPlaceholderInstallUrl(url)).toBe(true);
+    }
+    expect(isPlaceholderInstallUrl('https://chromewebstore.google.com/detail/registro-de-jornada/abcdefghijklmnopabcdefghijklmnop')).toBe(false);
+  });
+
+  it('shows the warning only for a placeholder', () => {
+    const { rerender } = render(<InstallUrlWarning url="REEMPLAZAR_ENLACE_CHROME_WEB_STORE" />);
+    expect(screen.getByTestId('install-url-warning')).toHaveTextContent('VITE_EXTENSION_INSTALL_URL');
+    rerender(<InstallUrlWarning url="https://chromewebstore.google.com/detail/x/abcdefghijklmnopabcdefghijklmnop" />);
+    expect(screen.queryByTestId('install-url-warning')).toBeNull();
+  });
+});
+
+describe('RangePicker: tope de 93 días', () => {
+  it('moves the other end and explains it', () => {
+    const onCustom = vi.fn();
+    const range = presetRange('custom', NOW, undefined, { fromDate: '2026-09-01', toDate: '2026-09-29' });
+    render(<RangePicker range={range} onPreset={() => undefined} onCustom={onCustom} />);
+    expect(screen.getByText('Máximo 93 días.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-01-01' } });
+    expect(onCustom).toHaveBeenLastCalledWith('2026-01-01', '2026-04-03');
+    expect(screen.getByRole('status')).toHaveTextContent('como máximo 93 días');
+  });
+
+  it('warns when the URL asked for a longer range', () => {
+    const range = presetRange('custom', NOW, undefined, { fromDate: '2025-01-01', toDate: '2026-09-29' });
+    render(<RangePicker range={range} onPreset={() => undefined} onCustom={() => undefined} />);
+    expect(screen.getByRole('status')).toHaveTextContent('se ajustó a 29-06-2026 – 29-09-2026');
   });
 });

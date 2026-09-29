@@ -16,13 +16,14 @@
  * Playwright's Chromium: `npx playwright install chromium`, or any cached
  * `ms-playwright/chromium-*` build, or `SMOKE_CHROMIUM=<path to chrome>`.
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type BrowserContext, type Page, type Worker } from 'playwright';
 import { ROOT } from '../build/common.ts';
 import { DEV_EXTENSION_ID } from '../build/manifest.ts';
+import { findChromium, NO_CHROMIUM } from '../../scripts/lib/chromium.ts';
 
 const E2E = process.argv.includes('--e2e');
 const EXT_DIR = join(ROOT, 'dist-dev');
@@ -38,21 +39,7 @@ function fail(msg: string): never {
 }
 
 function chromiumPath(): string {
-  const fromEnv = process.env.SMOKE_CHROMIUM;
-  if (fromEnv) return fromEnv;
-  const bundled = chromium.executablePath();
-  if (existsSync(bundled)) return bundled;
-  const cache = process.env.PLAYWRIGHT_BROWSERS_PATH ?? join(process.env.LOCALAPPDATA ?? join(process.env.HOME ?? '', '.cache'), 'ms-playwright');
-  const candidates = existsSync(cache)
-    ? readdirSync(cache).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse()
-    : [];
-  for (const dir of candidates) {
-    for (const exe of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe', 'chrome-linux64/chrome', 'chrome-linux/chrome']) {
-      const p = join(cache, dir, exe);
-      if (existsSync(p)) return p;
-    }
-  }
-  fail('no se encontró Chromium de Playwright. Ejecuta `npx playwright install chromium` o define SMOKE_CHROMIUM.');
+  return findChromium() ?? fail(NO_CHROMIUM);
 }
 
 async function waitForWorker(ctx: BrowserContext): Promise<Worker> {

@@ -3,7 +3,7 @@ import type { Invitation, UserProfile, WithId } from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
-import { ALLOWED_DOMAIN, EXTENSION_INSTALL_URL } from '../env';
+import { ALLOWED_DOMAIN, EXTENSION_INSTALL_URL, isPlaceholderInstallUrl } from '../env';
 import { formatRelativeDateTime } from '../lib/dates';
 import { copyText } from '../lib/download';
 import { errorMessage } from '../lib/messages';
@@ -94,6 +94,20 @@ export function InviteForm({ allowedDomain, invitations, users, onInvite }: Invi
 
 type Pending = { kind: 'resend' | 'revoke'; invitation: WithId<Invitation> };
 
+/** Shown while the install link (`VITE_EXTENSION_INSTALL_URL`) is not a real one. */
+export function InstallUrlWarning({ url }: { url: string }) {
+  if (!isPlaceholderInstallUrl(url)) return null;
+  return (
+    <p className="banner warn" role="note" data-testid="install-url-warning">
+      <strong>Falta configurar el enlace de instalación de la extensión.</strong>{' '}
+      {url ? `El valor actual (${url}) es de ejemplo` : 'No hay un enlace configurado'}: define{' '}
+      <code>VITE_EXTENSION_INSTALL_URL</code> en <code>portal/.env.production</code> (y <code>EXTENSION_INSTALL_URL</code> en{' '}
+      <code>functions/.env.&lt;proyecto&gt;</code>) con el enlace de Chrome Web Store y vuelve a desplegar. Mientras tanto, los
+      correos y el enlace copiado no llevan a la extensión real.
+    </p>
+  );
+}
+
 export function InvitationsPage() {
   const data = useData();
   const { uid } = useAdmin();
@@ -142,6 +156,7 @@ export function InvitationsPage() {
           ) : null
         }
       />
+      <InstallUrlWarning url={EXTENSION_INSTALL_URL} />
       {notice ? (
         <p className="banner ok" role="status">
           {notice}

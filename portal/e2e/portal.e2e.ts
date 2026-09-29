@@ -15,7 +15,7 @@
  * 4. Screenshots (desktop and 375 px, light and dark) in PORTAL_SHOTS_DIR
  *    (default: <tmp>/timetracking-portal-shots).
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,8 @@ import {
   type UserProfile,
 } from '@timetracking/shared';
 import { startOfDay, zonedDate } from '../src/lib/dates.ts';
+import { findChromium, NO_CHROMIUM } from '../../scripts/lib/chromium.ts';
+import { clearEmulators, uploadJpeg } from '../../scripts/lib/emulators.ts';
 
 const PORTAL = fileURLToPath(new URL('..', import.meta.url));
 const PROJECT = FIREBASE_DEMO_PROJECT_ID;
@@ -62,19 +64,8 @@ function ok(msg: string): void {
   console.log(`✔ ${msg}`);
 }
 
-function chromiumPath(): string | undefined {
-  if (process.env.SMOKE_CHROMIUM) return process.env.SMOKE_CHROMIUM;
-  const bundled = chromium.executablePath();
-  if (existsSync(bundled)) return bundled;
-  const cache = process.env.PLAYWRIGHT_BROWSERS_PATH ?? join(process.env.LOCALAPPDATA ?? join(process.env.HOME ?? '', '.cache'), 'ms-playwright');
-  const dirs = existsSync(cache) ? readdirSync(cache).filter((d) => /^chromium(_headless_shell)?-\d+$/.test(d)).sort().reverse() : [];
-  for (const dir of dirs) {
-    for (const exe of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe', 'chrome-linux64/chrome', 'chrome-linux/chrome']) {
-      const p = join(cache, dir, exe);
-      if (existsSync(p)) return p;
-    }
-  }
-  fail('no se encontró Chromium de Playwright. Ejecuta `npx playwright install chromium` o define SMOKE_CHROMIUM.');
+function chromiumPath(): string {
+  return findChromium() ?? fail(NO_CHROMIUM);
 }
 
 async function emulatorsUp(): Promise<void> {
@@ -123,8 +114,7 @@ function slotsFor(uid: string, sessionId: string, start: number, end: number, pa
 
 async function seed(browser: Browser): Promise<Seed> {
   // Clean slate (emulators:exec starts empty, but the script may run against running emulators).
-  await fetch(`http://${process.env.FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: 'DELETE' });
-  await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/emulator/v1/projects/${PROJECT}/accounts`, { method: 'DELETE' });
+  await clearEmulators();
 
   initializeApp({ projectId: PROJECT, storageBucket: BUCKET });
   const db = getFirestore();
@@ -184,14 +174,8 @@ async function seed(browser: Browser): Promise<Seed> {
   const takenAt = Math.min(start + 4 * 60_000, now - 60_000);
   const shotId = `${ana}_${slotStartOf(takenAt)}`;
   const storagePath = screenshotStoragePath(ana, takenAt, shotId);
-  // Same REST upload as the extension (extension/src/background/firebase.ts), with the
-  // emulator's owner token instead of the collaborator's ID token. Firebase Storage
-  // adds a download token to these uploads, which the portal's getDownloadURL needs.
-  const upload = await fetch(
-    `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}/v0/b/${BUCKET}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
-    { method: 'POST', headers: { Authorization: 'Bearer owner', 'Content-Type': 'image/jpeg' }, body: new Uint8Array(jpeg) },
-  );
-  if (!upload.ok) fail(`subida de la captura: HTTP ${upload.status} ${await upload.text()}`);
+  // Same REST upload as the extension (see uploadJpeg in scripts/lib/emulators.ts).
+  await uploadJpeg(storagePath, new Uint8Array(jpeg));
   const meta: ScreenshotMeta = { uid: ana, sessionId: 's-ana', takenAt, storagePath, blurred: true, width: 1280, height: 720 };
   await db.doc(`${COLLECTIONS.screenshots}/${shotId}`).set(meta);
   ok(`Semilla: config/org, 2 colaboradores, 2 jornadas, ${slots.length} bloques de actividad, 1 captura (${storagePath}).`);

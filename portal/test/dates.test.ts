@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_CUSTOM_RANGE_DAYS,
   addDays,
   dayBounds,
+  daysBetween,
   describeRange,
   formatRelativeDateTime,
   formatTime,
@@ -112,6 +114,23 @@ describe('presetRange', () => {
     expect(presetRange('custom', NOW, undefined, { fromDate: 'x', toDate: '' })).toMatchObject({
       fromDate: '2026-09-29',
       toDate: '2026-09-29',
+    });
+  });
+
+  it(`custom range is capped at ${MAX_CUSTOM_RANGE_DAYS} days, keeping the end`, () => {
+    expect(daysBetween('2026-09-01', '2026-09-30')).toBe(29);
+    expect(daysBetween('2026-09-30', '2026-09-01')).toBe(-29);
+    const exact = presetRange('custom', NOW, undefined, { fromDate: '2026-06-29', toDate: '2026-09-29' });
+    expect(daysBetween(exact.fromDate, exact.toDate) + 1).toBe(93);
+    expect(exact.clamped).toBeUndefined();
+    const long = presetRange('custom', NOW, undefined, { fromDate: '2025-01-01', toDate: '2026-09-29' });
+    expect(long).toMatchObject({ fromDate: '2026-06-29', toDate: '2026-09-29', clamped: true });
+    expect(long.from).toBe(startOfDay('2026-06-29'));
+    // Reversed input is ordered before capping (the later date stays).
+    expect(presetRange('custom', NOW, undefined, { fromDate: '2026-09-29', toDate: '2020-01-01' })).toMatchObject({
+      fromDate: '2026-06-29',
+      toDate: '2026-09-29',
+      clamped: true,
     });
   });
 });

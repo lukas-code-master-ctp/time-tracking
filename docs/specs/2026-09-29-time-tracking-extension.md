@@ -134,6 +134,14 @@ Reglas:
 - **Sesión de Firebase terminada con la jornada abierta** (token revocado, usuario borrado): la jornada se cierra localmente y se **encola** el cierre; se envía si el mismo usuario vuelve a entrar (si entra otro, se descarta y el cierre automático del servidor la cierra en el último latido).
 - **Íconos**: reloj azul; reloj verde + insignia "ON" durante la jornada.
 
+### Decisiones de implementación (Tarea 7)
+- **Rango personalizado**: máximo 93 días (`MAX_CUSTOM_RANGE_DAYS`). Si la URL pide más, se conserva la fecha final y se adelanta la inicial; si al elegir una fecha se pasa del tope, se mueve la otra. En ambos casos se muestra un aviso.
+- **Enlace de instalación**: Invitaciones muestra una advertencia si `VITE_EXTENSION_INSTALL_URL` está vacío, es `REEMPLAZAR_…`, no es https o es el enlace falso de desarrollo.
+- **Contraste**: el % dentro de las celdas de la línea de tiempo usa la tinta completa (sin opacidad): ≥ 4,5:1 en todos los niveles, claro y oscuro.
+- **Seed** (`scripts/seed.ts`): cuentas de Auth creadas con el mismo token simulado del login dev (mismo uid al entrar desde portal o extensión); datos escritos con Admin SDK; idempotente reemplazando sesiones, actividad y capturas de los colaboradores de ejemplo. Capturas de ejemplo: maquetas HTML difuminadas renderizadas con Chromium (si no hay Chromium, se omiten con aviso).
+- **E2E integrado** (`scripts/e2e.ts`): la admin activa capturas e invita desde la UI del portal; luego el colaborador usa la extensión (~70 s de actividad real para que el portal muestre ≥ 1 min); por último la admin ve horas, actividad y captura.
+- **Helpers comunes** en `scripts/lib` (workspace `@timetracking/scripts`, con typecheck y tests): Chromium, REST de emuladores, navegador con la extensión, servidor Vite del portal.
+
 ## 9. Criterios de aceptación
 1. Admin invita `x@dominio`; se crea invitación y se envía (o registra) correo.
 2. `x` inicia sesión en la extensión, acepta aviso, queda como `member`. Un correo sin invitación o de otro dominio es rechazado.

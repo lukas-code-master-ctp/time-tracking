@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "chrome"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@timetracking/shared": ["../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["*.ts", "lib", "test", "vitest.config.ts"]
+}

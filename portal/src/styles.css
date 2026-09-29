@@ -685,6 +685,15 @@ label {
   gap: 10px;
 }
 
+.custom-range .range-cap {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.custom-range .banner.range-cap {
+  padding: 6px 10px;
+}
+
 .custom-range label {
   display: inline-flex;
   align-items: center;
@@ -1022,7 +1031,9 @@ a.person:hover .person-name {
 }
 
 .cell-pct {
-  opacity: 0.85;
+  /* Full ink, no opacity: contrast ≥ 4.5:1 (WCAG AA, small text) on every
+     level color in light and dark themes (lowest: 4.7:1, dark "baja"). */
+  color: var(--lvl-ink);
 }
 
 .has-shot::after {

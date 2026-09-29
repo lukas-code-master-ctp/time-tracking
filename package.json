@@ -7,7 +7,8 @@
     "extension",
     "portal",
     "functions",
-    "tests/rules"
+    "tests/rules",
+    "scripts"
   ],
   "engines": {
     "node": ">=22"
@@ -20,7 +21,11 @@
     "build": "npm run build:shared && npm run build --workspaces --if-present",
     "build:functions": "npm run build:shared && npm run build -w @timetracking/functions",
     "e2e:extension": "npm run build:functions && npm run build:dev -w @timetracking/extension && firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking \"node extension/scripts/smoke.ts --e2e\"",
-    "e2e:portal": "npm run build:functions && firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking \"node portal/e2e/portal.e2e.ts\""
+    "e2e:portal": "npm run build:functions && firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking \"node portal/e2e/portal.e2e.ts\"",
+    "emulators": "npm run build:functions && node scripts/emulators.ts",
+    "emulators:persist": "npm run build:functions && node scripts/emulators.ts --persist",
+    "seed": "npm run build:shared && node scripts/seed.ts",
+    "e2e": "npm run build:functions && npm run build:dev -w @timetracking/extension && firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking \"node scripts/e2e.ts\""
   },
   "devDependencies": {
     "firebase-tools": "^15.32.0",

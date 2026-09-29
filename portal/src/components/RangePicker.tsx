@@ -1,5 +1,5 @@
-import { useId } from 'react';
-import { RANGE_PRESETS, isValidDate, type DateRange, type RangePreset } from '../lib/dates';
+import { useId, useState } from 'react';
+import { MAX_CUSTOM_RANGE_DAYS, RANGE_PRESETS, addDays, daysBetween, formatShortDate, isValidDate, type DateRange, type RangePreset } from '../lib/dates';
 
 interface Props {
   range: DateRange;
@@ -7,8 +7,23 @@ interface Props {
   onCustom(fromDate: string, toDate: string): void;
 }
 
+const SPAN = MAX_CUSTOM_RANGE_DAYS - 1;
+
 export function RangePicker({ range, onPreset, onCustom }: Props) {
   const id = useId();
+  // A date picked beyond the cap moves the other end so the range stays ≤ 93 days.
+  const [adjusted, setAdjusted] = useState(false);
+  const pickFrom = (from: string): void => {
+    const tooLong = daysBetween(from, range.toDate) > SPAN;
+    setAdjusted(tooLong);
+    onCustom(from, tooLong ? addDays(from, SPAN) : range.toDate);
+  };
+  const pickTo = (to: string): void => {
+    const tooLong = daysBetween(range.fromDate, to) > SPAN;
+    setAdjusted(tooLong);
+    onCustom(tooLong ? addDays(to, -SPAN) : range.fromDate, to);
+  };
+  const capped = range.clamped === true || adjusted;
   return (
     <div className="range-picker">
       <div className="segmented" role="group" aria-label="Periodo">
@@ -33,8 +48,9 @@ export function RangePicker({ range, onPreset, onCustom }: Props) {
               type="date"
               value={range.fromDate}
               max={range.toDate}
+              aria-describedby={`${id}-cap`}
               onChange={(e) => {
-                if (isValidDate(e.target.value)) onCustom(e.target.value, range.toDate);
+                if (isValidDate(e.target.value)) pickFrom(e.target.value);
               }}
             />
           </label>
@@ -45,11 +61,17 @@ export function RangePicker({ range, onPreset, onCustom }: Props) {
               type="date"
               value={range.toDate}
               min={range.fromDate}
+              aria-describedby={`${id}-cap`}
               onChange={(e) => {
-                if (isValidDate(e.target.value)) onCustom(range.fromDate, e.target.value);
+                if (isValidDate(e.target.value)) pickTo(e.target.value);
               }}
             />
           </label>
+          <p id={`${id}-cap`} className={capped ? 'banner warn small range-cap' : 'muted small range-cap'} role="status">
+            {capped
+              ? `El rango personalizado puede tener como máximo ${MAX_CUSTOM_RANGE_DAYS} días: se ajustó a ${formatShortDate(range.fromDate)} – ${formatShortDate(range.toDate)}.`
+              : `Máximo ${MAX_CUSTOM_RANGE_DAYS} días.`}
+          </p>
         </div>
       ) : null}
     </div>

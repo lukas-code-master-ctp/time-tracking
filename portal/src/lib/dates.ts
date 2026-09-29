@@ -24,7 +24,15 @@ export interface DateRange {
   from: number;
   /** Start of the day after `toDate` (ms, exclusive). */
   to: number;
+  /** Custom range longer than MAX_CUSTOM_RANGE_DAYS: `fromDate` was moved forward. */
+  clamped?: boolean;
 }
+
+/**
+ * Longest custom range (about a quarter). A month for 30 people is already
+ * ~30 000 `activity` reads; beyond ~3 months the portal gets slow and costly.
+ */
+export const MAX_CUSTOM_RANGE_DAYS = 93;
 
 export const RANGE_PRESETS: readonly { value: RangePreset; label: string }[] = [
   { value: 'today', label: 'Hoy' },
@@ -109,6 +117,13 @@ export function addDays(date: string, days: number): string {
   return fromUtcDate(new Date(Date.UTC(y, m - 1, d + days)));
 }
 
+/** Whole calendar days from `a` to `b` (`b - a`; negative if `b` is earlier). */
+export function daysBetween(a: string, b: string): number {
+  const pa = parseDate(a);
+  const pb = parseDate(b);
+  return Math.round((Date.UTC(pb.y, pb.m - 1, pb.d) - Date.UTC(pa.y, pa.m - 1, pa.d)) / 86_400_000);
+}
+
 /** 0 = Monday … 6 = Sunday. */
 export function weekdayIndex(date: string): number {
   const { y, m, d } = parseDate(date);
@@ -182,7 +197,12 @@ export function presetRange(
     case 'custom': {
       const fromDate = custom && isValidDate(custom.fromDate) ? custom.fromDate : today;
       const toDate = custom && isValidDate(custom.toDate) ? custom.toDate : fromDate;
-      return rangeOfDates(fromDate, toDate, preset, timeZone);
+      const [a, b] = fromDate <= toDate ? [fromDate, toDate] : [toDate, fromDate];
+      // Inclusive length a..b; keep the end and move the start forward.
+      if (daysBetween(a, b) + 1 > MAX_CUSTOM_RANGE_DAYS) {
+        return { ...rangeOfDates(addDays(b, -(MAX_CUSTOM_RANGE_DAYS - 1)), b, preset, timeZone), clamped: true };
+      }
+      return rangeOfDates(a, b, preset, timeZone);
     }
   }
 }
