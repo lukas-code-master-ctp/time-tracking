@@ -33,7 +33,10 @@ export interface MemberSummary {
    */
   sessionSeconds: number;
   sessionCount: number;
-  /** An open session with a recent heartbeat (<= 30 min before `now`). */
+  /**
+   * An open session with a recent heartbeat (<= 30 min before `now`). It
+   * reflects the current state and ignores `from`/`to`.
+   */
   inSession: boolean;
   lastActivityAt: number | null;
   slotCount: number;
@@ -136,12 +139,14 @@ export function summarizeMember(
   let sessionCount = 0;
   let inSession = false;
   for (const session of sessions) {
+    // "In session" describes the present, not the selected range: a live
+    // session counts even when the range is in the past.
+    if (isSessionLive(session, now)) inSession = true;
     const end = session.endedAt ?? session.lastHeartbeatAt;
     const overlaps = (to === undefined || session.startedAt < to) && (from === undefined || end >= from);
     if (!overlaps) continue;
     sessionCount++;
     sessionSeconds += sessionDurationSeconds(session, from, to);
-    if (isSessionLive(session, now)) inSession = true;
     const alive = Math.max(session.lastHeartbeatAt, session.endedAt ?? 0);
     if (lastActivityAt === null || alive > lastActivityAt) lastActivityAt = alive;
   }
@@ -260,6 +265,12 @@ export interface CsvOptions {
   separator?: string;
   /** Prepend a UTF-8 BOM so Excel detects the encoding (default false). */
   bom?: boolean;
+  /**
+   * Decimal mark for numbers (default "."). Excel in Spanish locales (Chile)
+   * expects ";" as separator and "," as decimal mark; otherwise "1.5" is read
+   * as text or as a date.
+   */
+  decimalSeparator?: '.' | ',';
 }
 
 /**
@@ -268,9 +279,13 @@ export interface CsvOptions {
  * `= + - @` (or tab / CR) is prefixed with `'` to prevent formula injection
  * in spreadsheets. Numbers are written as-is (negative numbers stay numeric).
  */
-export function escapeCsvField(value: CsvCell, separator = ','): string {
+export function escapeCsvField(value: CsvCell, separator = ',', decimalSeparator: '.' | ',' = '.'): string {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return '';
+    const num = decimalSeparator === ',' ? String(value).replace('.', ',') : String(value);
+    return num.includes(separator) ? `"${num}"` : num;
+  }
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   let text = String(value);
   if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
@@ -286,6 +301,7 @@ export function escapeCsvField(value: CsvCell, separator = ','): string {
  */
 export function toCsv(rows: readonly CsvRow[], columns?: readonly CsvColumn[], options: CsvOptions = {}): string {
   const separator = options.separator ?? ',';
+  const decimal = options.decimalSeparator ?? '.';
   let cols: readonly CsvColumn[];
   if (columns) {
     cols = columns;
@@ -303,7 +319,9 @@ export function toCsv(rows: readonly CsvRow[], columns?: readonly CsvColumn[], o
     cols = keys.map((key) => ({ key, header: key }));
   }
   const lines = [cols.map((c) => escapeCsvField(c.header, separator)).join(separator)];
-  for (const row of rows) lines.push(cols.map((c) => escapeCsvField(row[c.key], separator)).join(separator));
+  for (const row of rows) {
+    lines.push(cols.map((c) => escapeCsvField(row[c.key], separator, decimal)).join(separator));
+  }
   return (options.bom ? '﻿' : '') + lines.join('\r\n') + '\r\n';
 }
 

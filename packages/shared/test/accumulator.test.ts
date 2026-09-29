@@ -323,6 +323,54 @@ describe('SlotAccumulator — gaps and sessions', () => {
     expect(current).toMatchObject({ trackedSeconds: 60, activeSeconds: 1 });
   });
 
+  it('a mark on a second not yet attributed counts once the clock passes it', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(WEB, T0);
+    acc.tick(T0 + 10 * S);
+    acc.markActiveSecond(T0 + 10 * S); // second 10 starts exactly now: not tracked yet
+    expect(acc.flush(T0 + 10 * S).current).toMatchObject({ trackedSeconds: 10, activeSeconds: 0 });
+    acc.tick(T0 + 11 * S);
+    expect(acc.flush(T0 + 11 * S).current).toMatchObject({ trackedSeconds: 11, activeSeconds: 1 });
+  });
+
+  it('a pending mark survives toJSON/fromJSON', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(WEB, T0);
+    acc.markActiveSecond(T0 + 5 * S);
+    const restored = SlotAccumulator.fromJSON(JSON.parse(JSON.stringify(acc.toJSON())));
+    restored.tick(T0 + 6 * S);
+    expect(restored.flush(T0 + 6 * S).current).toMatchObject({ trackedSeconds: 6, activeSeconds: 1 });
+  });
+
+  it('a block left partial by closing the session is emitted as closed on a later flush', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(null, T0);
+    tickRange(acc, T0, T0 + 90 * S);
+    acc.setSession(null, T0 + 120 * S);
+    const atClose = acc.flush(T0 + 120 * S);
+    expect(atClose.closed).toEqual([]);
+    expect(atClose.current).toMatchObject({ slotStart: T0, trackedSeconds: 120, outsideChromeSeconds: 120 });
+    const later = acc.flush(T0 + 3 * SLOT_MS);
+    expect(later.closed).toHaveLength(1);
+    expect(later.closed[0]).toMatchObject({ slotStart: T0, trackedSeconds: 120 });
+    expect(later.current).toBeNull();
+    expect(acc.flush(T0 + 4 * SLOT_MS).closed).toEqual([]);
+  });
+
+  it('a gap longer than 90 s after a state change keeps that state for later intervals', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(null, T0);
+    acc.setIdleState('locked', T0 + 10 * S);
+    acc.tick(T0 + 200 * S); // 190 s gap: no data
+    acc.tick(T0 + 230 * S); // 30 s counted, still locked
+    const { current } = acc.flush(T0 + 230 * S);
+    expect(current).toMatchObject({ trackedSeconds: 40, activeSeconds: 10, outsideChromeSeconds: 40 });
+  });
+
   it('rejects invalid timestamps and idle states', () => {
     const acc = newAcc();
     expect(() => acc.tick(Number.NaN)).toThrow(TypeError);

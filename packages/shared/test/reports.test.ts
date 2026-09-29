@@ -160,6 +160,15 @@ describe('summarizeMember', () => {
     expect(s.sessionSeconds).toBe(1800);
   });
 
+  it('inSession reflects the present even when the range is in the past', () => {
+    const live = session('a', T0 + 24 * 60 * MIN, null, T0 + 24 * 60 * MIN + 5 * MIN);
+    const s = summarizeMember([], [live], { from: T0, to: T0 + 60 * MIN, now: T0 + 24 * 60 * MIN + 10 * MIN });
+    expect(s.inSession).toBe(true);
+    expect(s.sessionCount).toBe(0);
+    expect(s.sessionSeconds).toBe(0);
+    expect(s.lastActivityAt).toBeNull();
+  });
+
   it('limits top lists to topN', () => {
     const domains: Record<string, number> = {};
     for (let i = 0; i < 15; i++) domains[`d${i}.com`] = i + 1;
@@ -236,6 +245,14 @@ describe('CSV', () => {
       '﻿a;b\r\n1;\r\n2;"x;y"\r\n',
     );
     expect(toCsv([])).toBe('\r\n');
+  });
+
+  it('supports a decimal comma for Spanish Excel', () => {
+    expect(escapeCsvField(1.5, ';', ',')).toBe('1,5');
+    expect(escapeCsvField(-0.25, ';', ',')).toBe('-0,25');
+    expect(escapeCsvField(1.5, ',', ',')).toBe('"1,5"');
+    expect(escapeCsvField(7, ';', ',')).toBe('7');
+    expect(toCsv([{ h: 1.5, n: 'x' }], undefined, { separator: ';', decimalSeparator: ',' })).toBe('h;n\r\n1,5;x\r\n');
   });
 
   it('teamSummaryToCsv writes Spanish headers and values', () => {
