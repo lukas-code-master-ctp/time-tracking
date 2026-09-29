@@ -109,6 +109,17 @@ Reglas:
 - **Configuración**: capturas sí/no, difuminado sí/no, retención (días).
 - Exportar CSV del resumen del equipo.
 
+### Decisiones de implementación (Tarea 6)
+- **Acceso**: tras iniciar sesión el portal llama `joinOrg`; solo un perfil `admin` + `active` entra. Cualquier otro (colaborador, desactivado, sin invitación, otro dominio) ve "Sin acceso" con el motivo. Prod: `signInWithPopup` con `hd` = dominio (solo sugerencia; el dominio lo exige `joinOrg`). Dev (`vite --mode development`): emuladores + login con correo simulado; ese código queda fuera del build prod (`scripts/check-build.ts` lo verifica).
+- **Días y rangos** en America/Santiago (Hoy, Ayer, Esta semana lun–dom, Últimos 7 días, Este mes, Personalizado). El inicio de cada día se busca como el primer instante con esa fecha (en Chile el cambio de hora es a medianoche: hay días de 23 y 25 h).
+- **Consultas**: `activity` por `slotStart ∈ [desde, hasta)` (y `uid` en el detalle); `sessions` con `startedAt ∈ [desde − 24 h, hasta)` más todas las abiertas (`endedAt == null`), para incluir jornadas que empezaron antes del rango; `screenshots` por `uid` + `takenAt`. Lectura paginada de 1000 en 1000. Usa los índices existentes.
+- **"Horas"** = tiempo de jornada recortado al rango (abiertas hasta su último latido); debajo, "medidas" = suma de `trackedSeconds`. "En jornada" es el estado actual (`isSessionLive`), sin importar el rango. Colaboradores desactivados aparecen solo si tienen datos en el rango. Con el rango que incluye hoy se refresca cada 60 s.
+- **Niveles de actividad** (tabla, línea de tiempo y leyenda): baja < 40 %, media 40–69 %, alta ≥ 70 %. La línea de tiempo muestra filas por hora (6 bloques) desde la primera hasta la última hora con datos o captura.
+- **Capturas**: miniaturas con `getDownloadURL` (las subidas por la API de Firebase Storage traen token de descarga) cargadas al entrar en pantalla; lightbox con hora, "Difuminada", anterior/siguiente y Esc.
+- **Invitaciones**: pendiente → Reenviar (status `pending`, `invitedBy` = admin actual, `invitedAt` nuevo y siempre mayor que el anterior, sin `acceptedAt`) o Revocar; revocada → "Invitar de nuevo"; aceptada → se gestiona en Colaboradores. El formulario rechaza otro dominio, correos ya registrados o con invitación pendiente/aceptada. "Copiar enlace de instalación" usa `VITE_EXTENSION_INSTALL_URL`.
+- **Configuración**: se guarda siempre el documento completo (6 campos, `updatedBy` = admin, `updatedAt` entero). El dominio es de solo lectura hasta pulsar "Cambiar", que muestra una advertencia.
+- **Tema** claro/oscuro según el sistema, con botón para forzarlo (se recuerda en `localStorage` del navegador).
+
 ## 8. Extensión (popup)
 - Sin sesión → "Iniciar sesión con Google".
 - Sin consentimiento → pantalla de aviso + aceptar.
