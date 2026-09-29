@@ -1,0 +1,132 @@
+# Spec — Registro de jornada y actividad (extensión Chrome + portal admin)
+
+Fecha: 2026-09-29 · Estado: en construcción (MVP, uso interno ~30 personas)
+
+## 1. Objetivo
+
+Versión simple tipo Hubstaff para uso interno:
+
+1. El **admin** invita colaboradores por correo desde un **portal web**.
+2. El **colaborador** instala una **extensión de Chrome**, inicia sesión con su cuenta Google Workspace, **inicia y cierra jornada**.
+3. Mientras la jornada está abierta la extensión mide:
+   - **Nivel de actividad**: % del tiempo con uso de teclado/mouse.
+   - **Sitios web**: tiempo por dominio/URL en Chrome (y tiempo "fuera de Chrome").
+   - **Capturas de pantalla** opcionales de la pestaña visible, con difuminado opcional.
+4. El admin ve todo en la **reportería del portal**.
+
+### Fuera de alcance (MVP)
+- Apps de escritorio (Word/Excel instalados, WhatsApp desktop, etc.): la extensión solo sabe que el usuario estuvo "fuera de Chrome".
+- Captura de pantalla completa (requiere compartir pantalla); solo pestaña visible.
+- Proyectos/tareas, presupuestos, pagos, facturación, multiempresa.
+- Otros navegadores (Edge, Firefox).
+
+## 2. Decisiones
+
+| Tema | Decisión | Motivo |
+|---|---|---|
+| Backend | **Firebase** (Auth, Firestore, Cloud Storage, Cloud Functions, Hosting) en Google Cloud | Pedido del usuario; encaja con Google Workspace |
+| Login | Google (Workspace) vía `chrome.identity.getAuthToken` en extensión y `signInWithPopup` en portal. Solo dominio permitido (`ALLOWED_DOMAIN`) | Ya usan Workspace; sin contraseñas |
+| Invitación | Admin ingresa correo → doc `invitations/{email}` → Cloud Function envía correo (SMTP vía nodemailer, credenciales en Secret Manager). En emulador, el correo se registra en log. El portal además muestra un enlace copiable | "Admin manda la invitación" sin depender de un proveedor externo |
+| Alta | Al primer login, callable `joinOrg` verifica invitación (o que el correo esté en `BOOTSTRAP_ADMINS`) y crea `users/{uid}` con su rol. El cliente nunca escribe su rol | Seguridad |
+| Distribución extensión | Chrome Web Store "no listada" + instalación forzada por política de Google Workspace | No se puede desinstalar; se actualiza sola |
+| Capturas | `chrome.tabs.captureVisibleTab`, 1 por bloque de 10 min en instante aleatorio, reducida a ≤1280 px ancho, JPEG, difuminado opcional hecho **en el dispositivo antes de subir** | "Todo vive en la extensión"; privacidad |
+| Retención | Capturas se borran a los **90 días** (configurable en portal). Horas y actividad se conservan | Costo acotado |
+| Stack | TypeScript. Extensión MV3 empaquetada con Vite. Portal React + Vite. Functions Node 22. Tests con Vitest + Emulator Suite | Un solo lenguaje |
+| Monorepo | npm workspaces: `packages/shared`, `extension`, `portal`, `functions` | Tipos y lógica compartidos |
+
+## 3. Cómo se mide
+
+Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 09:10…).
+
+### 3.1 Actividad
+- **Dentro de Chrome**: content script en todas las páginas escucha `keydown`, `mousedown`, `mousemove`, `wheel`, `touchstart` (solo el hecho, nunca qué tecla ni contenido) y avisa al service worker como máximo 1 vez por segundo. Se marca ese segundo como activo.
+- **Fuera de Chrome o en páginas sin content script** (chrome://, Web Store, PDF): `chrome.idle` con umbral de 15 s. Mientras el estado es `active`, los segundos cuentan como activos; en `idle`/`locked` no.
+- `activityPercent = segundosActivos / segundosMedidos` del bloque. Un segundo cuenta una sola vez aunque venga de ambas fuentes.
+
+### 3.2 Sitios
+- Se registra la pestaña activa de la ventana enfocada (`tabs.onActivated`, `tabs.onUpdated`, `windows.onFocusChanged`).
+- Tiempo acumulado por **dominio** y por **URL sin query ni hash** (se descartan parámetros para no guardar datos sensibles). Top 20 URLs por bloque.
+- Si ninguna ventana de Chrome está enfocada → `outsideChromeSeconds`.
+- Pestañas de incógnito no se miden (la extensión no está habilitada en incógnito).
+
+### 3.3 Capturas
+- Si `screenshotsEnabled` y la ventana de Chrome está enfocada en el instante sorteado → captura. Si no, se registra "sin captura: fuera de Chrome".
+- Difuminado (`blurScreenshots`) con `OffscreenCanvas` + filtro blur en el service worker, antes de subir.
+- Subida a `screenshots/{uid}/{fecha}/{id}.jpg` en Storage + doc metadatos.
+
+### 3.4 Envío
+- El bloque en curso se sube (upsert, id determinista `uid_slotStartMs`, idempotente) cada ~60 s y al cerrarse; el latido de la sesión (`lastHeartbeatAt`) se actualiza en el mismo ciclo. Así el admin ve casi en tiempo real.
+
+### 3.5 Modo desarrollo
+- Build `dev` apunta a los emuladores de Firebase y reemplaza `chrome.identity` por un login con correo simulado (credencial Google falsa aceptada por el emulador de Auth). El build `prod` no incluye ese código.
+
+### 3.6 Robustez
+- El service worker MV3 puede dormirse: estado en `chrome.storage.local`, `chrome.alarms` cada 30 s como pulso; al despertar reconstruye el estado.
+- Sin conexión: los bloques cerrados y capturas quedan en cola local y se suben al volver.
+- Si el navegador se cierra con la jornada abierta, al reabrir la jornada sigue abierta; los minutos sin datos quedan como "sin datos" (no se inventan). Jornada abierta más de 16 h se cierra automáticamente en el último latido.
+
+## 4. Transparencia (Chile)
+- Primera vez: pantalla en la extensión que explica qué se mide y qué no; el colaborador debe aceptar (se guarda `consentAcceptedAt` y versión).
+- Ícono con insignia "ON" durante la jornada; popup muestra qué se está midiendo (actividad, sitios, capturas sí/no, difuminado sí/no).
+- Solo se mide con jornada iniciada.
+- El colaborador ve sus propias horas del día en el popup.
+- Nota: validar con abogado laboral e incorporar al reglamento interno. No es asesoría legal.
+
+## 5. Modelo de datos (Firestore)
+
+```
+config/org                 { allowedDomain, screenshotsEnabled, blurScreenshots,
+                             screenshotRetentionDays, updatedAt, updatedBy }
+invitations/{emailLower}   { email, invitedBy, invitedAt, status: pending|accepted|revoked, acceptedAt? }
+users/{uid}                { email, displayName, photoURL, role: admin|member,
+                             status: active|disabled, createdAt, consentAcceptedAt?, consentVersion? }
+sessions/{sessionId}       { uid, startedAt, endedAt|null, endReason: manual|auto|null, lastHeartbeatAt }
+activity/{uid_slotStartMs} { uid, sessionId, slotStart, trackedSeconds, activeSeconds,
+                             outsideChromeSeconds, domains: {domain: seconds}, urls: [{url, seconds}] }
+screenshots/{id}           { uid, sessionId, takenAt, storagePath, blurred, width, height }
+```
+
+Reglas:
+- Colaborador: lee `config/org` y su propio `users/{uid}`; crea/actualiza sus `sessions`, `activity`, `screenshots` (con `uid == auth.uid`, sin cambiar `uid`); lee lo suyo.
+- Admin (`users/{uid}.role == 'admin'`, status active): lee todo; escribe `config/org`, `invitations`, cambia `role`/`status` de usuarios.
+- Nadie escribe su propio `role`/`status`; `users` se crea solo desde Functions.
+- Storage: colaborador sube solo a `screenshots/{suUid}/…`, `image/jpeg`, <1 MB; admin lee todo; colaborador lee lo suyo.
+
+## 6. Cloud Functions
+- `joinOrg` (callable): valida dominio + invitación/bootstrap admin; crea `users/{uid}`, marca invitación `accepted`. Idempotente.
+- `onInvitationCreated` (trigger Firestore): envía correo con link de instalación; si no hay SMTP configurado, log.
+- `purgeOldScreenshots` (programada diaria): borra archivos y docs más antiguos que `screenshotRetentionDays`.
+- `autoCloseStaleSessions` (programada cada hora): cierra jornadas sin latido hace >30 min o >16 h abiertas, `endedAt = lastHeartbeatAt`, `endReason = auto`.
+
+## 7. Portal admin (React)
+- **Login** con Google; si no es admin → "Sin acceso".
+- **Equipo hoy / rango de fechas**: tabla por colaborador — estado (en jornada / fuera), horas, % actividad promedio, tiempo fuera de Chrome, última actividad.
+- **Detalle de colaborador**: selector de fecha; jornadas del día; línea de tiempo de bloques de 10 min coloreada por % actividad; top dominios y URLs; galería de capturas (click para ampliar).
+- **Invitaciones**: invitar por correo, ver pendientes/aceptadas, revocar, copiar enlace.
+- **Colaboradores**: cambiar rol, desactivar.
+- **Configuración**: capturas sí/no, difuminado sí/no, retención (días).
+- Exportar CSV del resumen del equipo.
+
+## 8. Extensión (popup)
+- Sin sesión → "Iniciar sesión con Google".
+- Sin consentimiento → pantalla de aviso + aceptar.
+- Sin invitación → "Pide a tu admin que te invite".
+- Normal → botón grande **Iniciar jornada / Cerrar jornada**, cronómetro de la jornada, horas de hoy, % actividad de hoy, qué se mide.
+
+## 9. Criterios de aceptación
+1. Admin invita `x@dominio`; se crea invitación y se envía (o registra) correo.
+2. `x` inicia sesión en la extensión, acepta aviso, queda como `member`. Un correo sin invitación o de otro dominio es rechazado.
+3. Iniciar jornada crea `sessions` abierta; cerrar la marca cerrada. Badge ON/OFF.
+4. Con jornada abierta, cada 10 min aparece un doc `activity` con `activeSeconds ≤ trackedSeconds ≤ 600`, dominios y tiempo fuera de Chrome.
+5. Con capturas activas, aparecen capturas (difuminadas si está activo) en Storage y en el portal.
+6. Portal muestra horas y % actividad por colaborador y el detalle por día.
+7. Un `member` no puede leer datos de otros ni cambiar su rol (tests de reglas).
+8. Capturas más antiguas que la retención se borran.
+9. Tests unitarios, de reglas y de functions pasan; typecheck y build de los 3 paquetes pasan.
+
+## 10. Pasos que requieren al usuario (despliegue, fuera de este MVP local)
+- Crear proyecto Firebase (plan **Blaze**, requerido por Storage y Functions; costo estimado para 30 personas: bajo, del orden de USD 0–5/mes).
+- Crear cliente OAuth tipo "Extensión de Chrome" con el ID de la extensión.
+- Configurar SMTP para correos (ej. cuenta Workspace con contraseña de aplicación) en Secret Manager.
+- Publicar extensión (cuenta de desarrollador Chrome, USD 5 único) y forzar instalación en la consola de Workspace.
+- Autorizar el despliegue (`firebase deploy`).
