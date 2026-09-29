@@ -2,6 +2,12 @@
  * Screenshot retention (spec section 6, `purgeOldScreenshots`): deletes the
  * Storage file and the `screenshots/{id}` doc of every capture older than
  * `config/org.screenshotRetentionDays` (default 90). Hours and activity are kept.
+ *
+ * A second pass sweeps Storage for orphan files (uploaded but whose metadata
+ * doc was never written, e.g. the offline queue uploaded the file and then the
+ * doc write failed): any file under `screenshots/` created before the cutoff is
+ * deleted. A file is always created after its capture (`takenAt` <= upload
+ * time), so this never removes a capture that is still inside the retention.
  */
 import type { DocumentSnapshot, Firestore } from 'firebase-admin/firestore';
 import {
@@ -14,9 +20,24 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** A listed Storage object (slice of `@google-cloud/storage` File). */
+export interface StoredFileLike {
+  name: string;
+  metadata: { timeCreated?: string | undefined };
+  delete(options?: { ignoreNotFound?: boolean }): Promise<unknown>;
+}
+
+export interface ListFilesQuery {
+  prefix: string;
+  autoPaginate: false;
+  maxResults: number;
+  pageToken?: string;
+}
+
 /** Minimal slice of a Cloud Storage bucket, so tests can inject fakes. */
 export interface BucketLike {
   file(path: string): { delete(options?: { ignoreNotFound?: boolean }): Promise<unknown> };
+  getFiles(query: ListFilesQuery): Promise<[StoredFileLike[], { pageToken?: string } | null | undefined, ...unknown[]]>;
 }
 
 export interface PurgeDeps {
@@ -25,6 +46,8 @@ export interface PurgeDeps {
   now: number;
   /** Docs per page (and per batched delete). Max 500. */
   pageSize?: number;
+  /** Files per Storage listing page in the orphan sweep. Default 1000. */
+  filePageSize?: number;
   logger?: { warn(message: string, data?: unknown): void };
 }
 
@@ -35,6 +58,8 @@ export interface PurgeResult {
   deletedFiles: number;
   /** Docs kept because their file could not be deleted (retried next run). */
   failed: number;
+  /** Files without metadata doc, older than the cutoff, deleted by the sweep. */
+  deletedOrphanFiles: number;
 }
 
 export function retentionDaysOf(value: unknown): number {
@@ -62,7 +87,7 @@ export async function purgeOldScreenshotsCore(deps: PurgeDeps): Promise<PurgeRes
   const retentionDays = retentionDaysOf(configSnap.get('screenshotRetentionDays'));
   const cutoff = now - retentionDays * DAY_MS;
 
-  const result: PurgeResult = { retentionDays, cutoff, deletedDocs: 0, deletedFiles: 0, failed: 0 };
+  const result: PurgeResult = { retentionDays, cutoff, deletedDocs: 0, deletedFiles: 0, failed: 0, deletedOrphanFiles: 0 };
   const base = db
     .collection(COLLECTIONS.screenshots)
     .where('takenAt', '<', cutoff)
@@ -111,5 +136,39 @@ export async function purgeOldScreenshotsCore(deps: PurgeDeps): Promise<PurgeRes
 
     if (page.size < pageSize) break;
   }
+
+  await sweepOrphanFiles(deps, cutoff, result);
   return result;
+}
+
+/** Deletes every file under `screenshots/` created before `cutoff`. */
+async function sweepOrphanFiles(deps: PurgeDeps, cutoff: number, result: PurgeResult): Promise<void> {
+  const { bucket } = deps;
+  let pageToken: string | undefined;
+  do {
+    const query: ListFilesQuery = {
+      prefix: `${SCREENSHOTS_STORAGE_ROOT}/`,
+      autoPaginate: false,
+      maxResults: Math.min(Math.max(deps.filePageSize ?? 1000, 1), 1000),
+      ...(pageToken ? { pageToken } : {}),
+    };
+    const [files, next] = await bucket.getFiles(query);
+    await Promise.all(
+      files.map(async (file) => {
+        const created = Date.parse(file.metadata.timeCreated ?? '');
+        if (!Number.isFinite(created) || created >= cutoff) return;
+        try {
+          await file.delete({ ignoreNotFound: true });
+          result.deletedOrphanFiles += 1;
+        } catch (err) {
+          result.failed += 1;
+          deps.logger?.warn('No se pudo borrar un archivo huérfano; se reintenta mañana', {
+            storagePath: file.name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }),
+    );
+    pageToken = next?.pageToken || undefined;
+  } while (pageToken);
 }

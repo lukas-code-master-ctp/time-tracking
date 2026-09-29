@@ -94,6 +94,21 @@ describe('joinOrgCore: invited member', () => {
     expect(await getDoc('config/org')).toBeUndefined();
   });
 
+  it('matches the invitation case-insensitively (token email with capitals)', async () => {
+    await seed({ 'invitations/ana@compratuparcela.cl': invitation() });
+    const res = await joinOrgCore(deps(), caller({ email: ' Ana@CompraTuParcela.CL ' }));
+    expect(res.profile).toMatchObject({ email: 'ana@compratuparcela.cl', role: 'member' });
+    expect(await getDoc<Invitation>('invitations/ana@compratuparcela.cl')).toMatchObject({ status: 'accepted' });
+  });
+
+  it('rejects subdomains and look-alike domains even with a matching invitation id', async () => {
+    for (const email of ['ana@x.compratuparcela.cl', 'ana@compratuparcela.cl.evil.test', 'ana@evilcompratuparcela.cl']) {
+      await seed({ [`invitations/${email}`]: invitation({ email }) });
+      await rejectsWith(joinOrgCore(deps(), caller({ email })), 'permission-denied', 'domain-not-allowed');
+    }
+    expect((await db().collection('users').get()).size).toBe(0);
+  });
+
   it('accepts an already accepted invitation (user doc was removed) without changing it', async () => {
     const accepted = invitation({ status: 'accepted', acceptedAt: NOW - 500 });
     await seed({ 'invitations/ana@compratuparcela.cl': accepted });
