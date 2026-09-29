@@ -54,6 +54,16 @@ service cloud.firestore {
       return signedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // Client timestamps may not be in the future (tolerates 15 min of clock skew).
+    // Past values are allowed: the offline queue uploads late.
+    function notFuture(ms) {
+      return ms <= request.time.toMillis() + 15 * 60 * 1000;
+    }
+
+    function SLOT_MS() {
+      return 600000;
+    }
+
     // ---------- config/org ----------
 
     function validOrgConfig(d) {
@@ -97,7 +107,10 @@ service cloud.firestore {
         && incoming().invitedBy == request.auth.uid;
       allow update: if isAdmin()
         && validInvitation(incoming(), emailId)
-        && incoming().email == resource.data.email;
+        && incoming().email == resource.data.email
+        // Re-inviting records the caller; nobody attributes it to someone else.
+        && (incoming().invitedBy == resource.data.invitedBy
+            || incoming().invitedBy == request.auth.uid);
       allow delete: if isAdmin();
     }
 
@@ -138,7 +151,12 @@ service cloud.firestore {
         && d.startedAt is int
         && isNullableInt(d.endedAt)
         && (d.endReason == null || d.endReason in ['manual', 'auto'])
-        && d.lastHeartbeatAt is int;
+        && d.lastHeartbeatAt is int
+        // Open <=> no endReason; closed => endReason set and endedAt coherent.
+        && ((d.endedAt == null) == (d.endReason == null))
+        && d.startedAt >= 0 && notFuture(d.startedAt)
+        && d.lastHeartbeatAt >= d.startedAt && notFuture(d.lastHeartbeatAt)
+        && (d.endedAt == null || (d.endedAt >= d.startedAt && notFuture(d.endedAt)));
     }
 
     match /sessions/{sessionId} {
@@ -150,8 +168,12 @@ service cloud.firestore {
         && incoming().endedAt == null
         && incoming().endReason == null;
 
+      // Only open sessions change (heartbeat / close). A closed session
+      // (manually or by autoCloseStaleSessions) is immutable, so hours cannot
+      // be rewritten nor a session reopened.
       allow update: if isActive()
         && ownsExisting()
+        && resource.data.endedAt == null
         && validSessionFields(incoming())
         && changedKeys().hasOnly(['lastHeartbeatAt', 'endedAt', 'endReason']);
 
@@ -168,6 +190,7 @@ service cloud.firestore {
         && d.uid == request.auth.uid
         && d.sessionId is string && d.sessionId.size() > 0
         && d.slotStart is int && d.slotStart >= 0
+        && d.slotStart % SLOT_MS() == 0 && notFuture(d.slotStart)
         && docId == d.uid + '_' + string(d.slotStart)
         && d.trackedSeconds is number
         && d.trackedSeconds >= 0 && d.trackedSeconds <= 600
@@ -200,7 +223,7 @@ service cloud.firestore {
                             'width', 'height'])
         && d.uid == request.auth.uid
         && d.sessionId is string && d.sessionId.size() > 0
-        && d.takenAt is int
+        && d.takenAt is int && d.takenAt >= 0 && notFuture(d.takenAt)
         && d.storagePath is string
         && d.storagePath.matches('screenshots/' + d.uid + '/[0-9]{4}-[0-9]{2}-[0-9]{2}/[^/]+[.]jpg')
         && d.blurred is bool
@@ -213,10 +236,12 @@ service cloud.firestore {
 
       allow create: if isActive() && validScreenshot(incoming());
 
-      // Re-uploading the same metadata (offline queue retry) is allowed.
+      // Re-uploading the same metadata (offline queue retry) is allowed, but
+      // existing metadata cannot be altered (no swapping storagePath/takenAt).
       allow update: if isActive()
         && ownsExisting()
-        && validScreenshot(incoming());
+        && validScreenshot(incoming())
+        && changedKeys().size() == 0;
 
       allow delete: if false;
     }

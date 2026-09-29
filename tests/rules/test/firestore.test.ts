@@ -173,6 +173,20 @@ describe('invitations', () => {
     );
   });
 
+  it('re-invite by update records the caller, never someone else', async () => {
+    await seed(env, {
+      'users/admin2': profile({ email: 'admin2@compratuparcela.cl', role: 'admin' }),
+      [`invitations/${email}`]: invitation(email, { status: 'revoked' }),
+    });
+    await assertFails(
+      db('admin').doc(`invitations/${email}`).update({ invitedBy: 'bob', status: 'pending' }),
+    );
+    await assertFails(db('admin').doc(`invitations/${email}`).update({ email: 'otro@compratuparcela.cl' }));
+    await assertSucceeds(
+      db('admin2').doc(`invitations/${email}`).update({ invitedBy: 'admin2', invitedAt: NOW + 1, status: 'pending' }),
+    );
+  });
+
   it('member, disabled admin and anonymous cannot touch invitations', async () => {
     await seed(env, { [`invitations/${email}`]: invitation(email) });
     for (const uid of ['alice', 'eve', 'nodoc', null]) {
@@ -317,6 +331,52 @@ describe('sessions', () => {
     await assertFails(alice.collection('sessions').where('uid', '==', 'bob').get());
   });
 
+  it('closed sessions are immutable (no reopen, no rewriting hours)', async () => {
+    await seed(env, {
+      'sessions/m': session('alice', { endedAt: NOW + 60_000, endReason: 'manual', lastHeartbeatAt: NOW + 60_000 }),
+      'sessions/a': session('alice', { endedAt: NOW + 60_000, endReason: 'auto', lastHeartbeatAt: NOW + 60_000 }),
+    });
+    const alice = db('alice');
+    await assertFails(alice.doc('sessions/m').update({ endedAt: null, endReason: null }));
+    await assertFails(alice.doc('sessions/m').update({ endedAt: NOW + 3_600_000 }));
+    await assertFails(alice.doc('sessions/m').update({ endReason: 'auto' }));
+    // Late heartbeat after autoCloseStaleSessions closed it: rejected.
+    await assertFails(alice.doc('sessions/a').update({ lastHeartbeatAt: NOW + 120_000 }));
+  });
+
+  it('endedAt/endReason must be coherent and times ordered and not in the future', async () => {
+    await seed(env, { 'sessions/s1': session('alice') });
+    const alice = db('alice');
+    await assertFails(alice.doc('sessions/s1').update({ endedAt: NOW + 1000 }));
+    await assertFails(alice.doc('sessions/s1').update({ endReason: 'manual' }));
+    await assertFails(alice.doc('sessions/s1').update({ endedAt: NOW - 1000, endReason: 'manual' }));
+    await assertFails(alice.doc('sessions/s1').update({ lastHeartbeatAt: NOW - 1000 }));
+    await assertFails(alice.doc('sessions/s1').update({ lastHeartbeatAt: Date.now() + 60 * 60_000 }));
+    await assertFails(
+      alice.doc('sessions/s1').update({ endedAt: Date.now() + 60 * 60_000, endReason: 'manual' }),
+    );
+    await assertFails(
+      alice.doc('sessions/s2').set(session('alice', { startedAt: Date.now() + 60 * 60_000, lastHeartbeatAt: Date.now() + 60 * 60_000 })),
+    );
+    await assertSucceeds(alice.doc('sessions/s1').update({ endedAt: NOW + 1000, endReason: 'auto', lastHeartbeatAt: NOW + 1000 }));
+  });
+
+  it('member lists own sessions by startedAt range; admin lists open sessions', async () => {
+    await seed(env, {
+      'sessions/s1': session('alice'),
+      'sessions/s2': session('bob'),
+    });
+    await assertSucceeds(
+      db('alice').collection('sessions').where('uid', '==', 'alice')
+        .where('startedAt', '>=', NOW - 1000).where('startedAt', '<', NOW + 1000).get(),
+    );
+    await assertFails(db('alice').collection('sessions').where('endedAt', '==', null).get());
+    await assertSucceeds(db('admin').collection('sessions').where('endedAt', '==', null).get());
+    await assertSucceeds(
+      db('admin').collection('sessions').where('startedAt', '>=', NOW - 1000).where('startedAt', '<', NOW + 1000).get(),
+    );
+  });
+
   it("member cannot update someone else's session", async () => {
     await seed(env, { 'sessions/s2': session('bob') });
     await assertFails(db('alice').doc('sessions/s2').update({ lastHeartbeatAt: NOW + 1 }));
@@ -413,6 +473,79 @@ describe('activity', () => {
     await assertFails(db('nodoc').doc(`activity/${activityDocId('nodoc', SLOT)}`).set(activity('nodoc')));
   });
 
+  it('partial merge on an existing doc is validated against the resulting doc', async () => {
+    await seed(env, { [`activity/${aliceId}`]: activity('alice', { trackedSeconds: 300, activeSeconds: 100, outsideChromeSeconds: 0 }) });
+    const ref = db('alice').doc(`activity/${aliceId}`);
+    await assertSucceeds(ref.set({ trackedSeconds: 360, activeSeconds: 150 }, { merge: true }));
+    // Resulting doc would have activeSeconds (400) > trackedSeconds (360).
+    await assertFails(ref.set({ activeSeconds: 400 }, { merge: true }));
+    await assertFails(ref.set({ keystrokes: 5 }, { merge: true }));
+    await assertFails(ref.set({ uid: 'bob' }, { merge: true }));
+    await assertFails(ref.set({ slotStart: SLOT + 600_000 }, { merge: true }));
+    await assertFails(ref.set({ urls: 'x' }, { merge: true }));
+  });
+
+  it('upsert with merge and dotted domain keys (extension sync every ~60 s)', async () => {
+    const ref = db('alice').doc(`activity/${aliceId}`);
+    await assertSucceeds(
+      ref.set(
+        activity('alice', { trackedSeconds: 60, activeSeconds: 30, outsideChromeSeconds: 0, domains: { 'docs.google.com': 60 } }),
+        { merge: true },
+      ),
+    );
+    await assertSucceeds(
+      ref.set(
+        activity('alice', { trackedSeconds: 120, activeSeconds: 70, outsideChromeSeconds: 10, domains: { 'docs.google.com': 90, 'mail.google.com': 20 } }),
+        { merge: true },
+      ),
+    );
+    const snap = await ref.get();
+    const domains = snap.data()?.domains as Record<string, number>;
+    if (domains['docs.google.com'] !== 90 || domains['mail.google.com'] !== 20) {
+      throw new Error(`unexpected domains ${JSON.stringify(domains)}`);
+    }
+  });
+
+  it('slotStart must be aligned to 10 min and not in the future', async () => {
+    const alice = db('alice');
+    const odd = SLOT + 1000;
+    await assertFails(alice.doc(`activity/${activityDocId('alice', odd)}`).set(activity('alice', { slotStart: odd })));
+    const future = Math.floor((Date.now() + 60 * 60_000) / 600_000) * 600_000;
+    await assertFails(
+      alice.doc(`activity/${activityDocId('alice', future)}`).set(activity('alice', { slotStart: future })),
+    );
+    const current = Math.floor(Date.now() / 600_000) * 600_000;
+    await assertSucceeds(
+      alice.doc(`activity/${activityDocId('alice', current)}`).set(
+        activity('alice', { slotStart: current, trackedSeconds: 10, activeSeconds: 5, outsideChromeSeconds: 0 }),
+      ),
+    );
+  });
+
+  it('popup lists own activity of the day; admin lists everyone by range', async () => {
+    await seed(env, {
+      [`activity/${aliceId}`]: activity('alice'),
+      [`activity/${activityDocId('bob', SLOT)}`]: activity('bob'),
+    });
+    const from = SLOT - 3_600_000;
+    const to = SLOT + 3_600_000;
+    await assertSucceeds(
+      db('alice').collection('activity').where('uid', '==', 'alice')
+        .where('slotStart', '>=', from).where('slotStart', '<', to).orderBy('slotStart').get(),
+    );
+    await assertFails(
+      db('alice').collection('activity').where('slotStart', '>=', from).where('slotStart', '<', to).get(),
+    );
+    await assertSucceeds(
+      db('admin').collection('activity').where('slotStart', '>=', from).where('slotStart', '<', to).get(),
+    );
+    await assertSucceeds(
+      db('admin').collection('activity').where('uid', '==', 'bob').where('slotStart', '>=', from).get(),
+    );
+    // A disabled user still reads its own history.
+    await assertSucceeds(db('dave').collection('activity').where('uid', '==', 'dave').get());
+  });
+
   it('nobody deletes activity', async () => {
     await seed(env, { [`activity/${aliceId}`]: activity('alice') });
     await assertFails(db('alice').doc(`activity/${aliceId}`).delete());
@@ -441,7 +574,38 @@ describe('screenshots metadata', () => {
     await seed(env, { 'screenshots/shot1': screenshot('alice') });
     await assertFails(db('alice').doc('screenshots/shot1').update({ uid: 'bob' }));
     await assertFails(db('bob').doc('screenshots/shot1').set(screenshot('bob')));
-    await assertSucceeds(db('alice').doc('screenshots/shot1').set(screenshot('alice', { blurred: true })));
+    // Retry with identical metadata (offline queue) is fine...
+    await assertSucceeds(db('alice').doc('screenshots/shot1').set(screenshot('alice')));
+    // ...but existing metadata cannot be altered.
+    await assertFails(db('alice').doc('screenshots/shot1').set(screenshot('alice', { blurred: true })));
+    await assertFails(
+      db('alice').doc('screenshots/shot1').update({ storagePath: 'screenshots/alice/2026-09-29/otra.jpg' }),
+    );
+    await assertFails(db('alice').doc('screenshots/shot1').update({ takenAt: NOW - 1000 }));
+  });
+
+  it('takenAt cannot be in the future', async () => {
+    await assertFails(
+      db('alice').doc('screenshots/f').set(screenshot('alice', { takenAt: Date.now() + 60 * 60_000 })),
+    );
+    await assertSucceeds(db('alice').doc('screenshots/f').set(screenshot('alice', { takenAt: Date.now() })));
+  });
+
+  it('member lists own screenshots by time range; admin lists by range', async () => {
+    await seed(env, {
+      'screenshots/a': screenshot('alice'),
+      'screenshots/b': screenshot('bob'),
+    });
+    await assertSucceeds(
+      db('alice').collection('screenshots').where('uid', '==', 'alice')
+        .where('takenAt', '>=', NOW - 1000).where('takenAt', '<', NOW + 1000).get(),
+    );
+    await assertFails(
+      db('alice').collection('screenshots').where('takenAt', '>=', NOW - 1000).get(),
+    );
+    await assertSucceeds(
+      db('admin').collection('screenshots').where('takenAt', '>=', NOW - 1000).where('takenAt', '<', NOW + 1000).get(),
+    );
   });
 
   it('member reads own screenshots only; admin reads all', async () => {
