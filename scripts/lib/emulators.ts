@@ -10,8 +10,9 @@ import { EMULATOR_PORTS, FIREBASE_DEMO_PROJECT_ID } from '@timetracking/shared';
 export const PROJECT = FIREBASE_DEMO_PROJECT_ID;
 export const BUCKET = `${PROJECT}.appspot.com`;
 /** BOOTSTRAP_ADMINS in functions/.env.demo-timetracking. */
-export const ADMIN_EMAIL = 'jefa@compratuparcela.cl';
-export const DOMAIN = 'compratuparcela.cl';
+export const ADMIN_EMAIL = 'lukas@impulseai.cl';
+/** ALLOWED_DOMAIN in functions/.env.demo-timetracking (two Workspace organizations). */
+export const DOMAINS: readonly string[] = ['impulseai.cl', 'compratuparcela.cl'];
 
 /** Sets the `*_EMULATOR_HOST` variables (Admin SDK) unless already defined. */
 export function useEmulatorEnv(): void {

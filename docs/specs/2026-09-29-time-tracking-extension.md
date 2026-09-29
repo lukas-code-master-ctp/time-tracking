@@ -2,6 +2,8 @@
 
 Fecha: 2026-09-29 · Estado: en construcción (MVP, uso interno ~30 personas)
 
+> **Actualización:** el dominio permitido único pasó a ser una **lista de dominios** (`allowedDomains`, hoy `impulseai.cl` y `compratuparcela.cl`) y el admin inicial es `lukas@impulseai.cl`. Ver [spec multi-dominio](2026-09-29-multi-dominio.md). Las secciones afectadas lo indican.
+
 ## 1. Objetivo
 
 Versión simple tipo Hubstaff para uso interno:
@@ -25,10 +27,10 @@ Versión simple tipo Hubstaff para uso interno:
 | Tema | Decisión | Motivo |
 |---|---|---|
 | Backend | **Firebase** (Auth, Firestore, Cloud Storage, Cloud Functions, Hosting) en Google Cloud | Pedido del usuario; encaja con Google Workspace |
-| Login | Google (Workspace) vía `chrome.identity.getAuthToken` en extensión y `signInWithPopup` en portal. Solo dominio permitido (`ALLOWED_DOMAIN`) | Ya usan Workspace; sin contraseñas |
+| Login | Google (Workspace) vía `chrome.identity.getAuthToken` en extensión y `signInWithPopup` en portal. Solo dominios permitidos (`ALLOWED_DOMAIN`, lista separada por comas; ver [spec multi-dominio](2026-09-29-multi-dominio.md)) | Ya usan Workspace; sin contraseñas |
 | Invitación | Admin ingresa correo → doc `invitations/{email}` → Cloud Function envía correo (SMTP vía nodemailer, credenciales en Secret Manager). En emulador, el correo se registra en log. El portal además muestra un enlace copiable | "Admin manda la invitación" sin depender de un proveedor externo |
 | Alta | Al primer login, callable `joinOrg` verifica invitación (o que el correo esté en `BOOTSTRAP_ADMINS`) y crea `users/{uid}` con su rol. El cliente nunca escribe su rol | Seguridad |
-| Distribución extensión | Chrome Web Store "no listada" + instalación forzada por política de Google Workspace | No se puede desinstalar; se actualiza sola |
+| Distribución extensión | Chrome Web Store "no listada" + instalación forzada por política de Google Workspace (en la consola de **cada** organización; ver [spec multi-dominio](2026-09-29-multi-dominio.md)) | No se puede desinstalar; se actualiza sola |
 | Capturas | `chrome.tabs.captureVisibleTab`, 1 por bloque de 10 min en instante aleatorio, reducida a ≤1280 px ancho, JPEG, difuminado opcional hecho **en el dispositivo antes de subir** | "Todo vive en la extensión"; privacidad |
 | Retención | Capturas se borran a los **90 días** (configurable en portal). Horas y actividad se conservan | Costo acotado |
 | Stack | TypeScript. Extensión MV3 empaquetada con Vite. Portal React + Vite. Functions Node 22. Tests con Vitest + Emulator Suite | Un solo lenguaje |
@@ -77,7 +79,7 @@ Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 
 ## 5. Modelo de datos (Firestore)
 
 ```
-config/org                 { allowedDomain, screenshotsEnabled, blurScreenshots,
+config/org                 { allowedDomains, screenshotsEnabled, blurScreenshots,
                              screenshotRetentionDays, updatedAt, updatedBy }
 invitations/{emailLower}   { email, invitedBy, invitedAt, status: pending|accepted|revoked, acceptedAt? }
 users/{uid}                { email, displayName, photoURL, role: admin|member,
@@ -88,6 +90,8 @@ activity/{uid_slotStartMs} { uid, sessionId, slotStart, trackedSeconds, activeSe
 screenshots/{id}           { uid, sessionId, takenAt, storagePath, blurred, width, height }
 ```
 
+> **Actualización:** `config/org.allowedDomain: string` se reemplazó por `allowedDomains: string[]` (1–10 dominios normalizados, sin duplicados; las reglas exigen los mismos 6 campos). Los docs antiguos con `allowedDomain` se leen como `[allowedDomain]`. Ver [spec multi-dominio](2026-09-29-multi-dominio.md).
+
 Reglas:
 - Colaborador: lee `config/org` y su propio `users/{uid}`; crea/actualiza sus `sessions`, `activity`, `screenshots` (con `uid == auth.uid`, sin cambiar `uid`); lee lo suyo.
 - Admin (`users/{uid}.role == 'admin'`, status active): lee todo; escribe `config/org`, `invitations`, cambia `role`/`status` de usuarios.
@@ -95,7 +99,7 @@ Reglas:
 - Storage: colaborador sube solo a `screenshots/{suUid}/…`, `image/jpeg`, <1 MB; admin lee todo; colaborador lee lo suyo.
 
 ## 6. Cloud Functions
-- `joinOrg` (callable): exige correo verificado, valida dominio (`config/org.allowedDomain` o `ALLOWED_DOMAIN`) + invitación `pending|accepted` o bootstrap admin; crea `users/{uid}`, marca invitación `accepted`. Idempotente (si ya existe devuelve el perfil; si está `disabled` rechaza). Responde `{ profile }`; errores `HttpsError` en español con `details.reason` (`unauthenticated`, `no-email`, `email-not-verified`, `domain-not-allowed`, `no-invitation`, `invitation-revoked`, `user-disabled`).
+- `joinOrg` (callable): exige correo verificado, valida dominio (`config/org.allowedDomains` o `ALLOWED_DOMAIN`, lista; coincidencia exacta con alguno — ver [spec multi-dominio](2026-09-29-multi-dominio.md)) + invitación `pending|accepted` o bootstrap admin; crea `users/{uid}`, marca invitación `accepted`. Idempotente (si ya existe devuelve el perfil; si está `disabled` rechaza). Responde `{ profile }`; errores `HttpsError` en español con `details.reason` (`unauthenticated`, `no-email`, `email-not-verified`, `domain-not-allowed`, `no-invitation`, `invitation-revoked`, `user-disabled`).
 - `onInvitationWritten` (trigger Firestore): envía correo con link de instalación cuando la invitación queda `pending` (creada, reinvitada desde otro estado o con `invitedAt` nuevo); si no hay SMTP configurado o corre en emulador, log.
 - `purgeOldScreenshots` (programada diaria): borra archivos y docs más antiguos que `screenshotRetentionDays`, incluidos archivos huérfanos en Storage (sin doc) creados antes del corte.
 - `autoCloseStaleSessions` (programada cada hora): cierra jornadas sin latido hace >30 min o >16 h abiertas, `endedAt = lastHeartbeatAt`, `endReason = auto`.
@@ -110,14 +114,14 @@ Reglas:
 - Exportar CSV del resumen del equipo.
 
 ### Decisiones de implementación (Tarea 6)
-- **Acceso**: tras iniciar sesión el portal llama `joinOrg`; solo un perfil `admin` + `active` entra. Cualquier otro (colaborador, desactivado, sin invitación, otro dominio) ve "Sin acceso" con el motivo. Prod: `signInWithPopup` con `hd` = dominio (solo sugerencia; el dominio lo exige `joinOrg`). Dev (`vite --mode development`): emuladores + login con correo simulado; ese código queda fuera del build prod (`scripts/check-build.ts` lo verifica).
+- **Acceso**: tras iniciar sesión el portal llama `joinOrg`; solo un perfil `admin` + `active` entra. Cualquier otro (colaborador, desactivado, sin invitación, otro dominio) ve "Sin acceso" con el motivo. Prod: `signInWithPopup` con `hd` = dominio (solo sugerencia; el dominio lo exige `joinOrg`). **Actualización:** con más de un dominio no se envía `hd`; con uno solo, sí (ver [spec multi-dominio](2026-09-29-multi-dominio.md)). Dev (`vite --mode development`): emuladores + login con correo simulado; ese código queda fuera del build prod (`scripts/check-build.ts` lo verifica).
 - **Días y rangos** en America/Santiago (Hoy, Ayer, Esta semana lun–dom, Últimos 7 días, Este mes, Personalizado). El inicio de cada día se busca como el primer instante con esa fecha (en Chile el cambio de hora es a medianoche: hay días de 23 y 25 h).
 - **Consultas**: `activity` por `slotStart ∈ [desde, hasta)` (y `uid` en el detalle); `sessions` con `startedAt ∈ [desde − 24 h, hasta)` más todas las abiertas (`endedAt == null`), para incluir jornadas que empezaron antes del rango; `screenshots` por `uid` + `takenAt`. Lectura paginada de 1000 en 1000. Usa los índices existentes.
 - **"Horas"** = tiempo de jornada recortado al rango (abiertas hasta su último latido); debajo, "medidas" = suma de `trackedSeconds`. "En jornada" es el estado actual (`isSessionLive`), sin importar el rango. Colaboradores desactivados aparecen solo si tienen datos en el rango. Con el rango que incluye hoy se refresca cada 60 s mientras la pestaña está visible; cada refresco vuelve a leer `activity` solo desde el inicio de hoy y conserva los días anteriores ya cargados (un mes completo son ~30 000 lecturas para 30 personas). "Actualizar" relee todo el rango.
 - **Niveles de actividad** (tabla, línea de tiempo y leyenda): baja < 40 %, media 40–69 %, alta ≥ 70 %. La línea de tiempo muestra filas por hora (6 bloques) desde la primera hasta la última hora con datos o captura.
 - **Capturas**: miniaturas con `getDownloadURL` (las subidas por la API de Firebase Storage traen token de descarga) cargadas al entrar en pantalla; lightbox con hora, "Difuminada", anterior/siguiente y Esc.
-- **Invitaciones**: pendiente → Reenviar (status `pending`, `invitedBy` = admin actual, `invitedAt` nuevo y siempre mayor que el anterior, sin `acceptedAt`) o Revocar; revocada → "Invitar de nuevo"; aceptada → se gestiona en Colaboradores. El formulario rechaza otro dominio, correos ya registrados o con invitación pendiente/aceptada. "Copiar enlace de instalación" usa `VITE_EXTENSION_INSTALL_URL`.
-- **Configuración**: se guarda siempre el documento completo (6 campos, `updatedBy` = admin, `updatedAt` entero). El dominio es de solo lectura hasta pulsar "Cambiar", que muestra una advertencia.
+- **Invitaciones**: pendiente → Reenviar (status `pending`, `invitedBy` = admin actual, `invitedAt` nuevo y siempre mayor que el anterior, sin `acceptedAt`) o Revocar; revocada → "Invitar de nuevo"; aceptada → se gestiona en Colaboradores. El formulario rechaza correos fuera de los dominios permitidos (acepta cualquiera de la lista), correos ya registrados o con invitación pendiente/aceptada. "Copiar enlace de instalación" usa `VITE_EXTENSION_INSTALL_URL`.
+- **Configuración**: se guarda siempre el documento completo (6 campos, `updatedBy` = admin, `updatedAt` entero). ~~El dominio es de solo lectura hasta pulsar "Cambiar", que muestra una advertencia.~~ **Actualización:** la lista de dominios es de solo lectura hasta pulsar "Cambiar dominios", que permite agregar/quitar (con advertencia; no deja la lista vacía ni quitar el dominio del propio admin). Ver [spec multi-dominio](2026-09-29-multi-dominio.md).
 - **Tema** claro/oscuro según el sistema, con botón para forzarlo (se recuerda en `localStorage` del navegador).
 
 ## 8. Extensión (popup)
@@ -143,7 +147,7 @@ Reglas:
 - **Helpers comunes** en `scripts/lib` (workspace `@timetracking/scripts`, con typecheck y tests): Chromium, REST de emuladores, navegador con la extensión, servidor Vite del portal.
 
 ## 9. Criterios de aceptación
-1. Admin invita `x@dominio`; se crea invitación y se envía (o registra) correo.
+1. Admin invita `x@dominio` (cualquiera de los dominios permitidos); se crea invitación y se envía (o registra) correo.
 2. `x` inicia sesión en la extensión, acepta aviso, queda como `member`. Un correo sin invitación o de otro dominio es rechazado.
 3. Iniciar jornada crea `sessions` abierta; cerrar la marca cerrada. Badge ON/OFF.
 4. Con jornada abierta, cada 10 min aparece un doc `activity` con `activeSeconds ≤ trackedSeconds ≤ 600`, dominios y tiempo fuera de Chrome.
@@ -157,5 +161,5 @@ Reglas:
 - Crear proyecto Firebase (plan **Blaze**, requerido por Storage y Functions; costo estimado para 30 personas: bajo, del orden de USD 0–5/mes).
 - Crear cliente OAuth tipo "Extensión de Chrome" con el ID de la extensión.
 - Configurar SMTP para correos (ej. cuenta Workspace con contraseña de aplicación) en Secret Manager.
-- Publicar extensión (cuenta de desarrollador Chrome, USD 5 único) y forzar instalación en la consola de Workspace.
+- Publicar extensión (cuenta de desarrollador Chrome, USD 5 único) y forzar instalación en la consola de Workspace (de cada organización; pantalla de consentimiento OAuth **Externa**; ver [spec multi-dominio](2026-09-29-multi-dominio.md)).
 - Autorizar el despliegue (`firebase deploy`).

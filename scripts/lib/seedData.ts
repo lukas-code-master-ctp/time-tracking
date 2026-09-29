@@ -33,6 +33,7 @@ export interface SeedPerson {
   tasks: Partial<Record<Task, number>>;
 }
 
+/** Collaborators of both Workspace organizations (`@compratuparcela.cl` and `@impulseai.cl`). */
 export const PEOPLE: readonly SeedPerson[] = [
   {
     key: 'ana',
@@ -52,7 +53,7 @@ export const PEOPLE: readonly SeedPerson[] = [
   },
   {
     key: 'carla',
-    email: 'carla.soto@compratuparcela.cl',
+    email: 'carla.soto@impulseai.cl',
     displayName: 'Carla Soto',
     activity: 66,
     spread: 18,
@@ -60,7 +61,7 @@ export const PEOPLE: readonly SeedPerson[] = [
   },
 ];
 
-export const PENDING_INVITE = 'diego.munoz@compratuparcela.cl';
+export const PENDING_INVITE = 'diego.munoz@impulseai.cl';
 
 interface Site {
   domain: string;

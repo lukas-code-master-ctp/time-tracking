@@ -21,7 +21,12 @@ describe('joinOrg rejections → clear Spanish messages', () => {
   it('maps every details.reason', () => {
     expect(joinErrorMessage('no-invitation')).toMatch(/Pide a tu administrador que te invite/);
     expect(joinErrorMessage('invitation-revoked')).toMatch(/revocada/);
-    expect(joinErrorMessage('domain-not-allowed', 'empresa.cl')).toMatch(/Usa tu cuenta @empresa\.cl/);
+    expect(joinErrorMessage('domain-not-allowed', ['empresa.cl'])).toContain('Usa tu cuenta @empresa.cl (');
+    expect(joinErrorMessage('domain-not-allowed', ['impulseai.cl', 'compratuparcela.cl'])).toContain(
+      'Usa tu cuenta @impulseai.cl o @compratuparcela.cl (',
+    );
+    // Default: the build list (empty in tests → shared defaults).
+    expect(joinErrorMessage('domain-not-allowed')).toContain('@impulseai.cl o @compratuparcela.cl');
     expect(joinErrorMessage('user-disabled')).toMatch(/desactivada/);
     expect(joinErrorMessage('email-not-verified')).toMatch(/no está verificado/);
     expect(joinErrorMessage('unavailable')).toMatch(/Revisa tu conexión/);

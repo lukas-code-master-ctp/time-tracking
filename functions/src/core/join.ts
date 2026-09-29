@@ -10,9 +10,10 @@ import {
   COLLECTIONS,
   ORG_CONFIG_DOC_ID,
   defaultOrgConfig,
+  allowedDomainsOr,
   emailKey,
+  formatDomains,
   isAllowedEmail,
-  normalizeDomain,
   type Invitation,
   type OrgConfig,
   type Role,
@@ -31,8 +32,8 @@ export interface JoinCaller {
 export interface JoinDeps {
   db: Firestore;
   now: number;
-  /** Used when `config/org` does not exist yet. */
-  fallbackAllowedDomain: string;
+  /** Used when `config/org` does not exist yet (or has no domains). */
+  fallbackAllowedDomains: readonly string[];
   /** Lowercase emails that become admin without invitation. */
   bootstrapAdmins: readonly string[];
 }
@@ -100,17 +101,15 @@ export async function joinOrgCore(deps: JoinDeps, caller: JoinCaller | null): Pr
       tx.get(invitationRef),
     ]);
 
+    // Tolerates old documents with a single `allowedDomain` (read as a list).
     const config = configSnap.exists ? (configSnap.data() as Partial<OrgConfig>) : undefined;
-    const allowedDomain =
-      typeof config?.allowedDomain === 'string' && config.allowedDomain.trim() !== ''
-        ? normalizeDomain(config.allowedDomain)
-        : normalizeDomain(deps.fallbackAllowedDomain);
+    const allowedDomains = allowedDomainsOr(config, deps.fallbackAllowedDomains);
 
-    if (!isAllowedEmail(email, allowedDomain)) {
+    if (!isAllowedEmail(email, allowedDomains)) {
       reject(
         'permission-denied',
         'domain-not-allowed',
-        `Solo se permiten cuentas @${allowedDomain}. Inicia sesión con tu cuenta de la empresa.`,
+        `Usa tu cuenta de la empresa (${formatDomains(allowedDomains)}).`,
       );
     }
 
@@ -166,7 +165,7 @@ export async function joinOrgCore(deps: JoinDeps, caller: JoinCaller | null): Pr
       tx.update(invitationRef, { status: 'accepted', acceptedAt: now });
     }
     if (role === 'admin' && !configSnap.exists) {
-      tx.create(configRef, defaultOrgConfig(now, allowedDomain, 'system'));
+      tx.create(configRef, defaultOrgConfig(now, allowedDomains, 'system'));
     }
     return { profile, created: true };
   });

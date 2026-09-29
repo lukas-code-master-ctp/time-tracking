@@ -13,7 +13,7 @@ export default defineConfig({
       appEnv: 'dev',
       firebase: { apiKey: 'x', authDomain: 'x', projectId: 'demo-timetracking', storageBucket: 'b', appId: 'x', messagingSenderId: '' },
       emulatorHost: '127.0.0.1',
-      allowedDomain: '',
+      allowedDomains: '',
       oauthClientId: '',
     }),
   },

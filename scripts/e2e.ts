@@ -119,7 +119,7 @@ async function main(): Promise<void> {
     popup.on('pageerror', (e) => errors.push(`popup: ${e.message}`));
     await popup.goto(`chrome-extension://${extId}/popup.html`);
     const consentOpened = ctx.waitForEvent('page', { predicate: (p) => p.url().endsWith('/consent.html'), timeout: 30_000 });
-    await popup.getByPlaceholder('correo@compratuparcela.cl').fill(COLLAB);
+    await popup.getByLabel('Correo (login de desarrollo)').fill(COLLAB);
     await popup.getByRole('button', { name: 'Entrar (emulador)' }).click();
     await popup.getByRole('button', { name: 'Leer y aceptar el aviso' }).waitFor({ timeout: 30_000 });
     const consent = await consentOpened;

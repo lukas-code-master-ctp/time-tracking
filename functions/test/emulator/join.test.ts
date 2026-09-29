@@ -3,13 +3,13 @@ import { defaultOrgConfig, type Invitation, type OrgConfig, type UserProfile } f
 import { joinOrgCore, type JoinCaller, type JoinDeps } from '../../src/core/join.js';
 import { NOW, clearFirestore, closeAdmin, db, getDoc, seed } from './helpers.js';
 
-const DOMAIN = 'compratuparcela.cl';
+const DOMAINS = ['impulseai.cl', 'compratuparcela.cl'];
 
 const deps = (overrides: Partial<JoinDeps> = {}): JoinDeps => ({
   db: db(),
   now: NOW,
-  fallbackAllowedDomain: DOMAIN,
-  bootstrapAdmins: ['jefa@compratuparcela.cl'],
+  fallbackAllowedDomains: DOMAINS,
+  bootstrapAdmins: ['lukas@impulseai.cl'],
   ...overrides,
 });
 
@@ -43,10 +43,10 @@ afterAll(async () => {
 
 describe('joinOrgCore: bootstrap admin', () => {
   it('registers a bootstrap admin without invitation and creates config/org', async () => {
-    const res = await joinOrgCore(deps(), caller({ uid: 'boss', email: 'Jefa@CompraTuParcela.cl' }));
+    const res = await joinOrgCore(deps(), caller({ uid: 'boss', email: 'Lukas@ImpulseAI.cl' }));
     expect(res.created).toBe(true);
     expect(res.profile).toEqual<UserProfile>({
-      email: 'jefa@compratuparcela.cl',
+      email: 'lukas@impulseai.cl',
       displayName: 'Ana Pérez',
       photoURL: 'https://example.test/ana.png',
       role: 'admin',
@@ -54,24 +54,59 @@ describe('joinOrgCore: bootstrap admin', () => {
       createdAt: NOW,
     });
     expect(await getDoc('users/boss')).toEqual(res.profile);
-    expect(await getDoc<OrgConfig>('config/org')).toEqual(defaultOrgConfig(NOW, DOMAIN, 'system'));
+    expect(await getDoc<OrgConfig>('config/org')).toEqual(defaultOrgConfig(NOW, DOMAINS, 'system'));
   });
 
   it('does not overwrite an existing config/org', async () => {
-    const existing = { ...defaultOrgConfig(1, DOMAIN, 'someone'), screenshotsEnabled: true };
+    const existing = { ...defaultOrgConfig(1, DOMAINS, 'someone'), screenshotsEnabled: true };
     await seed({ 'config/org': existing });
-    await joinOrgCore(deps(), caller({ uid: 'boss', email: 'jefa@compratuparcela.cl' }));
+    await joinOrgCore(deps(), caller({ uid: 'boss', email: 'lukas@impulseai.cl' }));
     expect(await getDoc('config/org')).toEqual(existing);
   });
 
   it('bootstrap wins over an invitation (admin) and marks it accepted', async () => {
-    await seed({ 'invitations/jefa@compratuparcela.cl': invitation({ email: 'jefa@compratuparcela.cl' }) });
-    const res = await joinOrgCore(deps(), caller({ uid: 'boss', email: 'jefa@compratuparcela.cl' }));
+    await seed({ 'invitations/lukas@impulseai.cl': invitation({ email: 'lukas@impulseai.cl' }) });
+    const res = await joinOrgCore(deps(), caller({ uid: 'boss', email: 'lukas@impulseai.cl' }));
     expect(res.profile.role).toBe('admin');
-    expect(await getDoc<Invitation>('invitations/jefa@compratuparcela.cl')).toMatchObject({
+    expect(await getDoc<Invitation>('invitations/lukas@impulseai.cl')).toMatchObject({
       status: 'accepted',
       acceptedAt: NOW,
     });
+  });
+});
+
+describe('joinOrgCore: several allowed domains', () => {
+  it('registers invited users of both domains', async () => {
+    await seed({
+      'invitations/x@impulseai.cl': invitation({ email: 'x@impulseai.cl' }),
+      'invitations/y@compratuparcela.cl': invitation({ email: 'y@compratuparcela.cl' }),
+    });
+    const x = await joinOrgCore(deps(), caller({ uid: 'x', email: 'x@impulseai.cl' }));
+    const y = await joinOrgCore(deps(), caller({ uid: 'y', email: 'Y@CompraTuParcela.cl' }));
+    expect(x.profile).toMatchObject({ email: 'x@impulseai.cl', role: 'member' });
+    expect(y.profile).toMatchObject({ email: 'y@compratuparcela.cl', role: 'member' });
+  });
+
+  it('rejects a domain that is not in the list, subdomains and look-alikes', async () => {
+    for (const email of ['z@gmail.com', 'a@sub.impulseai.cl', 'a@evilimpulseai.cl', 'a@impulseai.cl.evil.test']) {
+      await seed({ [`invitations/${email}`]: invitation({ email }) });
+      await rejectsWith(joinOrgCore(deps(), caller({ uid: 'z', email })), 'permission-denied', 'domain-not-allowed');
+    }
+    expect((await db().collection('users').get()).size).toBe(0);
+  });
+
+  it('respects the list stored in config/org (a removed domain is rejected)', async () => {
+    await seed({
+      'config/org': defaultOrgConfig(1, ['impulseai.cl']),
+      'invitations/y@compratuparcela.cl': invitation({ email: 'y@compratuparcela.cl' }),
+      'invitations/x@impulseai.cl': invitation({ email: 'x@impulseai.cl' }),
+    });
+    await rejectsWith(
+      joinOrgCore(deps(), caller({ uid: 'y', email: 'y@compratuparcela.cl' })),
+      'permission-denied',
+      'domain-not-allowed',
+    );
+    expect((await joinOrgCore(deps(), caller({ uid: 'x', email: 'x@impulseai.cl' }))).profile.role).toBe('member');
   });
 });
 
@@ -158,15 +193,36 @@ describe('joinOrgCore: rejections', () => {
     );
   });
 
-  it('uses config/org.allowedDomain over the fallback', async () => {
+  it('uses config/org.allowedDomains over the fallback', async () => {
     await seed({
-      'config/org': defaultOrgConfig(1, 'otra.cl'),
+      'config/org': defaultOrgConfig(1, ['otra.cl']),
       'invitations/ana@otra.cl': invitation({ email: 'ana@otra.cl' }),
       'invitations/ana@compratuparcela.cl': invitation(),
     });
     const res = await joinOrgCore(deps(), caller({ uid: 'u2', email: 'ana@otra.cl' }));
     expect(res.profile.role).toBe('member');
     await rejectsWith(joinOrgCore(deps(), caller()), 'permission-denied', 'domain-not-allowed');
+  });
+
+  it('reads an old config/org with a single allowedDomain as a one-item list', async () => {
+    const legacy = { ...defaultOrgConfig(1), allowedDomain: 'otra.cl' } as Record<string, unknown>;
+    delete legacy.allowedDomains;
+    await seed({
+      'config/org': legacy,
+      'invitations/ana@otra.cl': invitation({ email: 'ana@otra.cl' }),
+      'invitations/ana@compratuparcela.cl': invitation(),
+    });
+    const res = await joinOrgCore(deps(), caller({ uid: 'u2', email: 'ana@otra.cl' }));
+    expect(res.profile.role).toBe('member');
+    await rejectsWith(joinOrgCore(deps(), caller()), 'permission-denied', 'domain-not-allowed');
+  });
+
+  it('the domain message lists every allowed domain', async () => {
+    await seed({ 'invitations/z@gmail.com': invitation({ email: 'z@gmail.com' }) });
+    await expect(joinOrgCore(deps(), caller({ email: 'z@gmail.com' }))).rejects.toMatchObject({
+      message: 'Usa tu cuenta de la empresa (@impulseai.cl o @compratuparcela.cl).',
+      details: { reason: 'domain-not-allowed' },
+    });
   });
 
   it('rejects unverified or missing emails', async () => {

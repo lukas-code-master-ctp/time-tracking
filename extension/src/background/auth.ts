@@ -25,8 +25,8 @@ import {
   type User,
 } from 'firebase/auth/web-extension';
 import { httpsCallable, type Functions } from 'firebase/functions';
-import { emailKey, type UserProfile } from '@timetracking/shared';
-import { ALLOWED_DOMAIN } from '../env';
+import { emailKey, formatDomains, type UserProfile } from '@timetracking/shared';
+import { ALLOWED_DOMAINS } from '../env';
 
 export interface AuthUser {
   uid: string;
@@ -90,14 +90,14 @@ export function devGoogleIdToken(email: string): string {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Clear Spanish message for each `joinOrg` rejection (`details.reason`). */
-export function joinErrorMessage(reason: string, domain: string = ALLOWED_DOMAIN): string {
+export function joinErrorMessage(reason: string, domains: readonly string[] = ALLOWED_DOMAINS): string {
   switch (reason) {
     case 'no-invitation':
       return 'Aún no tienes una invitación. Pide a tu administrador que te invite y luego pulsa “Reintentar”.';
     case 'invitation-revoked':
       return 'Tu invitación fue revocada. Pide a tu administrador que te invite de nuevo.';
     case 'domain-not-allowed':
-      return `Esta cuenta no es de la empresa. Usa tu cuenta @${domain} (la cuenta con la que iniciaste sesión en Chrome).`;
+      return `Esta cuenta no es de la empresa. Usa tu cuenta ${formatDomains(domains)} (la cuenta con la que iniciaste sesión en Chrome).`;
     case 'user-disabled':
       return 'Tu cuenta está desactivada. Habla con tu administrador.';
     case 'email-not-verified':

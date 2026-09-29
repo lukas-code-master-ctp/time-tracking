@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useSession } from '../data/context';
-import { ALLOWED_DOMAIN, HAS_PLACEHOLDERS } from '../env';
+import { formatDomains } from '@timetracking/shared';
+import { ALLOWED_DOMAINS, HAS_PLACEHOLDERS } from '../env';
 
 function AuthCard({ children }: { children: ReactNode }) {
   return (
@@ -51,7 +52,7 @@ export function LoginPage() {
       <button type="button" className="btn primary big" onClick={() => void run(signIn)} disabled={busy}>
         Iniciar sesión con Google
       </button>
-      <p className="muted small">Usa tu cuenta @{ALLOWED_DOMAIN}. Solo los administradores tienen acceso.</p>
+      <p className="muted small">Usa tu cuenta {formatDomains(ALLOWED_DOMAINS)}. Solo los administradores tienen acceso.</p>
       {import.meta.env.DEV && signInDev ? (
         <form className="dev-login" onSubmit={onDev}>
           <p className="small strong">Modo desarrollo (emuladores)</p>
@@ -60,7 +61,7 @@ export function LoginPage() {
             id="dev-email"
             type="email"
             autoComplete="off"
-            placeholder={`correo@${ALLOWED_DOMAIN}`}
+            placeholder={`correo@${ALLOWED_DOMAINS[0] ?? 'empresa.cl'}`}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required

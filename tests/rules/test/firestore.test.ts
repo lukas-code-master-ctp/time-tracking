@@ -35,7 +35,7 @@ const db = (uid: string | null) => as(env, uid).firestore();
 
 function orgConfig(overrides: Partial<OrgConfig> = {}): OrgConfig {
   return {
-    allowedDomain: 'compratuparcela.cl',
+    allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
     screenshotsEnabled: true,
     blurScreenshots: false,
     screenshotRetentionDays: 90,
@@ -134,6 +134,51 @@ describe('config/org', () => {
       admin.doc('config/org').set({ ...orgConfig(), screenshotRetentionDays: '90' } as unknown as OrgConfig),
     );
     await assertFails(admin.doc('config/org').set(orgConfig({ screenshotRetentionDays: 0 })));
+  });
+
+  it('accepts valid domain lists (1 to 10 domains)', async () => {
+    const admin = db('admin');
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ allowedDomains: ['compratuparcela.cl'] })));
+    await assertSucceeds(
+      admin.doc('config/org').set(orgConfig({ allowedDomains: ['impulseai.cl', 'compratuparcela.cl', 'mail.empresa.com'] })),
+    );
+    const ten = Array.from({ length: 10 }, (_, i) => `d${i}.cl`);
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ allowedDomains: ten })));
+  });
+
+  it('rejects an empty list, more than 10 domains, duplicates and invalid types', async () => {
+    const admin = db('admin');
+    const set = (allowedDomains: unknown) =>
+      admin.doc('config/org').set({ ...orgConfig(), allowedDomains } as unknown as OrgConfig);
+    await assertFails(set([]));
+    await assertFails(set(Array.from({ length: 11 }, (_, i) => `d${i}.cl`)));
+    await assertFails(set(['impulseai.cl', 'impulseai.cl']));
+    await assertFails(set('impulseai.cl'));
+    await assertFails(set({ 0: 'impulseai.cl' }));
+    await assertFails(set(null));
+    await assertFails(set(['impulseai.cl', 42]));
+    await assertFails(set(['impulseai.cl', null]));
+    await assertFails(set([{ domain: 'impulseai.cl' }]));
+    await assertFails(set(['impulseai.cl', true]));
+    await assertFails(set(['']));
+    // Must be normalized: lowercase, without '@', a real domain.
+    await assertFails(set(['ImpulseAI.cl']));
+    await assertFails(set(['@impulseai.cl']));
+    await assertFails(set(['impulseai']));
+    await assertFails(set(['impulse ai.cl']));
+    await assertFails(set(['a@impulseai.cl']));
+    // Invalid element in the last position also fails.
+    await assertFails(set([...Array.from({ length: 9 }, (_, i) => `d${i}.cl`), 'MAL.cl']));
+  });
+
+  it('rejects the old single allowedDomain field and missing allowedDomains', async () => {
+    const admin = db('admin');
+    const withoutList: Partial<OrgConfig> = orgConfig();
+    delete withoutList.allowedDomains;
+    await assertFails(admin.doc('config/org').set(withoutList as OrgConfig));
+    await assertFails(admin.doc('config/org').set({ ...withoutList, allowedDomain: 'compratuparcela.cl' } as unknown as OrgConfig));
+    await assertFails(admin.doc('config/org').set({ ...orgConfig(), allowedDomain: 'compratuparcela.cl' } as unknown as OrgConfig));
+    await assertFails(admin.doc('config/org').update({ allowedDomains: [] }));
   });
 
   it('only the "org" doc is writable, and nobody deletes it', async () => {

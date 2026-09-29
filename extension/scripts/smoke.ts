@@ -31,7 +31,7 @@ const PROJECT = 'demo-timetracking';
 const FIRESTORE = 'http://127.0.0.1:8080';
 const STORAGE = 'http://127.0.0.1:9199';
 const BUCKET = `${PROJECT}.appspot.com`;
-const EMAIL = 'jefa@compratuparcela.cl'; // BOOTSTRAP_ADMINS in functions/.env.demo-timetracking
+const EMAIL = 'lukas@impulseai.cl'; // BOOTSTRAP_ADMINS in functions/.env.demo-timetracking
 
 function fail(msg: string): never {
   console.error(`SMOKE FALLÓ: ${msg}`);
@@ -181,7 +181,7 @@ async function e2e(ctx: BrowserContext, popup: Page): Promise<void> {
   try {
     // 1. Dev login → joinOrg → the consent page opens by itself.
     const consentOpened = ctx.waitForEvent('page', { predicate: (p) => p.url().endsWith('/consent.html'), timeout: 30_000 });
-    await popup.getByPlaceholder('correo@compratuparcela.cl').fill(EMAIL);
+    await popup.getByLabel('Correo (login de desarrollo)').fill(EMAIL);
     await popup.getByRole('button', { name: 'Entrar (emulador)' }).click();
     await popup.getByRole('button', { name: 'Leer y aceptar el aviso' }).waitFor({ timeout: 30_000 });
     const consent = await consentOpened;

@@ -27,7 +27,7 @@ export type BackendCall =
   | { op: 'putScreenshotMeta'; id: string; meta: ScreenshotMeta };
 
 export const ORG: OrgConfig = {
-  allowedDomain: 'compratuparcela.cl',
+  allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
   screenshotsEnabled: false,
   blurScreenshots: true,
   screenshotRetentionDays: 90,

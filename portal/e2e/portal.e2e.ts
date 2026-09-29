@@ -8,7 +8,7 @@
  *    and activity, 1 screenshot (file in Storage + doc).
  * 2. Starts the portal's Vite dev server (development mode → emulators).
  * 3. In Chromium (Playwright): dev login as the bootstrap admin
- *    (`jefa@compratuparcela.cl`, functions/.env.demo-timetracking), team table
+ *    (`lukas@impulseai.cl`, functions/.env.demo-timetracking), team table
  *    with hours > 0, collaborator detail with timeline and screenshot
  *    (thumbnail + lightbox), invitation, role change, settings; each write is
  *    checked in Firestore. No horizontal scroll at 375 px.
@@ -44,7 +44,7 @@ import { clearEmulators, uploadJpeg } from '../../scripts/lib/emulators.ts';
 const PORTAL = fileURLToPath(new URL('..', import.meta.url));
 const PROJECT = FIREBASE_DEMO_PROJECT_ID;
 const BUCKET = `${PROJECT}.appspot.com`;
-const ADMIN_EMAIL = 'jefa@compratuparcela.cl'; // BOOTSTRAP_ADMINS in functions/.env.demo-timetracking
+const ADMIN_EMAIL = 'lukas@impulseai.cl'; // BOOTSTRAP_ADMINS in functions/.env.demo-timetracking
 const PORT = 5174;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.PORTAL_SHOTS_DIR ?? join(tmpdir(), 'timetracking-portal-shots');
@@ -125,7 +125,7 @@ async function seed(browser: Browser): Promise<Seed> {
   const start = Math.max(dayStart, now - 3 * 3_600_000);
 
   const config: OrgConfig = {
-    allowedDomain: 'compratuparcela.cl',
+    allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
     screenshotsEnabled: true,
     blurScreenshots: true,
     screenshotRetentionDays: 90,
@@ -147,7 +147,7 @@ async function seed(browser: Browser): Promise<Seed> {
   const ana = 'colab-ana';
   const beto = 'colab-beto';
   await db.doc(`users/${ana}`).set(person('ana.rojas@compratuparcela.cl', 'Ana Rojas'));
-  await db.doc(`users/${beto}`).set(person('beto.diaz@compratuparcela.cl', 'Beto Díaz'));
+  await db.doc(`users/${beto}`).set(person('beto.diaz@impulseai.cl', 'Beto Díaz'));
 
   // Ana: open session (live), Beto: closed session.
   const anaSession: Session = { uid: ana, startedAt: start, endedAt: null, endReason: null, lastHeartbeatAt: now - 60_000 };
@@ -336,14 +336,19 @@ async function main(): Promise<void> {
     const email = page.getByLabel('Correo de la persona');
     await email.fill('alguien@gmail.com');
     await page.getByRole('button', { name: 'Invitar' }).click();
-    await page.getByText('Solo puedes invitar correos @compratuparcela.cl.').waitFor();
+    await page.getByText('Solo puedes invitar correos @impulseai.cl o @compratuparcela.cl.').waitFor();
     await email.fill('nuevo.colaborador@compratuparcela.cl');
     await page.getByRole('button', { name: 'Invitar' }).click();
     await page.getByText('Invitación enviada a nuevo.colaborador@compratuparcela.cl.').waitFor();
     const inv = await until('invitación en Firestore', async () => (await getFirestore().doc('invitations/nuevo.colaborador@compratuparcela.cl').get()).data());
     if (inv.status !== 'pending' || inv.invitedBy !== adminUid || typeof inv.invitedAt !== 'number') fail(`invitación: ${JSON.stringify(inv)}`);
     await page.locator('.list-item').filter({ hasText: 'nuevo.colaborador@compratuparcela.cl' }).waitFor();
-    ok('Invitación creada (pending, invitedBy = admin); correo de otro dominio rechazado.');
+    // The other Workspace organization is allowed too.
+    await email.fill('otra.persona@impulseai.cl');
+    await page.getByRole('button', { name: 'Invitar' }).click();
+    await page.getByText('Invitación enviada a otra.persona@impulseai.cl.').waitFor();
+    await until('invitación @impulseai.cl en Firestore', async () => (await getFirestore().doc('invitations/otra.persona@impulseai.cl').get()).data());
+    ok('Invitaciones creadas en ambos dominios (pending, invitedBy = admin); correo de otro dominio rechazado.');
     await shootAll(page, '05-invitaciones');
 
     // 5. Collaborators: role change with confirmation.
@@ -364,11 +369,40 @@ async function main(): Promise<void> {
     await page.getByText('Configuración guardada.', { exact: false }).waitFor();
     const cfg = (await getFirestore().doc('config/org').get()).data() ?? {};
     const keys = Object.keys(cfg).sort().join(',');
-    if (keys !== 'allowedDomain,blurScreenshots,screenshotRetentionDays,screenshotsEnabled,updatedAt,updatedBy') fail(`campos de config/org: ${keys}`);
+    if (keys !== 'allowedDomains,blurScreenshots,screenshotRetentionDays,screenshotsEnabled,updatedAt,updatedBy') fail(`campos de config/org: ${keys}`);
     if (cfg.blurScreenshots !== false || cfg.screenshotRetentionDays !== 30 || cfg.updatedBy !== adminUid || cfg.screenshotsEnabled !== true) {
       fail(`config/org: ${JSON.stringify(cfg)}`);
     }
+    if (JSON.stringify(cfg.allowedDomains) !== JSON.stringify(['impulseai.cl', 'compratuparcela.cl'])) {
+      fail(`allowedDomains: ${JSON.stringify(cfg.allowedDomains)}`);
+    }
     ok('Configuración guardada con los 6 campos (updatedBy = admin).');
+
+    // Domain list editor: own domain cannot be removed; add + remove another one.
+    await page.getByRole('button', { name: 'Cambiar dominios' }).click();
+    await page.getByText('si quitas un dominio', { exact: false }).waitFor();
+    if (!(await page.getByRole('button', { name: 'Quitar @impulseai.cl' }).isDisabled())) fail('se puede quitar el dominio del propio admin');
+    await page.getByLabel('Agregar dominio').fill('Nueva-Empresa.cl');
+    await page.getByRole('button', { name: 'Agregar', exact: true }).click();
+    await page.getByRole('button', { name: 'Quitar @compratuparcela.cl' }).click();
+    await page.getByRole('button', { name: 'Guardar y cambiar dominios' }).click();
+    await page.getByText('Configuración guardada.', { exact: false }).waitFor();
+    const domains = await until('dominios en Firestore', async () => {
+      const d = (await getFirestore().doc('config/org').get()).data()?.allowedDomains as unknown;
+      return JSON.stringify(d) === JSON.stringify(['impulseai.cl', 'nueva-empresa.cl']) ? d : undefined;
+    });
+    ok(`Dominios editados desde el portal: ${JSON.stringify(domains)}.`);
+    await shootAll(page, '07b-dominios');
+    // Restore the original list (other steps and screenshots expect it).
+    await page.getByRole('button', { name: 'Cambiar dominios' }).click();
+    await page.getByRole('button', { name: 'Quitar @nueva-empresa.cl' }).click();
+    await page.getByLabel('Agregar dominio').fill('compratuparcela.cl');
+    await page.getByLabel('Agregar dominio').press('Enter');
+    await page.getByRole('button', { name: 'Guardar y cambiar dominios' }).click();
+    await until('dominios restaurados', async () => {
+      const d = (await getFirestore().doc('config/org').get()).data()?.allowedDomains as unknown;
+      return JSON.stringify(d) === JSON.stringify(['impulseai.cl', 'compratuparcela.cl']) ? d : undefined;
+    });
     await shootAll(page, '07-configuracion');
 
     // Mobile menu open (navigation on phones).

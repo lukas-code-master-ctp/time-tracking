@@ -1,12 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { SLOT_MS, isSessionLive, sanitizeUrl, slotStartOf, dateKey as dateKeyOf } from '@timetracking/shared';
+import { readFileSync } from 'node:fs';
+import {
+  SLOT_MS,
+  emailDomain,
+  isAllowedEmail,
+  isSessionLive,
+  parseDomainList,
+  parseEmailList,
+  sanitizeUrl,
+  slotStartOf,
+  dateKey as dateKeyOf,
+} from '@timetracking/shared';
 import { mockScreenHtml } from '../lib/mockScreens';
-import { PEOPLE, SITES, atLocal, buildDataset, rng } from '../lib/seedData';
+import { PENDING_INVITE, PEOPLE, SITES, atLocal, buildDataset, rng } from '../lib/seedData';
+import { ADMIN_EMAIL, DOMAINS } from '../lib/emulators';
 import { zonedParts } from '../../portal/src/lib/dates';
 
 // Tuesday 2026-09-29 15:30 in Santiago.
 const NOW = Date.UTC(2026, 8, 29, 18, 30);
 const UIDS = { ana: 'u-ana', beto: 'u-beto', carla: 'u-carla' };
+
+describe('seed people and domains', () => {
+  const env = Object.fromEntries(
+    readFileSync(new URL('../../functions/.env.demo-timetracking', import.meta.url), 'utf8')
+      .split(/\r?\n/)
+      .filter((l) => /^[A-Z_]+=/.test(l))
+      .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
+  );
+
+  it('admin and domains match functions/.env.demo-timetracking', () => {
+    expect(ADMIN_EMAIL).toBe('lukas@impulseai.cl');
+    expect(parseEmailList(env.BOOTSTRAP_ADMINS)).toContain(ADMIN_EMAIL);
+    expect(parseDomainList(env.ALLOWED_DOMAIN)).toEqual([...DOMAINS]);
+  });
+
+  it('collaborators and the pending invitation belong to the allowed domains, covering both', () => {
+    const emails = [...PEOPLE.map((p) => p.email), PENDING_INVITE];
+    for (const e of emails) expect(isAllowedEmail(e, DOMAINS), e).toBe(true);
+    expect(new Set(PEOPLE.map((p) => emailDomain(p.email)))).toEqual(new Set(DOMAINS));
+  });
+});
 
 describe('seed data', () => {
   const data = buildDataset(NOW, UIDS);

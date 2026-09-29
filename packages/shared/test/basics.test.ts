@@ -9,8 +9,24 @@ import {
   parseActivityDocId,
   screenshotStoragePath,
 } from '../src/collections.js';
-import { emailDomain, isAllowedEmail, normalizeDomain, parseEmailList } from '../src/domain.js';
-import { DEFAULT_ALLOWED_DOMAIN, defaultOrgConfig, resolveConfig } from '../src/config.js';
+import {
+  MAX_ALLOWED_DOMAINS,
+  emailDomain,
+  formatDomains,
+  isAllowedEmail,
+  isValidDomain,
+  normalizeDomain,
+  normalizeDomainList,
+  parseDomainList,
+  parseEmailList,
+} from '../src/domain.js';
+import {
+  DEFAULT_ALLOWED_DOMAINS,
+  allowedDomainsOr,
+  defaultOrgConfig,
+  readAllowedDomains,
+  resolveConfig,
+} from '../src/config.js';
 import * as shared from '../src/index.js';
 
 const T0 = Date.UTC(2026, 8, 29, 12, 0, 0);
@@ -140,6 +156,58 @@ describe('domain', () => {
     expect(isAllowedEmail('', 'compratuparcela.cl')).toBe(false);
   });
 
+  it('accepts any domain of a list, exactly (no subdomains or look-alikes)', () => {
+    const list = ['impulseai.cl', 'compratuparcela.cl'];
+    expect(isAllowedEmail('lukas@impulseai.cl', list)).toBe(true);
+    expect(isAllowedEmail('Ana@CompraTuParcela.CL', list)).toBe(true);
+    expect(isAllowedEmail('ana@IMPULSEAI.cl', [' @ImpulseAI.cl '])).toBe(true);
+    for (const bad of [
+      'a@sub.impulseai.cl',
+      'a@x.compratuparcela.cl',
+      'a@evilimpulseai.cl',
+      'a@impulseai.cl.evil.com',
+      'a@impulseai.com',
+      'z@gmail.com',
+      'impulseai.cl',
+      'a@b@impulseai.cl',
+    ]) {
+      expect(isAllowedEmail(bad, list), bad).toBe(false);
+    }
+    expect(isAllowedEmail('a@impulseai.cl', [])).toBe(false);
+    expect(isAllowedEmail('a@impulseai.cl', ['', '  '])).toBe(false);
+    expect(isAllowedEmail('a@impulseai.cl', [42 as unknown as string, 'impulseai.cl'])).toBe(true);
+    expect(isAllowedEmail('a@impulseai.cl', null as unknown as string[])).toBe(false);
+  });
+
+  it('parseDomainList / normalizeDomainList normalize, drop empties and dedupe', () => {
+    expect(parseDomainList(' ImpulseAI.cl, @compratuparcela.cl ;impulseai.cl  otra.cl\n')).toEqual([
+      'impulseai.cl',
+      'compratuparcela.cl',
+      'otra.cl',
+    ]);
+    expect(parseDomainList('compratuparcela.cl')).toEqual(['compratuparcela.cl']);
+    expect(parseDomainList(',, ,')).toEqual([]);
+    expect(parseDomainList('')).toEqual([]);
+    expect(parseDomainList(undefined)).toEqual([]);
+    expect(parseDomainList(null)).toEqual([]);
+    expect(normalizeDomainList(['A.cl', '@a.cl', '', 3, null, 'b.cl'])).toEqual(['a.cl', 'b.cl']);
+  });
+
+  it('isValidDomain', () => {
+    expect(isValidDomain('impulseai.cl')).toBe(true);
+    expect(isValidDomain('mail.empresa.com')).toBe(true);
+    for (const bad of ['', 'cl', 'no dominio.cl', 'a..cl', '-a.cl', 'a@b.cl', 'IMPULSEAI.CL']) {
+      expect(isValidDomain(bad), bad).toBe(false);
+    }
+  });
+
+  it('formatDomains builds the Spanish list', () => {
+    expect(formatDomains(['impulseai.cl', 'compratuparcela.cl'])).toBe('@impulseai.cl o @compratuparcela.cl');
+    expect(formatDomains(['a.cl'])).toBe('@a.cl');
+    expect(formatDomains(['a.cl', 'B.cl', 'c.cl'])).toBe('@a.cl, @b.cl o @c.cl');
+    expect(formatDomains([])).toBe('');
+  });
+
   it('emailDomain / normalizeDomain', () => {
     expect(emailDomain('X@Foo.CL')).toBe('foo.cl');
     expect(emailDomain('nope')).toBeNull();
@@ -155,25 +223,65 @@ describe('domain', () => {
 
 describe('config', () => {
   it('has safe defaults', () => {
-    expect(resolveConfig()).toEqual({ allowedDomain: DEFAULT_ALLOWED_DOMAIN, bootstrapAdmins: [], appEnv: 'prod' });
-    expect(DEFAULT_ALLOWED_DOMAIN).toBe('compratuparcela.cl');
+    expect(resolveConfig()).toEqual({
+      allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
+      bootstrapAdmins: [],
+      appEnv: 'prod',
+    });
+    expect(DEFAULT_ALLOWED_DOMAINS).toEqual(['impulseai.cl', 'compratuparcela.cl']);
+    expect(Object.isFrozen(DEFAULT_ALLOWED_DOMAINS)).toBe(true);
+    expect(MAX_ALLOWED_DOMAINS).toBe(10);
   });
 
   it('reads plain and VITE_ prefixed variables', () => {
     expect(
       resolveConfig({ ALLOWED_DOMAIN: 'Foo.cl', BOOTSTRAP_ADMINS: 'Boss@foo.cl, ops@foo.cl', APP_ENV: 'dev' }),
-    ).toEqual({ allowedDomain: 'foo.cl', bootstrapAdmins: ['boss@foo.cl', 'ops@foo.cl'], appEnv: 'dev' });
+    ).toEqual({ allowedDomains: ['foo.cl'], bootstrapAdmins: ['boss@foo.cl', 'ops@foo.cl'], appEnv: 'dev' });
     expect(resolveConfig({ VITE_APP_ENV: 'DEV', VITE_ALLOWED_DOMAIN: 'bar.cl', DEV: true })).toMatchObject({
-      allowedDomain: 'bar.cl',
+      allowedDomains: ['bar.cl'],
       appEnv: 'dev',
     });
     expect(resolveConfig({ APP_ENV: 'staging' }).appEnv).toBe('prod');
-    expect(resolveConfig({ ALLOWED_DOMAIN: '   ' }).allowedDomain).toBe(DEFAULT_ALLOWED_DOMAIN);
+    expect(resolveConfig({ ALLOWED_DOMAIN: '   ' }).allowedDomains).toEqual([...DEFAULT_ALLOWED_DOMAINS]);
+    expect(resolveConfig({ ALLOWED_DOMAIN: ' , ; ' }).allowedDomains).toEqual([...DEFAULT_ALLOWED_DOMAINS]);
+  });
+
+  it('reads ALLOWED_DOMAIN as a comma separated list (max 10)', () => {
+    expect(resolveConfig({ ALLOWED_DOMAIN: 'impulseai.cl,CompraTuParcela.cl, impulseai.cl' }).allowedDomains).toEqual([
+      'impulseai.cl',
+      'compratuparcela.cl',
+    ]);
+    expect(resolveConfig({ VITE_ALLOWED_DOMAIN: '@a.cl , b.cl' }).allowedDomains).toEqual(['a.cl', 'b.cl']);
+    const many = Array.from({ length: 12 }, (_, i) => `d${i}.cl`).join(',');
+    expect(resolveConfig({ ALLOWED_DOMAIN: many }).allowedDomains).toHaveLength(10);
+  });
+
+  it('readAllowedDomains tolerates old docs with allowedDomain', () => {
+    expect(readAllowedDomains({ allowedDomains: ['ImpulseAI.cl', 'compratuparcela.cl', 'impulseai.cl'] })).toEqual([
+      'impulseai.cl',
+      'compratuparcela.cl',
+    ]);
+    expect(readAllowedDomains({ allowedDomain: ' CompraTuParcela.cl ' })).toEqual(['compratuparcela.cl']);
+    // The list wins over the old field; an empty list falls back to the old field.
+    expect(readAllowedDomains({ allowedDomains: ['a.cl'], allowedDomain: 'b.cl' })).toEqual(['a.cl']);
+    expect(readAllowedDomains({ allowedDomains: [], allowedDomain: 'b.cl' })).toEqual(['b.cl']);
+    expect(readAllowedDomains({ allowedDomains: [1, null] })).toEqual([]);
+    expect(readAllowedDomains({ allowedDomain: '' })).toEqual([]);
+    expect(readAllowedDomains({ allowedDomain: 5 })).toEqual([]);
+    expect(readAllowedDomains({})).toEqual([]);
+    expect(readAllowedDomains(null)).toEqual([]);
+    expect(readAllowedDomains(undefined)).toEqual([]);
+    expect(readAllowedDomains('impulseai.cl')).toEqual([]);
+    expect(allowedDomainsOr(null, ['x.cl'])).toEqual(['x.cl']);
+    expect(allowedDomainsOr({ allowedDomain: 'old.cl' }, ['x.cl'])).toEqual(['old.cl']);
+    expect(allowedDomainsOr({}, [])).toEqual([...DEFAULT_ALLOWED_DOMAINS]);
   });
 
   it('defaultOrgConfig', () => {
+    expect(defaultOrgConfig(T0, ['Foo.cl', 'foo.cl']).allowedDomains).toEqual(['foo.cl']);
+    expect(defaultOrgConfig(T0, []).allowedDomains).toEqual([...DEFAULT_ALLOWED_DOMAINS]);
     expect(defaultOrgConfig(T0)).toEqual({
-      allowedDomain: 'compratuparcela.cl',
+      allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
       screenshotsEnabled: false,
       blurScreenshots: true,
       screenshotRetentionDays: 90,
@@ -198,6 +306,10 @@ describe('index', () => {
       'summarizeTeam',
       'toCsv',
       'resolveConfig',
+      'readAllowedDomains',
+      'parseDomainList',
+      'formatDomains',
+      'DEFAULT_ALLOWED_DOMAINS',
       'COLLECTIONS',
       'SLOT_MS',
     ]) {

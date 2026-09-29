@@ -3,8 +3,8 @@
  * around the pure/injectable logic in `./core`.
  *
  * Configuration:
- * - Env (`functions/.env*`): `ALLOWED_DOMAIN` (fallback when `config/org` does
- *   not exist; default from shared), `BOOTSTRAP_ADMINS` (comma separated).
+ * - Env (`functions/.env*`): `ALLOWED_DOMAIN` (comma separated list; fallback
+ *   when `config/org` does not exist; default from shared), `BOOTSTRAP_ADMINS` (comma separated).
  *   Read from `process.env` on purpose: string params without a value would
  *   make the CLI prompt (and block `emulators:exec`).
  * - Param `EXTENSION_INSTALL_URL` (has a default, so it never prompts).
@@ -79,7 +79,7 @@ export const joinOrg = onCall(async (request) => {
     {
       db: getFirestore(),
       now: Date.now(),
-      fallbackAllowedDomain: config.allowedDomain,
+      fallbackAllowedDomains: config.allowedDomains,
       bootstrapAdmins: config.bootstrapAdmins,
     },
     auth

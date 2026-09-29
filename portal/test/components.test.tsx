@@ -14,7 +14,8 @@ import { dayBounds, startOfDay } from '../src/lib/dates';
 import { buildTimeline } from '../src/lib/timeline';
 import { InstallUrlWarning, InviteForm } from '../src/pages/InvitationsPage';
 import { RangePicker } from '../src/components/RangePicker';
-import { isPlaceholderInstallUrl } from '../src/env';
+import { ALLOWED_DOMAINS, allowedDomainsFromEnv, googleLoginParams, isPlaceholderInstallUrl } from '../src/env';
+import { joinErrorMessage } from '../src/lib/messages';
 import { presetRange } from '../src/lib/dates';
 import { SettingsForm } from '../src/pages/SettingsPage';
 import { ADMIN, backendOf, emptyDb, fakeAuth, fakeData, member, slot, type FakeDb } from './fakes';
@@ -38,7 +39,7 @@ function renderApp(backend: Backend, path = '/') {
 function seededDb(): FakeDb {
   const db = emptyDb();
   db.config = {
-    allowedDomain: 'compratuparcela.cl',
+    allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
     screenshotsEnabled: true,
     blurScreenshots: true,
     screenshotRetentionDays: 90,
@@ -191,14 +192,23 @@ describe('Timeline', () => {
 });
 
 describe('InviteForm', () => {
+  const DOMAINS = ['impulseai.cl', 'compratuparcela.cl'];
+
   it('validates the domain before writing and reports success', async () => {
     const onInvite = vi.fn(async () => undefined);
-    render(<InviteForm allowedDomain="compratuparcela.cl" invitations={[]} users={[]} onInvite={onInvite} />);
+    render(<InviteForm allowedDomains={DOMAINS} invitations={[]} users={[]} onInvite={onInvite} />);
+    expect(screen.getByText(/Solo cuentas @impulseai\.cl o @compratuparcela\.cl\./)).toBeInTheDocument();
     const input = screen.getByLabelText('Correo de la persona');
     await userEvent.type(input, 'alguien@gmail.com');
     await userEvent.click(screen.getByRole('button', { name: 'Invitar' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Solo puedes invitar correos @compratuparcela.cl.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Solo puedes invitar correos @impulseai.cl o @compratuparcela.cl.');
     expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(onInvite).not.toHaveBeenCalled();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, 'a@sub.impulseai.cl');
+    await userEvent.click(screen.getByRole('button', { name: 'Invitar' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Solo puedes invitar correos');
     expect(onInvite).not.toHaveBeenCalled();
 
     await userEvent.clear(input);
@@ -207,13 +217,18 @@ describe('InviteForm', () => {
     expect(onInvite).toHaveBeenCalledWith('nueva@compratuparcela.cl', 'nueva@compratuparcela.cl');
     expect(await screen.findByRole('status')).toHaveTextContent('Invitación enviada a nueva@compratuparcela.cl.');
     expect(input).toHaveValue('');
+
+    await userEvent.type(input, 'Otro@ImpulseAI.cl');
+    await userEvent.click(screen.getByRole('button', { name: 'Invitar' }));
+    expect(onInvite).toHaveBeenLastCalledWith('otro@impulseai.cl', 'otro@impulseai.cl');
   });
 
   it('shows write errors', async () => {
     const onInvite = vi.fn(async () => {
       throw Object.assign(new Error('x'), { code: 'permission-denied' });
     });
-    render(<InviteForm allowedDomain="compratuparcela.cl" invitations={[]} users={[]} onInvite={onInvite} />);
+    render(<InviteForm allowedDomains={['compratuparcela.cl']} invitations={[]} users={[]} onInvite={onInvite} />);
+    expect(screen.getByLabelText('Correo de la persona')).toHaveAttribute('placeholder', 'nombre@compratuparcela.cl');
     await userEvent.type(screen.getByLabelText('Correo de la persona'), 'a@compratuparcela.cl');
     await userEvent.click(screen.getByRole('button', { name: 'Invitar' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No tienes permiso para hacer esto.');
@@ -222,17 +237,21 @@ describe('InviteForm', () => {
 
 describe('SettingsForm', () => {
   const config: OrgConfig = {
-    allowedDomain: 'compratuparcela.cl',
+    allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
     screenshotsEnabled: false,
     blurScreenshots: true,
     screenshotRetentionDays: 90,
     updatedAt: NOW,
     updatedBy: 'system',
   };
+  const domainItems = () =>
+    within(screen.getByRole('list', { name: 'Dominios permitidos' }))
+      .getAllByRole('listitem')
+      .map((li) => li.textContent);
 
   it('rejects invalid retention and saves valid values', async () => {
     const onSave = vi.fn(async () => undefined);
-    render(<SettingsForm config={config} onSave={onSave} />);
+    render(<SettingsForm config={config} adminEmail="lukas@impulseai.cl" onSave={onSave} />);
     const days = screen.getByLabelText('Conservar capturas (días)');
     await userEvent.clear(days);
     await userEvent.type(days, '0');
@@ -245,7 +264,7 @@ describe('SettingsForm', () => {
     await userEvent.click(screen.getByLabelText(/Tomar capturas/));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(onSave).toHaveBeenCalledWith({
-      allowedDomain: 'compratuparcela.cl',
+      allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
       screenshotsEnabled: true,
       blurScreenshots: true,
       screenshotRetentionDays: '30',
@@ -253,16 +272,61 @@ describe('SettingsForm', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });
 
-  it('the domain is read-only until "Cambiar", which shows a warning', async () => {
-    render(<SettingsForm config={config} onSave={vi.fn()} />);
-    const domain = screen.getByLabelText('Dominio de Google Workspace');
-    expect(domain).toHaveAttribute('readonly');
-    await userEvent.click(screen.getByRole('button', { name: 'Cambiar' }));
-    expect(domain).not.toHaveAttribute('readonly');
-    expect(screen.getByText(/si cambias el dominio/)).toBeInTheDocument();
-    await userEvent.clear(domain);
-    await userEvent.type(domain, 'otra.cl');
-    expect(screen.getByRole('button', { name: 'Guardar y cambiar dominio' })).toBeInTheDocument();
+  it('lists the domains read-only until "Cambiar dominios", which shows a warning', async () => {
+    render(<SettingsForm config={config} adminEmail="lukas@impulseai.cl" onSave={vi.fn()} />);
+    expect(domainItems()).toEqual(['@impulseai.cltu cuenta', '@compratuparcela.cl']);
+    expect(screen.queryByRole('button', { name: /Quitar/ })).toBeNull();
+    expect(screen.queryByLabelText('Agregar dominio')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Cambiar dominios' }));
+    expect(screen.getByText(/si quitas un dominio/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Agregar dominio')).toBeInTheDocument();
+  });
+
+  it('adds and removes domains; the admin own domain and the last one cannot be removed', async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<SettingsForm config={config} adminEmail="lukas@impulseai.cl" onSave={onSave} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Cambiar dominios' }));
+    expect(screen.getByRole('button', { name: 'Quitar @impulseai.cl' })).toBeDisabled();
+
+    const add = screen.getByLabelText('Agregar dominio');
+    await userEvent.type(add, 'no dominio');
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('no es válido');
+    await userEvent.clear(add);
+    await userEvent.type(add, '@CompraTuParcela.cl');
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('@compratuparcela.cl ya está en la lista.');
+    await userEvent.clear(add);
+    // Enter adds the domain (it does not submit the form).
+    await userEvent.type(add, ' Nueva.CL {enter}');
+    expect(domainItems()).toEqual(['@impulseai.cltu cuentaQuitar', '@compratuparcela.clQuitar', '@nueva.clQuitar']);
+    expect(add).toHaveValue('');
+    expect(onSave).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar @compratuparcela.cl' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar @nueva.cl' }));
+    expect(domainItems()).toEqual(['@impulseai.cltu cuentaQuitar']);
+    expect(screen.getByRole('button', { name: 'Quitar @impulseai.cl' })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar y cambiar dominios' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ allowedDomains: ['impulseai.cl'] }));
+  });
+
+  it('does not save when the admin own domain is missing (e.g. an old config)', async () => {
+    const onSave = vi.fn(async () => undefined);
+    const legacy = { ...config, allowedDomains: undefined, allowedDomain: 'compratuparcela.cl' } as unknown as OrgConfig;
+    render(<SettingsForm config={legacy} adminEmail="lukas@impulseai.cl" onSave={onSave} />);
+    expect(domainItems()).toEqual(['@compratuparcela.cl']);
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('No puedes quitar @impulseai.cl: es el dominio de tu propia cuenta.');
+    expect(onSave).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cambiar dominios' }));
+    expect(screen.getByRole('button', { name: 'Quitar @compratuparcela.cl' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Agregar dominio'), 'impulseai.cl');
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar y cambiar dominios' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ allowedDomains: ['compratuparcela.cl', 'impulseai.cl'] }));
   });
 });
 
@@ -275,7 +339,7 @@ describe('Configuración page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(backend.data.saveOrgConfig).toHaveBeenCalled());
     expect(db.config).toEqual({
-      allowedDomain: 'compratuparcela.cl',
+      allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
       screenshotsEnabled: true,
       blurScreenshots: false,
       screenshotRetentionDays: 90,
@@ -290,7 +354,7 @@ describe('Colaboradores page', () => {
     const db = seededDb();
     const backend = backendOf(db, ADMIN);
     renderApp(backend, '/colaboradores');
-    expect(await screen.findByLabelText('Rol de Jefa Pérez')).toBeDisabled();
+    expect(await screen.findByLabelText('Rol de Lukas Admin')).toBeDisabled();
     const items = screen.getAllByRole('listitem');
     const self = items.find((i) => i.textContent?.includes('(tú)'))!;
     expect(within(self).getByRole('button', { name: 'Desactivar' })).toBeDisabled();
@@ -404,6 +468,34 @@ describe('Lightbox', () => {
     expect(await screen.findByRole('heading', { name: 'Captura de las 09:12' })).toBeInTheDocument();
     expect(screen.queryByTestId('lightbox-img')).toBeNull();
     expect(within(screen.getByRole('dialog')).getByText('Cargando…')).toBeInTheDocument();
+  });
+});
+
+describe('Dominios del login', () => {
+  it('parses VITE_ALLOWED_DOMAIN as a list with defaults', () => {
+    expect(allowedDomainsFromEnv(' ImpulseAI.cl, compratuparcela.cl ')).toEqual(['impulseai.cl', 'compratuparcela.cl']);
+    expect(allowedDomainsFromEnv('')).toEqual(['impulseai.cl', 'compratuparcela.cl']);
+    expect(allowedDomainsFromEnv(undefined)).toEqual(['impulseai.cl', 'compratuparcela.cl']);
+    expect(allowedDomainsFromEnv('solo.cl')).toEqual(['solo.cl']);
+    // Without VITE_ALLOWED_DOMAIN (vitest mode): the shared defaults.
+    expect(ALLOWED_DOMAINS).toEqual(['impulseai.cl', 'compratuparcela.cl']);
+  });
+
+  it('sends hd only when there is a single domain', () => {
+    expect(googleLoginParams(['compratuparcela.cl'])).toEqual({ hd: 'compratuparcela.cl', prompt: 'select_account' });
+    expect(googleLoginParams(['impulseai.cl', 'compratuparcela.cl'])).toEqual({ prompt: 'select_account' });
+    expect(googleLoginParams([])).toEqual({ prompt: 'select_account' });
+  });
+
+  it('the domain message lists every domain', () => {
+    expect(joinErrorMessage('domain-not-allowed', ['impulseai.cl', 'compratuparcela.cl'])).toBe(
+      'Esta cuenta no es de la empresa. Entra con tu cuenta @impulseai.cl o @compratuparcela.cl.',
+    );
+  });
+
+  it('the login page shows the domains', async () => {
+    renderApp({ data: fakeData(emptyDb()), auth: fakeAuth(null, ADMIN) });
+    expect(await screen.findByText(/Usa tu cuenta @impulseai\.cl o @compratuparcela\.cl\./)).toBeInTheDocument();
   });
 });
 

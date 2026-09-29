@@ -19,7 +19,12 @@ export type IdleState = 'active' | 'idle' | 'locked';
 
 /** `config/org` */
 export interface OrgConfig {
-  allowedDomain: string;
+  /**
+   * 1–10 Workspace domains (lowercase, without `@`, unique). Old documents may
+   * still carry a single `allowedDomain` string: read them with
+   * `readAllowedDomains`.
+   */
+  allowedDomains: string[];
   screenshotsEnabled: boolean;
   blurScreenshots: boolean;
   screenshotRetentionDays: number;

@@ -14,7 +14,8 @@ declare const __BUILD_CONFIG__: {
     messagingSenderId: string;
   };
   emulatorHost: string;
-  allowedDomain: string;
+  /** Raw comma separated list from `VITE_ALLOWED_DOMAIN` (empty = defaults). */
+  allowedDomains: string;
   oauthClientId: string;
 };
 

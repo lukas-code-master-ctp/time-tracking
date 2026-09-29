@@ -26,7 +26,8 @@ export interface BuildConfig {
   firebase: FirebaseWebConfig;
   /** Host of the Firebase emulators (dev only). */
   emulatorHost: string;
-  allowedDomain: string;
+  /** Raw `VITE_ALLOWED_DOMAIN`: comma separated list (parsed at runtime; empty = defaults). */
+  allowedDomains: string;
   oauthClientId: string;
 }
 
@@ -61,7 +62,7 @@ export function resolveBuildConfig(mode: string): BuildConfig {
       messagingSenderId: get('FIREBASE_MESSAGING_SENDER_ID'),
     },
     emulatorHost: dev ? get('EMULATOR_HOST', '127.0.0.1') : '',
-    allowedDomain: get('ALLOWED_DOMAIN'),
+    allowedDomains: get('ALLOWED_DOMAIN'),
     oauthClientId: get('OAUTH_CLIENT_ID'),
   };
 }

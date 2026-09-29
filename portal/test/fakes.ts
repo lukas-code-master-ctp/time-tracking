@@ -81,8 +81,8 @@ export function backendOf(db: FakeDb, admin: WithId<UserProfile>): Backend {
 
 export const ADMIN: WithId<UserProfile> = {
   id: 'admin-1',
-  email: 'jefa@compratuparcela.cl',
-  displayName: 'Jefa Pérez',
+  email: 'lukas@impulseai.cl',
+  displayName: 'Lukas Admin',
   photoURL: null,
   role: 'admin',
   status: 'active',

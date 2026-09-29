@@ -1,14 +1,15 @@
 /** User-facing Spanish messages for errors coming from Firebase. */
+import { formatDomains } from '@timetracking/shared';
 
 /** `joinOrg` rejection (`details.reason` of the HttpsError). */
-export function joinErrorMessage(reason: string, domain: string): string {
+export function joinErrorMessage(reason: string, domains: readonly string[]): string {
   switch (reason) {
     case 'no-invitation':
       return 'Tu cuenta no tiene acceso al portal. Pide a un administrador que te invite.';
     case 'invitation-revoked':
       return 'Tu invitación fue revocada. Habla con un administrador.';
     case 'domain-not-allowed':
-      return `Esta cuenta no es de la empresa. Entra con tu cuenta @${domain}.`;
+      return `Esta cuenta no es de la empresa. Entra con tu cuenta ${formatDomains(domains)}.`;
     case 'user-disabled':
       return 'Tu cuenta está desactivada. Habla con un administrador.';
     case 'email-not-verified':

@@ -30,19 +30,19 @@ El build prod falla si su bundle contiene restos dev (login dev, mensajes `debug
 ## Configuración
 
 - `.env.development`: valores del proyecto demo de emuladores; no hay que tocarlo.
-- `.env.production`: configuración web del proyecto Firebase real, con placeholders `REEMPLAZAR_...` (no son secretos). Puedes dejar los valores reales en `.env.production.local` (no se versiona). Mientras queden placeholders el build avisa. `VITE_OAUTH_CLIENT_ID` agrega `oauth2` (scopes `openid email profile`) al manifest: sin él, "Iniciar sesión con Google" muestra que falta configurarlo.
+- `.env.production`: configuración web del proyecto Firebase real, con placeholders `REEMPLAZAR_...` (no son secretos). Puedes dejar los valores reales en `.env.production.local` (no se versiona). Mientras queden placeholders el build avisa. `VITE_OAUTH_CLIENT_ID` agrega `oauth2` (scopes `openid email profile`) al manifest: sin él, "Iniciar sesión con Google" muestra que falta configurarlo. `VITE_ALLOWED_DOMAIN` (opcional) es la lista de dominios separados por coma que muestran los mensajes (por defecto `impulseai.cl,compratuparcela.cl`); quien decide qué cuentas entran es el servidor (`config/org.allowedDomains` o `ALLOWED_DOMAIN` de functions).
 
 ### Login con Google en producción (checklist)
 
 1. **Firebase Auth → Sign-in method → Google: habilitado.**
-2. **Pantalla de consentimiento OAuth** del proyecto de Google Cloud (el mismo proyecto de Firebase): tipo *Interno* si la empresa usa Google Workspace (solo cuentas del dominio, sin verificación de Google); scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
+2. **Pantalla de consentimiento OAuth** del proyecto de Google Cloud (el mismo proyecto de Firebase): tipo **Externo** y **publicada en producción** (hay usuarios de dos organizaciones de Google Workspace, `@impulseai.cl` y `@compratuparcela.cl`; *Interno* solo admite cuentas de la organización dueña del proyecto). Con solo estos scopes básicos normalmente no hace falta la verificación de Google (ver el README principal, paso 2); scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
 3. **Cliente OAuth de tipo "Extensión de Chrome"** (Google Cloud → APIs y servicios → Credenciales) con el **ID del ítem de la Chrome Web Store**. Créalo **en el mismo proyecto de Google Cloud que Firebase**: así Firebase acepta el access token sin más. Si lo creas en otro proyecto, agrégalo en Firebase Auth → Google → *Safelist client IDs from external projects*; si no, `signInWithCredential` falla con `auth/invalid-credential` (la extensión lo muestra como "Google rechazó el acceso").
 4. Pon ese client ID en `VITE_OAUTH_CLIENT_ID` y haz `npm run build`.
 
 Notas:
 - El flujo es `chrome.identity.getAuthToken` (access token, no ID token) → `GoogleAuthProvider.credential(null, accessToken)` → `signInWithCredential` de `firebase/auth/web-extension`. Firebase obtiene el perfil con ese token; con el scope `email` el usuario queda con `emailVerified: true` y el ID token de Firebase trae `email_verified: true` (lo exige `joinOrg`). Sin el scope `email` Firebase no recibe el correo y `joinOrg` rechaza con `no-email`.
 - `getAuthToken` usa **siempre la cuenta principal del perfil de Chrome** (no hay selector de cuenta). El colaborador debe usar un perfil de Chrome con su cuenta de la empresa; con una cuenta personal verá "Esta cuenta no es de la empresa". Si el perfil no tiene cuenta, la extensión le pide iniciar sesión en Chrome.
-- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin publicar, crea un segundo cliente OAuth con el ID de esa copia (o publica como *no listada* / *privada* para el dominio).
+- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin publicar, crea un segundo cliente OAuth con el ID de esa copia (o publícala como *no listada*; *privada* no sirve porque se limita a un solo dominio).
 
 ## Arquitectura
 
@@ -73,7 +73,7 @@ icons/                   PNG 16/32/48/128 (normal y "on")
 ```
 
 ### Login y aviso
-- Prod: `chrome.identity.getAuthToken({ interactive: true })` → `GoogleAuthProvider.credential(null, token)` → `signInWithCredential` → `joinOrg`. Si Firebase rechaza el token (revocado/caducado en la caché de Chrome) se quita con `removeCachedAuthToken` y se reintenta una vez. Cancelar el diálogo de Google muestra un aviso, no un error. Los rechazos de `joinOrg` (`details.reason`) se muestran con mensajes claros: sin invitación / revocada ("Pide a tu administrador que te invite"), otro dominio ("Usa tu cuenta @dominio"), desactivada, correo no verificado.
+- Prod: `chrome.identity.getAuthToken({ interactive: true })` → `GoogleAuthProvider.credential(null, token)` → `signInWithCredential` → `joinOrg`. Si Firebase rechaza el token (revocado/caducado en la caché de Chrome) se quita con `removeCachedAuthToken` y se reintenta una vez. Cancelar el diálogo de Google muestra un aviso, no un error. Los rechazos de `joinOrg` (`details.reason`) se muestran con mensajes claros: sin invitación / revocada ("Pide a tu administrador que te invite"), otro dominio ("Usa tu cuenta @impulseai.cl o @compratuparcela.cl", con la lista configurada), desactivada, correo no verificado.
 - Cerrar sesión (solo sin jornada abierta) también quita el token de la caché de Chrome.
 - Si Firebase termina la sesión con la jornada abierta (`onAuthStateChanged` → null, o al despertar con otro usuario), la jornada se cierra localmente y se encola el cierre (sale si ese usuario vuelve a entrar).
 - Aviso (`consent.html`): se abre solo tras iniciar sesión si falta aceptar `CONSENT_VERSION`; "Aceptar" escribe `consentAcceptedAt` + `consentVersion` en `users/{uid}`. `session.start` lo exige.

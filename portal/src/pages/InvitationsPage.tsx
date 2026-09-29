@@ -1,9 +1,9 @@
 import { useId, useState, type FormEvent } from 'react';
-import type { Invitation, UserProfile, WithId } from '@timetracking/shared';
+import { allowedDomainsOr, formatDomains, type Invitation, type UserProfile, type WithId } from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
-import { ALLOWED_DOMAIN, EXTENSION_INSTALL_URL, isPlaceholderInstallUrl } from '../env';
+import { ALLOWED_DOMAINS, EXTENSION_INSTALL_URL, isPlaceholderInstallUrl } from '../env';
 import { formatRelativeDateTime } from '../lib/dates';
 import { copyText } from '../lib/download';
 import { errorMessage } from '../lib/messages';
@@ -18,14 +18,15 @@ import {
 import { useLoad } from '../lib/useLoad';
 
 interface InviteFormProps {
-  allowedDomain: string;
+  /** Allowed Workspace domains: an email of any of them can be invited. */
+  allowedDomains: readonly string[];
   invitations: readonly WithId<Invitation>[];
   users: readonly WithId<UserProfile>[];
   /** Writes the invitation; throws on failure. */
   onInvite(id: string, email: string): Promise<void>;
 }
 
-export function InviteForm({ allowedDomain, invitations, users, onInvite }: InviteFormProps) {
+export function InviteForm({ allowedDomains, invitations, users, onInvite }: InviteFormProps) {
   const id = useId();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export function InviteForm({ allowedDomain, invitations, users, onInvite }: Invi
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     setDone(null);
-    const check = checkInvite(email, allowedDomain, invitations, users);
+    const check = checkInvite(email, allowedDomains, invitations, users);
     if (!check.ok) {
       setError(check.error);
       return;
@@ -62,7 +63,7 @@ export function InviteForm({ allowedDomain, invitations, users, onInvite }: Invi
           type="email"
           inputMode="email"
           autoComplete="off"
-          placeholder={`nombre@${allowedDomain}`}
+          placeholder={`nombre@${allowedDomains[0] ?? 'empresa.cl'}`}
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
@@ -76,7 +77,7 @@ export function InviteForm({ allowedDomain, invitations, users, onInvite }: Invi
         </button>
       </div>
       <p id={`${id}-help`} className="muted small">
-        Solo cuentas @{allowedDomain}. Le llegará un correo con el enlace para instalar la extensión.
+        Solo cuentas {formatDomains(allowedDomains)}. Le llegará un correo con el enlace para instalar la extensión.
       </p>
       {error ? (
         <p id={`${id}-error`} className="field-error" role="alert">
@@ -113,7 +114,7 @@ export function InvitationsPage() {
   const { uid } = useAdmin();
   const load = useLoad(async () => {
     const [invitations, users, config] = await Promise.all([data.listInvitations(), data.listUsers(), data.getOrgConfig()]);
-    return { invitations, users, allowedDomain: config?.allowedDomain ?? ALLOWED_DOMAIN };
+    return { invitations, users, allowedDomains: allowedDomainsOr(config, ALLOWED_DOMAINS) };
   }, [data]);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -176,7 +177,7 @@ export function InvitationsPage() {
           <section className="card" aria-labelledby="h-invite">
             <h2 id="h-invite">Nueva invitación</h2>
             <InviteForm
-              allowedDomain={load.data.allowedDomain}
+              allowedDomains={load.data.allowedDomains}
               invitations={load.data.invitations}
               users={load.data.users}
               onInvite={async (id, email) => {

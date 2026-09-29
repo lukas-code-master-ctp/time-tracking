@@ -1,13 +1,13 @@
 # Registro de jornada y actividad
 
-Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de unas 30 personas que trabaja con Google Workspace:
+Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de unas 30 personas que trabaja con Google Workspace. Admite **varios dominios de Workspace** (hoy `@impulseai.cl` y `@compratuparcela.cl`, dos organizaciones distintas); la lista se edita en el portal (Configuración).
 
 - La persona **admin** invita a los colaboradores por correo desde un **portal web**.
 - Cada **colaborador** instala una **extensión de Chrome**, entra con su cuenta de la empresa y **abre y cierra su jornada**.
 - Mientras la jornada está abierta, la extensión mide el nivel de actividad, los sitios usados y, si está activado, toma capturas de la pestaña visible.
 - La persona admin ve todo en la **reportería del portal**: horas, % de actividad, sitios, línea de tiempo y capturas.
 
-Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [detalles de la extensión](extension/README.md).
+Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [detalles de la extensión](extension/README.md).
 
 ## Qué mide (y qué NO)
 
@@ -90,9 +90,9 @@ npm run dev -w portal
 
 `npm run seed` crea (y puede correrse varias veces; reemplaza los datos de los colaboradores de ejemplo):
 
-- Admin inicial **`jefa@compratuparcela.cl`** (está en `BOOTSTRAP_ADMINS` de `functions/.env.demo-timetracking`).
-- 3 colaboradores con invitación aceptada y aviso aceptado: `ana.rojas@…` (con una **jornada abierta ahora**), `beto.diaz@…`, `carla.soto@…`; y 1 invitación pendiente: `diego.munoz@…`.
-- `config/org` con capturas difuminadas activas (solo si no existe: si ya cambiaste la configuración en el portal, se respeta).
+- Admin inicial **`lukas@impulseai.cl`** (está en `BOOTSTRAP_ADMINS` de `functions/.env.demo-timetracking`, que también define `ALLOWED_DOMAIN=impulseai.cl,compratuparcela.cl`).
+- 3 colaboradores de ambos dominios con invitación aceptada y aviso aceptado: `ana.rojas@compratuparcela.cl` (con una **jornada abierta ahora**), `beto.diaz@compratuparcela.cl`, `carla.soto@impulseai.cl`; y 1 invitación pendiente: `diego.munoz@impulseai.cl`.
+- `config/org` con los dos dominios y capturas difuminadas activas (solo si no existe: si ya cambiaste la configuración en el portal, se respeta).
 - Jornadas de los últimos 7 días hábiles en horario laboral de Chile (con pausa de almuerzo, un día libre y un cierre automático), actividad variable, sitios típicos (`mail.google.com`, `docs.google.com`, `sheets.google.com`, `drive.google.com`, `calendar.google.com`, `meet.google.com`…), tiempo fuera de Chrome y unas 20 capturas de ejemplo difuminadas en Storage.
 
 El seed y los e2e **se niegan a correr** si las variables `*_EMULATOR_HOST` no apuntan a este computador o si el proyecto no es `demo-timetracking`: nunca escriben en un proyecto real.
@@ -129,7 +129,7 @@ Los tres `e2e*` levantan y apagan sus propios emuladores: no los corras con `npm
 
 ### 1. Proyecto de Firebase
 
-1. Con una cuenta de la empresa (para que el proyecto quede dentro de la organización de Google Workspace; si no, en el paso 2 no aparece la opción **Interno**), en [console.firebase.google.com](https://console.firebase.google.com) crea un proyecto (por ejemplo `registro-jornada-cp`). Anota el **ID del proyecto**.
+1. Con una cuenta de la empresa (por ejemplo `lukas@impulseai.cl`, para que el proyecto quede dentro de una de las organizaciones de Google Workspace), en [console.firebase.google.com](https://console.firebase.google.com) crea un proyecto (por ejemplo `registro-jornada-cp`). Anota el **ID del proyecto**.
 2. Cámbialo al plan **Blaze** (pago por uso): Cloud Functions y Cloud Storage lo exigen. Configura una **alerta de presupuesto** (p. ej. USD 10) en Google Cloud → Facturación → Presupuestos.
 3. **Firestore Database** → Crear base de datos → modo producción → ubicación **`southamerica-west1` (Santiago)**. La ubicación no se puede cambiar después y debe ser esa: las Cloud Functions corren en `southamerica-west1` y el disparador de Firestore del correo de invitación (`onInvitationWritten`) no se despliega si la base está en otra región.
 4. **Storage** → Comenzar → misma ubicación si está disponible (si no, la más cercana).
@@ -139,13 +139,18 @@ Los tres `e2e*` levantan y apagan sus propios emuladores: no los corras con `npm
 
 ### 2. Pantalla de consentimiento OAuth
 
-En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) → **APIs y servicios → Pantalla de consentimiento de OAuth**: tipo **Interno** (solo cuentas de tu Google Workspace, sin verificación de Google). Nombre de la app, correo de soporte y scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
+En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) → **APIs y servicios → Pantalla de consentimiento de OAuth** (en la consola nueva: **Google Auth Platform → Público / Branding**):
+
+1. Tipo de usuario **Externo**. **Interno** no sirve aquí: solo admite cuentas de la organización de Google Workspace dueña del proyecto, y el equipo usa dos organizaciones distintas (`@impulseai.cl` y `@compratuparcela.cl`). Quién puede entrar de verdad lo deciden `joinOrg` y la lista de dominios permitidos, no esta pantalla.
+2. Nombre de la app, correo de soporte, correo de contacto del desarrollador y solo los scopes básicos `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
+3. **Publica la app** (estado de publicación **En producción**, botón "Publicar app"). Si queda en **Prueba**, solo pueden entrar los usuarios de prueba que agregues a mano (máximo 100) y las autorizaciones caducan cada pocos días.
+4. Con solo esos scopes básicos (no sensibles), Google normalmente **no exige verificación** de la app para publicarla; a lo sumo puede pedir verificar la marca (nombre, logo, dominio) si agregas un logo o enlaces. Si la consola muestra un aviso de verificación, revisa qué dato lo provoca antes de seguir. Las políticas de Google cambian: confirma lo que muestre la consola en ese momento.
 
 ### 3. Publicar la extensión (no listada) para obtener su ID
 
 1. Crea una cuenta de desarrollador de Chrome Web Store (pago único de USD 5), idealmente con una cuenta de la empresa.
 2. Rellena `extension/.env.production` (o `extension/.env.production.local`, que no se versiona) con los valores de la app web del paso 1.6. Deja `VITE_OAUTH_CLIENT_ID` vacío por ahora.
-3. `npm run build -w extension` → comprime el **contenido** de `extension/dist` en un .zip y súbelo en el [panel de desarrollador](https://chrome.google.com/webstore/devconsole) como ítem nuevo. Visibilidad: **No listada** (o **Privada** para tu dominio). Completa la ficha y la justificación de permisos (`tabs`, `idle`, `alarms`, `storage`, `unlimitedStorage`, `identity`, `scripting` y acceso a `<all_urls>`: medir la pestaña activa, guardar la cola sin conexión y capturar la pestaña visible).
+3. `npm run build -w extension` → comprime el **contenido** de `extension/dist` en un .zip y súbelo en el [panel de desarrollador](https://chrome.google.com/webstore/devconsole) como ítem nuevo. Visibilidad: **No listada** (solo la encuentra quien tiene el enlace). No uses **Privada**: se limita a los usuarios de un solo dominio (o a testers con correo), y aquí hay dos organizaciones. Completa la ficha y la justificación de permisos (`tabs`, `idle`, `alarms`, `storage`, `unlimitedStorage`, `identity`, `scripting` y acceso a `<all_urls>`: medir la pestaña activa, guardar la cola sin conexión y capturar la pestaña visible).
 4. Anota el **ID del ítem** (32 letras) y el **enlace de la ficha** (`https://chromewebstore.google.com/detail/.../<ID>`).
 
 ### 4. Cliente OAuth de la extensión
@@ -155,16 +160,18 @@ En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) →
 
 ### 5. Configuración del portal y de functions
 
-- `portal/.env.production` (o `.env.production.local`): los mismos valores de la app web, `VITE_ALLOWED_DOMAIN=compratuparcela.cl` y `VITE_EXTENSION_INSTALL_URL=<enlace de la ficha>`. Mientras el enlace sea un placeholder, la página Invitaciones muestra un aviso.
+- `portal/.env.production` (o `.env.production.local`): los mismos valores de la app web, `VITE_ALLOWED_DOMAIN=impulseai.cl,compratuparcela.cl` y `VITE_EXTENSION_INSTALL_URL=<enlace de la ficha>`. Mientras el enlace sea un placeholder, la página Invitaciones muestra un aviso. Con más de un dominio, el login del portal no fija `hd` (el selector de cuentas de Google muestra todas); con uno solo, lo usa como sugerencia.
+- `extension/.env.production`: `VITE_ALLOWED_DOMAIN` es opcional (solo cambia los mensajes; por defecto `impulseai.cl,compratuparcela.cl`).
 - Crea `functions/.env.<ID del proyecto>` (no se versiona):
 
   ```
-  ALLOWED_DOMAIN=compratuparcela.cl
-  BOOTSTRAP_ADMINS=jefa@compratuparcela.cl
+  ALLOWED_DOMAIN=impulseai.cl,compratuparcela.cl
+  BOOTSTRAP_ADMINS=lukas@impulseai.cl
   EXTENSION_INSTALL_URL=https://chromewebstore.google.com/detail/.../<ID>
   ```
 
-  `BOOTSTRAP_ADMINS` son los correos (separados por coma) que quedan como admin en su primer login sin invitación.
+  - `ALLOWED_DOMAIN`: dominios permitidos separados por coma (de 1 a 10, sin `@`). Se usan hasta que exista `config/org`; el primer admin la crea con esta lista y desde entonces manda la lista de **Configuración → Dominios permitidos** del portal. Solo se aceptan correos exactos de esos dominios (no subdominios como `@sub.impulseai.cl`).
+  - `BOOTSTRAP_ADMINS`: correos (separados por coma) que quedan como admin en su primer login sin invitación. Deben ser de un dominio permitido.
 
 ### 6. Secretos SMTP (correo de invitación)
 
@@ -190,7 +197,7 @@ npm run typecheck && npm test && npm run test:emulator && npm run build
 npx firebase deploy --only firestore,storage,functions,hosting
 ```
 
-El portal queda en `https://<proyecto>.web.app`. Entra con la cuenta de `BOOTSTRAP_ADMINS`, revisa **Configuración** (capturas sí/no, difuminado, retención) e invita al equipo.
+El portal queda en `https://<proyecto>.web.app`. Entra con la cuenta de `BOOTSTRAP_ADMINS`, revisa **Configuración** (capturas sí/no, difuminado, retención y dominios permitidos) e invita al equipo (correos de cualquiera de los dominios de la lista).
 
 ### 7b. Alternativa: portal en Vercel en vez de Firebase Hosting
 
@@ -216,16 +223,18 @@ Vercel solo aloja el **portal**. Firebase (pasos 1, 5, 6 y 7 sin `hosting`) y la
    | `VITE_FIREBASE_STORAGE_BUCKET` | `storageBucket` |
    | `VITE_FIREBASE_APP_ID` | `appId` |
    | `VITE_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` |
-   | `VITE_ALLOWED_DOMAIN` | `compratuparcela.cl` |
+   | `VITE_ALLOWED_DOMAIN` | `impulseai.cl,compratuparcela.cl` |
    | `VITE_EXTENSION_INSTALL_URL` | enlace de la ficha de Chrome Web Store |
 
    Estas variables tienen prioridad sobre `portal/.env.production`, así que no hace falta versionar los valores reales (el repo es público). Si cambias una variable, vuelve a desplegar (**Deployments → Redeploy**): Vite las incrusta al compilar.
 4. **Firebase → Authentication → Configuración → Dominios autorizados** → agrega el dominio de Vercel (`<tu-proyecto>.vercel.app` y tu dominio propio si configuras uno). Sin esto, "Iniciar sesión con Google" falla con `auth/unauthorized-domain`. Las vistas previas de Vercel usan otros dominios (`…-git-rama-….vercel.app`): agrégalos solo si necesitas iniciar sesión en ellas.
 5. Despliega (**Deploy**). Cada push a `main` vuelve a publicar el portal. Los cambios en `firestore.rules`, `storage.rules` o `functions/` **no** se publican con Vercel: para esos corre `npx firebase deploy --only firestore,storage,functions`.
 
-### 8. Instalación forzada en Google Workspace
+### 8. Instalación forzada en Google Workspace (en cada organización)
 
-[admin.google.com](https://admin.google.com) → **Dispositivos → Chrome → Apps y extensiones → Usuarios y navegadores** → elige la unidad organizativa → **+ → Agregar desde Chrome Web Store** (o "Agregar app o extensión de Chrome por ID") con el ID del ítem → política **Forzar instalación**. Así se instala sola en los perfiles de Chrome con cuenta de la empresa, no se puede desinstalar y se actualiza sola. Recomendado: impedir perfiles personales o exigir inicio de sesión en Chrome con la cuenta de la empresa (la extensión usa la cuenta del perfil).
+Cada organización de Google Workspace tiene su propia consola de administración, así que esto se hace **dos veces**: una con un admin de `impulseai.cl` y otra con un admin de `compratuparcela.cl` (y en cada organización que agregues después a la lista de dominios).
+
+En [admin.google.com](https://admin.google.com) de esa organización → **Dispositivos → Chrome → Apps y extensiones → Usuarios y navegadores** → elige la unidad organizativa → **+ → Agregar desde Chrome Web Store** (o "Agregar app o extensión de Chrome por ID") con el ID del ítem → política **Forzar instalación**. Una extensión **no listada** se puede forzar por ID desde cualquier organización. Así se instala sola en los perfiles de Chrome con cuenta de la empresa, no se puede desinstalar y se actualiza sola. Recomendado: impedir perfiles personales o exigir inicio de sesión en Chrome con la cuenta de la empresa (la extensión usa la cuenta del perfil).
 
 ### Costos estimados (30 personas)
 
@@ -247,7 +256,7 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | El emulador de Firestore no arranca | Instala Java 11 o superior y revisa `java -version`. |
 | Extensión dev: el login o el envío fallan | Los emuladores deben estar arriba en 127.0.0.1 (el popup muestra los envíos pendientes); recarga la extensión en `chrome://extensions`. |
 | "Pide a tu admin que te invite" | El correo no tiene invitación pendiente/aceptada (o fue revocada). Invítalo desde el portal. |
-| "Esta cuenta no es de la empresa" (prod) | El perfil de Chrome usa una cuenta personal: `getAuthToken` usa siempre la cuenta del perfil. |
+| "Esta cuenta no es de la empresa" (prod) | El perfil de Chrome usa una cuenta personal (`getAuthToken` usa siempre la cuenta del perfil) o el dominio de la cuenta no está en **Configuración → Dominios permitidos** del portal. |
 | "Google rechazó el acceso" (prod) | El cliente OAuth no corresponde al ID de la extensión o está en otro proyecto (ver paso 4). |
 | El primer `firebase deploy` de functions falla con un error de permisos de Eventarc o de "service agent" | Es normal en proyectos nuevos: Google tarda unos minutos en crear los permisos de los disparadores. Espera 5–10 minutos y vuelve a correr el mismo `npx firebase deploy`. |
 | `firebase deploy` pide valores de `SMTP_*` o falla por secretos | Faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). |

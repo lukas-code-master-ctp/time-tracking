@@ -66,12 +66,34 @@ service cloud.firestore {
 
     // ---------- config/org ----------
 
+    // One normalized domain: lowercase, without '@' (e.g. 'impulseai.cl').
+    function validDomain(x) {
+      return x is string && x.size() >= 4 && x.size() <= 253
+        && x.matches('[a-z0-9]([a-z0-9.-]*[a-z0-9])?[.][a-z]{2,63}');
+    }
+
+    // Element i of the list is valid (or the list is shorter). Rules have no
+    // loops, so the 10 possible positions are checked one by one.
+    function validDomainAt(list, i) {
+      return list.size() <= i || validDomain(list[i]);
+    }
+
+    // 1–10 valid, unique domains.
+    function validDomainList(list) {
+      return list is list && list.size() >= 1 && list.size() <= 10
+        && list.toSet().size() == list.size()
+        && validDomainAt(list, 0) && validDomainAt(list, 1) && validDomainAt(list, 2)
+        && validDomainAt(list, 3) && validDomainAt(list, 4) && validDomainAt(list, 5)
+        && validDomainAt(list, 6) && validDomainAt(list, 7) && validDomainAt(list, 8)
+        && validDomainAt(list, 9);
+    }
+
     function validOrgConfig(d) {
-      return d.keys().hasOnly(['allowedDomain', 'screenshotsEnabled', 'blurScreenshots',
+      return d.keys().hasOnly(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                                 'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
-        && d.keys().hasAll(['allowedDomain', 'screenshotsEnabled', 'blurScreenshots',
+        && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
-        && d.allowedDomain is string && d.allowedDomain.size() > 0
+        && validDomainList(d.allowedDomains)
         && d.screenshotsEnabled is bool
         && d.blurScreenshots is bool
         && d.screenshotRetentionDays is int

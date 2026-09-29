@@ -1,11 +1,12 @@
 /** Shared configuration and constants. */
 
-import { normalizeDomain, parseEmailList } from './domain.js';
+import { MAX_ALLOWED_DOMAINS, normalizeDomainList, parseDomainList, parseEmailList } from './domain.js';
 import type { OrgConfig } from './types.js';
 
 export type AppEnv = 'dev' | 'prod';
 
-export const DEFAULT_ALLOWED_DOMAIN = 'compratuparcela.cl';
+/** Workspace domains allowed by default (two separate Google Workspace organizations). */
+export const DEFAULT_ALLOWED_DOMAINS: readonly string[] = Object.freeze(['impulseai.cl', 'compratuparcela.cl']);
 export const FIREBASE_DEMO_PROJECT_ID = 'demo-timetracking';
 export const FUNCTIONS_REGION = 'southamerica-west1';
 
@@ -43,7 +44,8 @@ export const MAX_PENDING_SCREENSHOTS = 20;
 export const DEFAULT_SCREENSHOT_RETENTION_DAYS = 90;
 
 export interface AppConfig {
-  allowedDomain: string;
+  /** Normalized, unique, 1–10 domains (`ALLOWED_DOMAIN`, comma separated). */
+  allowedDomains: string[];
   /** Lowercase emails that become admin on first login without invitation. */
   bootstrapAdmins: string[];
   appEnv: AppEnv;
@@ -64,20 +66,49 @@ function pick(env: EnvLike, name: string): string | undefined {
 export function resolveConfig(env: EnvLike = {}): AppConfig {
   const appEnvRaw = pick(env, 'APP_ENV')?.toLowerCase();
   return {
-    allowedDomain: normalizeDomain(pick(env, 'ALLOWED_DOMAIN') ?? DEFAULT_ALLOWED_DOMAIN),
+    allowedDomains: domainsOrDefault(parseDomainList(pick(env, 'ALLOWED_DOMAIN'))),
     bootstrapAdmins: parseEmailList(pick(env, 'BOOTSTRAP_ADMINS')),
     appEnv: appEnvRaw === 'dev' ? 'dev' : 'prod',
   };
 }
 
+/** Normalized list capped at `MAX_ALLOWED_DOMAINS`, or the defaults when empty. */
+function domainsOrDefault(domains: readonly unknown[]): string[] {
+  const list = normalizeDomainList(domains).slice(0, MAX_ALLOWED_DOMAINS);
+  return list.length > 0 ? list : [...DEFAULT_ALLOWED_DOMAINS];
+}
+
+/**
+ * Allowed domains stored in a `config/org` document (normalized, max 10).
+ * Tolerates old documents with a single `allowedDomain` string (read as
+ * `[allowedDomain]`). Returns `[]` when the document has none, so callers
+ * apply their own fallback (env / defaults).
+ */
+export function readAllowedDomains(config: unknown): string[] {
+  if (!config || typeof config !== 'object') return [];
+  const c = config as { allowedDomains?: unknown; allowedDomain?: unknown };
+  if (Array.isArray(c.allowedDomains)) {
+    const list = normalizeDomainList(c.allowedDomains).slice(0, MAX_ALLOWED_DOMAINS);
+    if (list.length > 0) return list;
+  }
+  if (typeof c.allowedDomain === 'string') return normalizeDomainList([c.allowedDomain]);
+  return [];
+}
+
+/** `readAllowedDomains(config)`, or `fallback` (normalized) when the config has none. */
+export function allowedDomainsOr(config: unknown, fallback: readonly string[]): string[] {
+  const list = readAllowedDomains(config);
+  return list.length > 0 ? list : domainsOrDefault(fallback);
+}
+
 /** Default `config/org` created on bootstrap. */
 export function defaultOrgConfig(
   now: number,
-  allowedDomain: string = DEFAULT_ALLOWED_DOMAIN,
+  allowedDomains: readonly string[] = DEFAULT_ALLOWED_DOMAINS,
   updatedBy = 'system',
 ): OrgConfig {
   return {
-    allowedDomain: normalizeDomain(allowedDomain),
+    allowedDomains: domainsOrDefault(allowedDomains),
     screenshotsEnabled: false,
     blurScreenshots: true,
     screenshotRetentionDays: DEFAULT_SCREENSHOT_RETENTION_DAYS,

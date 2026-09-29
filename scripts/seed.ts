@@ -2,9 +2,10 @@
  * Demo data in the local Firebase emulators: `npm run seed` (root), with the
  * emulators already running (`npm run emulators` or `npm run emulators:persist`).
  *
- * - Bootstrap admin `jefa@compratuparcela.cl` (Auth + users, role admin).
- * - 3 collaborators (Ana, Beto, Carla) with accepted invitations and accepted
- *   notice, and 1 pending invitation (Diego).
+ * - Bootstrap admin `lukas@impulseai.cl` (Auth + users, role admin).
+ * - 3 collaborators (Ana and Beto @compratuparcela.cl, Carla @impulseai.cl)
+ *   with accepted invitations and accepted notice, and 1 pending invitation
+ *   (Diego @impulseai.cl).
  * - `config/org` with blurred screenshots on.
  * - Sessions and activity for the last 7 days (working hours in Santiago,
  *   variable %, typical sites, time outside Chrome), one session open right
@@ -33,7 +34,7 @@ import { findChromium, NO_CHROMIUM } from './lib/chromium.ts';
 import {
   ADMIN_EMAIL,
   BUCKET,
-  DOMAIN,
+  DOMAINS,
   PROJECT,
   assertEmulators,
   deleteStorageObject,
@@ -82,7 +83,7 @@ async function main(): Promise<void> {
 
   // 2. config/org, profiles and invitations.
   const config: OrgConfig = {
-    allowedDomain: DOMAIN,
+    allowedDomains: [...DOMAINS],
     screenshotsEnabled: true,
     blurScreenshots: true,
     screenshotRetentionDays: 90,
@@ -101,7 +102,7 @@ async function main(): Promise<void> {
   const joined = now - 10 * DAY;
   const adminProfile: UserProfile = {
     email: ADMIN_EMAIL,
-    displayName: 'Jefa de equipo',
+    displayName: 'Lukas (admin)',
     photoURL: null,
     role: 'admin',
     status: 'active',

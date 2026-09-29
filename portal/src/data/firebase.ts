@@ -43,6 +43,7 @@ import {
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
   emailKey,
+  readAllowedDomains,
   type ActivitySlot,
   type Invitation,
   type OrgConfig,
@@ -51,7 +52,7 @@ import {
   type UserProfile,
   type WithId,
 } from '@timetracking/shared';
-import { ALLOWED_DOMAIN, FIREBASE_CONFIG } from '../env';
+import { ALLOWED_DOMAINS, FIREBASE_CONFIG, googleLoginParams } from '../env';
 import { SESSION_LOOKBACK_MS } from '../lib/team';
 import { joinErrorMessage } from '../lib/messages';
 import { JoinError, type AuthApi, type Backend, type DataSource, type TimeRange } from './types';
@@ -108,7 +109,10 @@ export function createFirebaseBackend(): Backend {
   const data: DataSource = {
     async getOrgConfig() {
       const snap = await getDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID));
-      return snap.exists() ? (snap.data() as OrgConfig) : null;
+      if (!snap.exists()) return null;
+      // Old documents may carry a single `allowedDomain`: expose the list.
+      const { allowedDomain: _legacy, ...raw } = snap.data() as OrgConfig & { allowedDomain?: unknown };
+      return { ...raw, allowedDomains: readAllowedDomains(snap.data()) };
     },
     async saveOrgConfig(config) {
       await setDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID), config);
@@ -175,9 +179,8 @@ export function createFirebaseBackend(): Backend {
     },
     async signIn() {
       const provider = new GoogleAuthProvider();
-      // `hd` pre-selects / restricts the Google account chooser to the Workspace
-      // domain. It is only a hint: joinOrg enforces the domain on the server.
-      provider.setCustomParameters({ hd: ALLOWED_DOMAIN, prompt: 'select_account' });
+      // `hd` only with a single domain (see googleLoginParams); joinOrg enforces the domains.
+      provider.setCustomParameters(googleLoginParams(ALLOWED_DOMAINS));
       await signInWithPopup(auth, provider);
     },
     async signOut() {
@@ -192,7 +195,7 @@ export function createFirebaseBackend(): Backend {
         const e = err as { code?: string; details?: { reason?: unknown } };
         const reason =
           typeof e.details?.reason === 'string' ? e.details.reason : (e.code ?? 'unknown').replace(/^functions\//, '');
-        throw new JoinError(reason, joinErrorMessage(reason, ALLOWED_DOMAIN));
+        throw new JoinError(reason, joinErrorMessage(reason, ALLOWED_DOMAINS));
       }
     },
   };

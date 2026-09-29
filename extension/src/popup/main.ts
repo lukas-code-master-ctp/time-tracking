@@ -12,6 +12,7 @@ import '../ui/base.css';
 import './popup.css';
 import type { PopupRequest, StatusView } from '../messages';
 import { clock, el, hoursMinutes, percent, send } from '../ui/dom';
+import { ALLOWED_DOMAINS } from '../env';
 
 const root = document.getElementById('app') as HTMLElement;
 let busy = false;
@@ -141,7 +142,7 @@ function renderSignedOut(s: StatusView): void {
     }),
   ]);
   if (__APP_ENV__ === 'dev' && s.appEnv === 'dev') {
-    const input = el('input', { type: 'email', placeholder: 'correo@compratuparcela.cl', required: true, id: 'email' });
+    const input = el('input', { type: 'email', placeholder: `correo@${ALLOWED_DOMAINS[0] ?? 'empresa.cl'}`, required: true, id: 'email' });
     const form = el('form', { className: 'stack' }, [
       el('label', { htmlFor: 'email', textContent: 'Correo (login de desarrollo)' }),
       input,
