@@ -10,6 +10,7 @@ Mide la jornada del colaborador (spec `docs/specs/2026-09-29-time-tracking-exten
 | `build:dev` | Build **dev** → `extension/dist-dev` (emuladores en 127.0.0.1) |
 | `dev` | Build dev en modo watch |
 | `typecheck` / `test` | TypeScript estricto / Vitest (node, mocks de `chrome.*`) |
+| `test:emulator` | `uploadToStorage()` contra los emuladores reales de Auth/Firestore/Storage y `storage.rules` (lo corre `npm run test:emulator` en la raíz) |
 | `smoke` | Carga `dist-dev` en Chromium (Playwright) y verifica que el service worker arranca y responde al popup |
 
 Prueba de extremo a extremo contra emuladores (login dev → `joinOrg` → iniciar/cerrar jornada → documentos en Firestore): `npm run e2e:extension` en la raíz.

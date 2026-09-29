@@ -12,7 +12,13 @@
  */
 import type { ContentMessage } from '../messages';
 
-const EVENTS = ['keydown', 'mousedown', 'mousemove', 'wheel', 'touchstart', 'scroll'] as const;
+/**
+ * Input events only (spec 3.1). `scroll` is deliberately absent: the browser
+ * dispatches it as trusted even when the page scrolls itself (auto-scrolling
+ * chats, feeds, carousels, `scrollTo`), which would count an idle user as
+ * active. User scrolling already shows up as wheel/keydown/touchstart/mousedown.
+ */
+const EVENTS = ['keydown', 'mousedown', 'mousemove', 'wheel', 'touchstart'] as const;
 const OWNER_KEY = '__timetrackingActivityOwner';
 
 type OwnerWindow = Window & { [OWNER_KEY]?: string };

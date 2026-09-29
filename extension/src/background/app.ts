@@ -182,6 +182,12 @@ export class App {
    * Signing out requires the work day to be closed. Blocks still held by the
    * accumulator are queued; pending uploads keep their uid and are sent when
    * that user signs in again (dropped if another user signs in).
+   *
+   * The accumulator itself is kept (it measures nothing without a work day):
+   * if the same user signs in again and starts a work day inside the same
+   * 10-minute block, that block keeps accumulating instead of restarting from
+   * zero, which would replace the queued/uploaded snapshot with a smaller one.
+   * Another user gets a fresh accumulator (see Tracker.beginMeasuring).
    */
   async signOut(): Promise<void> {
     await this.store.run(async () => {
@@ -196,7 +202,6 @@ export class App {
         }
         await this.store.save('queue');
       }
-      this.store.acc = null;
       this.store.meta.profile = null;
       this.store.meta.profileUid = null;
       this.store.meta.joinError = null;

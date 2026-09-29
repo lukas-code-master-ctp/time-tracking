@@ -120,8 +120,11 @@ export async function uploadToStorage(
   body: Blob | ArrayBuffer | Uint8Array<ArrayBuffer>,
   contentType: string,
 ): Promise<void> {
+  // After a worker restart the persisted user is restored asynchronously.
+  await h.auth.authStateReady();
   const user = h.auth.currentUser;
   if (!user) throw Object.assign(new Error('Sin sesión'), { code: 'unauthenticated' });
+  // Refreshed by the SDK when it is about to expire (1 h lifetime).
   const token = await user.getIdToken();
   const url = `${h.storageBaseUrl}/v0/b/${encodeURIComponent(h.bucket)}/o?uploadType=media&name=${encodeURIComponent(path)}`;
   const res = await fetch(url, {
@@ -130,7 +133,17 @@ export async function uploadToStorage(
     body,
   });
   if (!res.ok) {
-    const code = res.status === 403 ? 'permission-denied' : res.status === 401 ? 'unauthenticated' : res.status >= 500 ? 'unavailable' : 'invalid-argument';
-    throw Object.assign(new Error(`Storage ${res.status}`), { code });
+    throw Object.assign(new Error(`Storage ${res.status}`), { code: storageErrorCode(res.status) });
   }
+}
+
+/** Maps a Storage REST status to the error codes that sync.ts `classify()` understands. */
+export function storageErrorCode(status: number): string {
+  if (status === 401) return 'unauthenticated';
+  if (status === 403) return 'permission-denied';
+  // Rate limited / request timeout: transient, retry with backoff.
+  if (status === 429) return 'resource-exhausted';
+  if (status === 408) return 'deadline-exceeded';
+  if (status >= 500) return 'unavailable';
+  return 'invalid-argument';
 }

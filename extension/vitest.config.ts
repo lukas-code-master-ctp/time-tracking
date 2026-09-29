@@ -19,6 +19,8 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+    // Needs the emulators: `npm run test:emulator` (root).
+    exclude: ['test/emulator/**', '**/node_modules/**'],
     environment: 'node',
   },
 });

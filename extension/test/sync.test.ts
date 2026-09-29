@@ -3,6 +3,7 @@ import { SLOT_MS, activityDocId, slotStartOf, type ActivitySlot } from '@timetra
 import { backoffMs, emptyQueue, enqueueOp, opKey } from '../src/background/queue';
 import { AUTO_CLOSED_NOTICE, PULSE_ALARM } from '../src/background/session';
 import { STORAGE_KEYS, StateStore } from '../src/background/state';
+import { storageErrorCode } from '../src/background/firebase';
 import { classify, errorCode, toActivityDoc, toNewSessionDoc } from '../src/background/sync';
 import { createHarness, hello, type Harness } from './fakes';
 
@@ -326,6 +327,56 @@ describe('SyncEngine + SessionManager', () => {
     expect(fromPage).toEqual([false]);
     // Foreign extensions are ignored.
     expect(h.chrome.events.message.dispatch({ type: 'status' }, { ...popupSender, id: 'other' }, () => undefined)).toEqual([false]);
+  });
+
+  it('sign out and back in (same user) inside the same block keeps accumulating it, never uploads a smaller snapshot', async () => {
+    await h.app.session.start();
+    await vi.advanceTimersByTimeAsync(40_000);
+    await h.app.session.stop();
+    await h.settle();
+    const docId = activityDocId('u1', SLOT0);
+    expect(h.backend.activity.get(docId)?.trackedSeconds).toBe(40);
+
+    await h.app.signOut();
+    h.auth.user = { uid: 'u1', email: 'ana@compratuparcela.cl', displayName: 'ana' };
+    await h.app.refreshProfile();
+    await h.app.session.start();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await h.app.session.stop();
+    await h.settle();
+    expect(h.backend.activity.get(docId)?.trackedSeconds).toBe(60);
+  });
+
+  it('another user starting a work day gets a fresh accumulator; the previous one is queued with its own uid', async () => {
+    await h.app.session.start();
+    await vi.advanceTimersByTimeAsync(40_000);
+    await h.app.session.stop();
+    h.backend.offline = true;
+    await h.app.signOut();
+    h.backend.offline = false;
+    h.auth.user = { uid: 'u2', email: 'beto@compratuparcela.cl', displayName: 'beto' };
+    h.backend.uid = 'u2';
+    await h.app.refreshProfile();
+    await h.app.session.start();
+    expect(h.app.store.acc?.uid).toBe('u2');
+    const queuedUids = h.app.store.queue.items.map((i) => i.op.uid);
+    expect(queuedUids).toContain('u1');
+    await vi.advanceTimersByTimeAsync(30_000);
+    await h.app.session.stop();
+    await h.settle();
+    // u1's pending block is never written with u2's account (dropped as wrong-user).
+    expect(h.backend.activity.has(activityDocId('u1', SLOT0))).toBe(false);
+    expect(h.backend.activity.get(activityDocId('u2', SLOT0))?.trackedSeconds).toBe(30);
+    expect(h.backend.ops('upsertActivity').every((c) => c.op === 'upsertActivity' && c.data.uid === c.docId.split('_')[0])).toBe(true);
+  });
+
+  it('Storage REST errors map to retryable or permanent codes', () => {
+    expect(storageErrorCode(401)).toBe('unauthenticated');
+    expect(storageErrorCode(403)).toBe('permission-denied');
+    expect(classify(storageErrorCode(429), { kind: 'heartbeat', uid: 'u1', sessionId: 's', at: 1 }, 50)).toBe('retry');
+    expect(classify(storageErrorCode(408), { kind: 'heartbeat', uid: 'u1', sessionId: 's', at: 1 }, 50)).toBe('retry');
+    expect(classify(storageErrorCode(503), { kind: 'heartbeat', uid: 'u1', sessionId: 's', at: 1 }, 50)).toBe('retry');
+    expect(storageErrorCode(400)).toBe('invalid-argument');
   });
 
   it('dev sign-in joins the organization and keeps the rejection reason', async () => {

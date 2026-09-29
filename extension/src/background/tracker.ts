@@ -27,6 +27,7 @@ import {
   type IdleState,
 } from '@timetracking/shared';
 import type { ContentMessage } from '../messages';
+import { enqueueOp } from './queue';
 import type { StateStore, StorageAreaLike } from './state';
 
 const TABS_KEY = 'tt.measurableTabs';
@@ -151,10 +152,22 @@ export class Tracker {
 
   // ---------- used by the session manager (call inside store.run) ----------
 
-  /** Opens the work day in the accumulator with the current idle state and focus. */
+  /**
+   * Opens the work day in the accumulator with the current idle state and
+   * focus. The accumulator of another user is replaced; its blocks are queued
+   * first (they keep their uid, so they are never sent with this account).
+   * The caller persists the queue before the accumulator.
+   */
   async beginMeasuring(sessionId: string, uid: string, at: number): Promise<SlotAccumulator> {
-    if (!this.store.acc || this.store.acc.uid !== uid) this.store.acc = new SlotAccumulator({ uid });
-    const acc = this.store.acc;
+    const previous = this.store.acc;
+    if (previous && previous.uid !== uid) {
+      const { closed, current } = previous.flush(at);
+      for (const slot of [...closed, ...(current ? [current] : [])]) {
+        enqueueOp(this.store.queue, { kind: 'activity', uid: slot.uid, slot });
+      }
+    }
+    const acc = previous && previous.uid === uid ? previous : new SlotAccumulator({ uid });
+    this.store.acc = acc;
     acc.setSession(sessionId, at);
     const idle = await this.queryIdle();
     acc.setIdleState(idle, at);

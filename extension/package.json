@@ -9,6 +9,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
+    "test:emulator": "vitest run -c vitest.emulator.config.ts",
     "build": "node scripts/build.ts --mode production",
     "build:dev": "node scripts/build.ts --mode development",
     "dev": "node scripts/build.ts --mode development --watch",

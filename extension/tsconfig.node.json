@@ -11,5 +11,5 @@
       "@timetracking/shared": ["../packages/shared/src/index.ts"]
     }
   },
-  "include": ["src/globals.d.ts", "test", "vitest.config.ts", "build", "scripts"]
+  "include": ["src/globals.d.ts", "test", "vitest.config.ts", "vitest.emulator.config.ts", "build", "scripts"]
 }

@@ -47,7 +47,7 @@ describe('content script', () => {
     page.win.dispatchEvent(trusted('keydown'));
     page.win.dispatchEvent(trusted('mousemove'));
     vi.advanceTimersByTime(500);
-    page.win.dispatchEvent(trusted('scroll'));
+    page.win.dispatchEvent(trusted('touchstart'));
     vi.advanceTimersByTime(600);
     page.win.dispatchEvent(trusted('wheel'));
     expect(page.sent).toEqual([
@@ -55,6 +55,15 @@ describe('content script', () => {
       { type: 'activity', t: 1_790_000_000_000 },
       { type: 'activity', t: 1_790_000_001_100 },
     ]);
+  });
+
+  it('ignores scroll: pages scroll themselves with trusted events (auto-scroll is not user input)', async () => {
+    const page = installPage();
+    await loadScript();
+    page.win.dispatchEvent(trusted('scroll'));
+    vi.advanceTimersByTime(1_500);
+    page.win.dispatchEvent(trusted('scroll'));
+    expect(page.sent).toEqual([{ type: 'hello' }]);
   });
 
   it('ignores synthetic events and hidden pages', async () => {
