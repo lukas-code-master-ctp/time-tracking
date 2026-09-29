@@ -1456,3 +1456,90 @@ legend {
     min-width: 170px;
   }
 }
+
+.auth-foot {
+  text-align: center;
+}
+
+.auth-foot a {
+  color: var(--muted);
+}
+
+.auth-foot a:hover {
+  color: var(--accent);
+}
+
+/* ---------- privacy policy (public) ---------- */
+
+.privacy-page {
+  min-height: 100vh;
+  padding: 32px 16px 48px;
+}
+
+.privacy-doc {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.privacy-head {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.privacy-head h1 {
+  font-size: 26px;
+}
+
+.privacy-doc h2 {
+  font-size: 17px;
+  margin-bottom: 10px;
+}
+
+.privacy-doc .card {
+  display: grid;
+  gap: 10px;
+}
+
+.privacy-doc .card h2 {
+  margin-bottom: 0;
+}
+
+.privacy-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.privacy-list.yes li::marker {
+  color: var(--ok);
+}
+
+.privacy-list.no li::marker {
+  color: var(--danger);
+}
+
+.privacy-foot {
+  text-align: center;
+  padding-top: 8px;
+}
+
+@media (max-width: 480px) {
+  .privacy-page {
+    padding-top: 20px;
+  }
+
+  .privacy-head h1 {
+    font-size: 22px;
+  }
+
+  .privacy-doc .card {
+    padding: 16px;
+  }
+}

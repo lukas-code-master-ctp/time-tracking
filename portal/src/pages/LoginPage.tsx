@@ -1,7 +1,9 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { Link } from 'react-router';
 import { useSession } from '../data/context';
 import { formatDomains } from '@timetracking/shared';
 import { ALLOWED_DOMAINS, HAS_PLACEHOLDERS } from '../env';
+import { PRIVACY_PATH } from './PrivacyPage';
 
 function AuthCard({ children }: { children: ReactNode }) {
   return (
@@ -71,6 +73,9 @@ export function LoginPage() {
           </button>
         </form>
       ) : null}
+      <p className="auth-foot small">
+        <Link to={PRIVACY_PATH}>Política de privacidad</Link>
+      </p>
     </AuthCard>
   );
 }
