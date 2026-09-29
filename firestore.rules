@@ -1,8 +1,227 @@
 rules_version = '2';
 
-// Initial deny-all rules. Real rules are defined in Task 2 (spec section 5).
+// Security rules (spec section 5).
+//
+// - All times are integers: epoch milliseconds (see packages/shared/src/types.ts).
+// - A caller may write only when `users/{auth.uid}` exists with status 'active'.
+// - Admin = users doc with role 'admin' AND status 'active'.
+// - `users` docs are created only by Cloud Functions (Admin SDK bypasses rules).
+// - Nothing is deleted from clients, except invitations by an admin.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function me() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function isActive() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && me().status == 'active';
+    }
+
+    function isAdmin() {
+      return isActive() && me().role == 'admin';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function isNullableInt(v) {
+      return v == null || v is int;
+    }
+
+    function ownsExisting() {
+      return signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---------- config/org ----------
+
+    function validOrgConfig(d) {
+      return d.keys().hasOnly(['allowedDomain', 'screenshotsEnabled', 'blurScreenshots',
+                                'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
+        && d.keys().hasAll(['allowedDomain', 'screenshotsEnabled', 'blurScreenshots',
+                            'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
+        && d.allowedDomain is string && d.allowedDomain.size() > 0
+        && d.screenshotsEnabled is bool
+        && d.blurScreenshots is bool
+        && d.screenshotRetentionDays is int
+        && d.screenshotRetentionDays >= 1 && d.screenshotRetentionDays <= 3650
+        && d.updatedAt is int
+        && d.updatedBy == request.auth.uid;
+    }
+
+    match /config/{docId} {
+      allow read: if isActive();
+      allow create, update: if docId == 'org' && isAdmin() && validOrgConfig(incoming());
+      allow delete: if false;
+    }
+
+    // ---------- invitations/{emailLower} ----------
+
+    function validInvitation(d, emailId) {
+      return d.keys().hasOnly(['email', 'invitedBy', 'invitedAt', 'status', 'acceptedAt'])
+        && d.keys().hasAll(['email', 'invitedBy', 'invitedAt', 'status'])
+        && d.email is string
+        && d.email.trim().lower() == emailId
+        && d.invitedBy is string
+        && d.invitedAt is int
+        && d.status in ['pending', 'accepted', 'revoked']
+        && (!('acceptedAt' in d) || d.acceptedAt is int);
+    }
+
+    match /invitations/{emailId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && validInvitation(incoming(), emailId)
+        && incoming().status == 'pending'
+        && incoming().invitedBy == request.auth.uid;
+      allow update: if isAdmin()
+        && validInvitation(incoming(), emailId)
+        && incoming().email == resource.data.email;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- users/{uid} ----------
+
+    match /users/{uid} {
+      // Own doc is readable even when disabled or missing (the extension needs
+      // to know it has no access yet).
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+
+      // Created only by the `joinOrg` Cloud Function.
+      allow create: if false;
+
+      allow update: if
+        // Collaborator: only the consent fields of their own doc.
+        (isSelf(uid) && isActive()
+          && changedKeys().hasOnly(['consentAcceptedAt', 'consentVersion'])
+          && incoming().consentAcceptedAt is int
+          && incoming().consentVersion is string
+          && incoming().consentVersion.size() > 0)
+        ||
+        // Admin: role/status of other users (never their own, to avoid lock-out).
+        (isAdmin() && !isSelf(uid)
+          && changedKeys().hasOnly(['role', 'status'])
+          && incoming().role in ['admin', 'member']
+          && incoming().status in ['active', 'disabled']);
+
+      allow delete: if false;
+    }
+
+    // ---------- sessions/{sessionId} ----------
+
+    function validSessionFields(d) {
+      return d.keys().hasOnly(['uid', 'startedAt', 'endedAt', 'endReason', 'lastHeartbeatAt'])
+        && d.keys().hasAll(['uid', 'startedAt', 'endedAt', 'endReason', 'lastHeartbeatAt'])
+        && d.uid is string
+        && d.startedAt is int
+        && isNullableInt(d.endedAt)
+        && (d.endReason == null || d.endReason in ['manual', 'auto'])
+        && d.lastHeartbeatAt is int;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isAdmin() || ownsExisting();
+
+      allow create: if isActive()
+        && validSessionFields(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().endedAt == null
+        && incoming().endReason == null;
+
+      allow update: if isActive()
+        && ownsExisting()
+        && validSessionFields(incoming())
+        && changedKeys().hasOnly(['lastHeartbeatAt', 'endedAt', 'endReason']);
+
+      allow delete: if false;
+    }
+
+    // ---------- activity/{uid_slotStartMs} ----------
+
+    function validActivity(d, docId) {
+      return d.keys().hasOnly(['uid', 'sessionId', 'slotStart', 'trackedSeconds', 'activeSeconds',
+                                'outsideChromeSeconds', 'domains', 'urls'])
+        && d.keys().hasAll(['uid', 'sessionId', 'slotStart', 'trackedSeconds', 'activeSeconds',
+                            'outsideChromeSeconds', 'domains', 'urls'])
+        && d.uid == request.auth.uid
+        && d.sessionId is string && d.sessionId.size() > 0
+        && d.slotStart is int && d.slotStart >= 0
+        && docId == d.uid + '_' + string(d.slotStart)
+        && d.trackedSeconds is number
+        && d.trackedSeconds >= 0 && d.trackedSeconds <= 600
+        && d.activeSeconds is number
+        && d.activeSeconds >= 0 && d.activeSeconds <= d.trackedSeconds
+        && d.outsideChromeSeconds is number
+        && d.outsideChromeSeconds >= 0 && d.outsideChromeSeconds <= d.trackedSeconds
+        && d.domains is map
+        && d.urls is list && d.urls.size() <= 20;
+    }
+
+    match /activity/{docId} {
+      allow read: if isAdmin() || ownsExisting();
+
+      allow create: if isActive() && validActivity(incoming(), docId);
+
+      allow update: if isActive()
+        && ownsExisting()
+        && validActivity(incoming(), docId);
+
+      allow delete: if false;
+    }
+
+    // ---------- screenshots/{id} ----------
+
+    function validScreenshot(d) {
+      return d.keys().hasOnly(['uid', 'sessionId', 'takenAt', 'storagePath', 'blurred',
+                                'width', 'height'])
+        && d.keys().hasAll(['uid', 'sessionId', 'takenAt', 'storagePath', 'blurred',
+                            'width', 'height'])
+        && d.uid == request.auth.uid
+        && d.sessionId is string && d.sessionId.size() > 0
+        && d.takenAt is int
+        && d.storagePath is string
+        && d.storagePath.matches('screenshots/' + d.uid + '/[0-9]{4}-[0-9]{2}-[0-9]{2}/[^/]+[.]jpg')
+        && d.blurred is bool
+        && d.width is int && d.width > 0
+        && d.height is int && d.height > 0;
+    }
+
+    match /screenshots/{id} {
+      allow read: if isAdmin() || ownsExisting();
+
+      allow create: if isActive() && validScreenshot(incoming());
+
+      // Re-uploading the same metadata (offline queue retry) is allowed.
+      allow update: if isActive()
+        && ownsExisting()
+        && validScreenshot(incoming());
+
+      allow delete: if false;
+    }
+
+    // Anything else is denied.
     match /{document=**} {
       allow read, write: if false;
     }

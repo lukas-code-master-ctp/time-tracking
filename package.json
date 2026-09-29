@@ -6,7 +6,8 @@
     "packages/shared",
     "extension",
     "portal",
-    "functions"
+    "functions",
+    "tests/rules"
   ],
   "engines": {
     "node": ">=22"

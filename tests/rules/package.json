@@ -1,0 +1,16 @@
+{
+  "name": "@timetracking/rules-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:emulator": "vitest run"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@timetracking/shared": "*",
+    "@types/node": "^24.0.0",
+    "firebase": "^12.19.0"
+  }
+}

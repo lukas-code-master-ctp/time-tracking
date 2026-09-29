@@ -1,8 +1,44 @@
 rules_version = '2';
 
-// Initial deny-all rules. Real rules are defined in Task 2 (spec section 5).
+// Storage security rules (spec section 5).
+// Screenshots live at `screenshots/{uid}/{YYYY-MM-DD}/{id}.jpg`.
+// User role/status is read from Firestore (cross-service rules).
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function isActive() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && userDoc().data.status == 'active';
+    }
+
+    function isAdmin() {
+      return isActive() && userDoc().data.role == 'admin';
+    }
+
+    match /screenshots/{uid}/{date}/{file} {
+      allow read: if (request.auth != null && request.auth.uid == uid) || isAdmin();
+
+      // `resource == null` also blocks overwrites in the emulator, which evaluates
+      // every upload as `create`.
+      allow create: if request.auth != null
+        && resource == null
+        && request.auth.uid == uid
+        && date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && file.matches('[^/]+[.]jpg')
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.size < 1024 * 1024
+        && isActive();
+
+      // No overwrites or deletes from clients (retention is handled by Functions).
+      allow update, delete: if false;
+    }
+
+    // Anything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;
     }
