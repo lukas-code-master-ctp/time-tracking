@@ -9,6 +9,12 @@ export type AppEnv = 'dev' | 'prod';
 export const DEFAULT_ALLOWED_DOMAINS: readonly string[] = Object.freeze(['impulseai.cl', 'compratuparcela.cl']);
 export const FIREBASE_DEMO_PROJECT_ID = 'demo-timetracking';
 export const FUNCTIONS_REGION = 'southamerica-west1';
+/**
+ * Cloud Scheduler is not available in southamerica-west1, so scheduled jobs run in the
+ * closest region that has it (São Paulo). They only use the Admin SDK, so the region
+ * doesn't need to match Firestore's.
+ */
+export const SCHEDULER_REGION = 'southamerica-east1';
 
 export const EMULATOR_PORTS = {
   auth: 9099,

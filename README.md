@@ -41,7 +41,7 @@ La primera vez, la extensión muestra un **aviso** que explica esto y el colabor
 ```
 
 - **Sin servidor propio**: la extensión y el portal escriben/leen Firestore y Storage directamente; las **reglas de seguridad** deciden qué puede hacer cada uno (un colaborador solo escribe y lee lo suyo; nadie cambia su propio rol).
-- **Cloud Functions** (región `southamerica-west1`): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación si `INVITE_EMAIL_ENABLED=true`; si no, solo lo registra en el log), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
+- **Cloud Functions** (región `southamerica-west1`, salvo las dos tareas programadas, que corren en `southamerica-east1` porque Cloud Scheduler no existe en Santiago): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación si `INVITE_EMAIL_ENABLED=true`; si no, solo lo registra en el log), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
 - Todos los tiempos se guardan como milisegundos epoch; los días se calculan en hora de Chile (`America/Santiago`).
 
 ## Estructura del repositorio
@@ -260,6 +260,7 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | "Pide a tu admin que te invite" | El correo no tiene invitación pendiente/aceptada (o fue revocada). Invítalo desde el portal. |
 | "Esta cuenta no es de la empresa" (prod) | El perfil de Chrome usa una cuenta personal (`getAuthToken` usa siempre la cuenta del perfil) o el dominio de la cuenta no está en **Configuración → Dominios permitidos** del portal. |
 | "Google rechazó el acceso" (prod) | El cliente OAuth no corresponde al ID de la extensión o está en otro proyecto (ver paso 4). |
+| El deploy pregunta "How many days do you want to keep container images…" y termina con "An unexpected error" | Es la política de limpieza de imágenes de las funciones. Configúrala una vez con `npx firebase functions:artifacts:setpolicy --location southamerica-west1 --days 7 --force --project prod` (y lo mismo con `--location southamerica-east1`) y vuelve a desplegar. |
 | El primer `firebase deploy` de functions falla con un error de permisos de Eventarc o de "service agent" | Es normal en proyectos nuevos: Google tarda unos minutos en crear los permisos de los disparadores. Espera 5–10 minutos y vuelve a correr el mismo `npx firebase deploy`. |
 | `firebase deploy` pide valores de `SMTP_*` o falla por secretos | `functions/.env.<proyecto>` tiene `INVITE_EMAIL_ENABLED=true` y faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). Si no quieres correo, pon `INVITE_EMAIL_ENABLED=false` y vuelve a desplegar. |
 | No llegan correos de invitación | Con `INVITE_EMAIL_ENABLED=false` (o sin la línea) no se envían: el log de `onInvitationWritten` dice "Correo de invitación desactivado". Con `true`, revisa los secretos SMTP y los logs (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |

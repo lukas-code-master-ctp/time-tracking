@@ -31,6 +31,7 @@ import {
   COLLECTIONS,
   DEFAULT_TIME_ZONE,
   FUNCTIONS_REGION,
+  SCHEDULER_REGION,
   emailKey,
   resolveConfig,
   type Invitation,
@@ -164,7 +165,7 @@ export const onInvitationWritten = onDocumentWritten(
 // ---------- scheduled jobs ----------
 
 export const purgeOldScreenshots = onSchedule(
-  { schedule: 'every day 03:00', timeZone: DEFAULT_TIME_ZONE, timeoutSeconds: 540 },
+  { schedule: 'every day 03:00', timeZone: DEFAULT_TIME_ZONE, timeoutSeconds: 540, region: SCHEDULER_REGION },
   async () => {
     const result = await purgeOldScreenshotsCore({
       db: getFirestore(),
@@ -177,7 +178,7 @@ export const purgeOldScreenshots = onSchedule(
 );
 
 export const autoCloseStaleSessions = onSchedule(
-  { schedule: 'every 1 hours', timeZone: DEFAULT_TIME_ZONE },
+  { schedule: 'every 1 hours', timeZone: DEFAULT_TIME_ZONE, region: SCHEDULER_REGION },
   async () => {
     const result = await autoCloseStaleSessionsCore({ db: getFirestore(), now: Date.now(), logger });
     logger.info('Cierre automático de jornadas terminado', {
