@@ -103,8 +103,8 @@ export function InstallUrlWarning({ url }: { url: string }) {
       <strong>Falta configurar el enlace de instalación de la extensión.</strong>{' '}
       {url ? `El valor actual (${url}) es de ejemplo` : 'No hay un enlace configurado'}: define{' '}
       <code>VITE_EXTENSION_INSTALL_URL</code> en <code>portal/.env.production</code> (y <code>EXTENSION_INSTALL_URL</code> en{' '}
-      <code>functions/.env.&lt;proyecto&gt;</code>) con el enlace de Chrome Web Store y vuelve a desplegar. Mientras tanto, los
-      correos y el enlace copiado no llevan a la extensión real.
+      <code>functions/.env.&lt;proyecto&gt;</code>) con el enlace de Chrome Web Store y vuelve a desplegar. Mientras tanto, el
+      enlace copiado (y el correo, si está activado) no lleva a la extensión real.
     </p>
   );
 }
@@ -189,7 +189,7 @@ export function InvitationsPage() {
 
           <section className="card flush" aria-labelledby="h-list">
             <h2 id="h-list" className="card-title">
-              Invitaciones enviadas
+              Lista de invitaciones
             </h2>
             {load.data.invitations.length === 0 ? (
               <Empty title="Aún no has invitado a nadie" />

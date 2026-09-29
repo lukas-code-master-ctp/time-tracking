@@ -2,7 +2,7 @@
 
 Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de unas 30 personas que trabaja con Google Workspace. Admite **varios dominios de Workspace** (hoy `@impulseai.cl` y `@compratuparcela.cl`, dos organizaciones distintas); la lista se edita en el portal (Configuración).
 
-- La persona **admin** invita a los colaboradores por correo desde un **portal web**.
+- La persona **admin** invita a los colaboradores desde un **portal web** (les comparte el enlace de instalación; el correo de invitación es opcional).
 - Cada **colaborador** instala una **extensión de Chrome**, entra con su cuenta de la empresa y **abre y cierra su jornada**.
 - Mientras la jornada está abierta, la extensión mide el nivel de actividad, los sitios usados y, si está activado, toma capturas de la pestaña visible.
 - La persona admin ve todo en la **reportería del portal**: horas, % de actividad, sitios, línea de tiempo y capturas.
@@ -37,7 +37,7 @@ La primera vez, la extensión muestra un **aviso** que explica esto y el colabor
 │                      │ ───────────────▶ │  screenshots                 │   invitaciones  │  - Configuración │
 └──────────────────────┘                  │ Cloud Storage (capturas)     │ ◀────────────── └──────────────────┘
                                           └──────────────────────────────┘
-                                                 │ correo (SMTP) ──▶ colaborador invitado
+                                                 │ correo (SMTP, opcional) ──▶ colaborador invitado
 ```
 
 - **Sin servidor propio**: la extensión y el portal escriben/leen Firestore y Storage directamente; las **reglas de seguridad** deciden qué puede hacer cada uno (un colaborador solo escribe y lee lo suyo; nadie cambia su propio rol).
