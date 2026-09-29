@@ -5,7 +5,7 @@
  *   { type: 'hello' }             page loaded: this tab is measurable
  *   { type: 'activity', t }       keyboard/mouse input seen at `t` (max 1/s)
  *
- * popup → service worker (request/response):
+ * popup / consent page → service worker (request/response):
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
 import type { Role, UserStatus } from '@timetracking/shared';
@@ -29,13 +29,19 @@ export type PopupRequest =
   | { type: 'session.stop' }
   /** Dev build only: fake Google credential accepted by the Auth emulator. */
   | { type: 'auth.devSignIn'; email: string }
-  /** Prod login (chrome.identity) — implemented in Task 5. */
+  /** Google login with chrome.identity (prod). */
   | { type: 'auth.signIn' }
   | { type: 'auth.signOut' }
   /** Calls `joinOrg` again (e.g. after the admin sent the invitation). */
   | { type: 'auth.refreshProfile' }
+  /** Consent page: accept the transparency notice of `version`. */
+  | { type: 'consent.accept'; version: string }
   /** Try to upload the pending queue now. */
-  | { type: 'sync.now' };
+  | { type: 'sync.now' }
+  /** Dev build only (e2e): run the 30-second pulse now. */
+  | { type: 'debug.forcePulse' }
+  /** Dev build only (e2e): refresh config/org and take this block's screenshot now. */
+  | { type: 'debug.forceScreenshot' };
 
 export type PopupRequestType = PopupRequest['type'];
 
@@ -43,18 +49,21 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'status',
   'session.start',
   'session.stop',
-  'auth.devSignIn',
   'auth.signIn',
   'auth.signOut',
   'auth.refreshProfile',
+  'consent.accept',
   'sync.now',
+  // Dropped from the prod bundle (`__APP_ENV__` is replaced literally).
+  ...(__APP_ENV__ === 'dev' ? (['auth.devSignIn', 'debug.forcePulse', 'debug.forceScreenshot'] as const) : []),
 ];
 
 export function isPopupRequest(msg: unknown): msg is PopupRequest {
   if (!msg || typeof msg !== 'object') return false;
-  const m = msg as { type?: unknown; email?: unknown };
+  const m = msg as { type?: unknown; email?: unknown; version?: unknown };
   if (!POPUP_TYPES.includes(m.type as PopupRequestType)) return false;
-  if (m.type === 'auth.devSignIn') return typeof m.email === 'string';
+  if (__APP_ENV__ === 'dev' && m.type === 'auth.devSignIn') return typeof m.email === 'string';
+  if (m.type === 'consent.accept') return typeof m.version === 'string';
   return true;
 }
 
@@ -66,15 +75,25 @@ export interface StatusView {
   profile: { email: string; displayName: string; role: Role; status: UserStatus } | null;
   /** Why joinOrg rejected the user (`details.reason` of the HttpsError). */
   joinError: { reason: string; message: string } | null;
+  /** The profile has not accepted the current notice (`CONSENT_VERSION`). */
+  consentRequired: boolean;
+  /** Version the consent page accepts. */
+  consentVersion: string;
   /** Open work day, if any. */
   session: { id: string; startedAt: number } | null;
+  /** Today's totals (America/Santiago) from the blocks measured on this device. */
+  today: { trackedSeconds: number; activeSeconds: number };
+  /** What is measured, from the cached `config/org` (null = not read yet). */
+  capture: { screenshots: boolean; blur: boolean } | null;
   /** Operations waiting to be uploaded. */
   pendingOps: number;
+  /** Screenshots waiting to be uploaded. */
+  pendingScreenshots: number;
   lastSyncOkAt: number | null;
   /** Last user-facing problem (Spanish), e.g. session closed automatically. */
   notice: string | null;
 }
 
 export type PopupResponse =
-  | { ok: true; status: StatusView }
+  | { ok: true; status: StatusView; debug?: unknown }
   | { ok: false; error: string; reason?: string; status?: StatusView };

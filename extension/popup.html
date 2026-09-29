@@ -4,24 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Registro de jornada</title>
-    <style>
-      :root { color-scheme: light dark; font: 14px/1.4 system-ui, sans-serif; }
-      body { margin: 0; width: 300px; padding: 16px; box-sizing: border-box; }
-      h1 { font-size: 16px; margin: 0 0 12px; }
-      .muted { opacity: 0.7; font-size: 12px; }
-      .notice { background: #fef3c7; color: #78350f; padding: 8px; border-radius: 6px; margin: 8px 0; }
-      .error { color: #b91c1c; margin: 8px 0; }
-      button { width: 100%; padding: 10px; margin-top: 8px; font-size: 14px; border-radius: 6px; border: 1px solid #0003; cursor: pointer; }
-      button.primary { background: #16a34a; color: #fff; border: none; }
-      button.danger { background: #dc2626; color: #fff; border: none; }
-      button:disabled { opacity: 0.5; cursor: default; }
-      input { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 4px; }
-      [hidden] { display: none !important; }
-    </style>
   </head>
   <body>
-    <h1>Registro de jornada</h1>
-    <div id="app" aria-live="polite">Cargando…</div>
+    <main id="app" aria-live="polite"><p class="loading">Cargando…</p></main>
     <script type="module" src="/src/popup/main.ts"></script>
   </body>
 </html>

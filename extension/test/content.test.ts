@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildManifest, DEV_PUBLIC_KEY } from '../build/manifest';
+import { buildManifest, DEV_PUBLIC_KEY, ICONS } from '../build/manifest';
 
 /** Minimal page globals for the content script (node environment). */
 function installPage() {
@@ -101,7 +101,10 @@ describe('manifest', () => {
   it('dev: MV3 module worker, permissions, content script, fixed key', () => {
     const m = buildManifest({ appEnv: 'dev', version: '1.2.3' });
     expect(m.background).toEqual({ service_worker: 'background.js', type: 'module' });
-    expect(m.permissions).toEqual(['storage', 'alarms', 'idle', 'tabs', 'identity', 'scripting']);
+    expect(m.permissions).toEqual(['storage', 'unlimitedStorage', 'alarms', 'idle', 'tabs', 'identity', 'scripting']);
+    expect(m.icons).toEqual(ICONS);
+    expect(m.action?.default_icon).toEqual(ICONS);
+    expect(m.action?.default_popup).toBe('popup.html');
     expect(m.host_permissions).toEqual(['<all_urls>']);
     expect(m.incognito).toBe('not_allowed');
     expect(m.content_scripts).toEqual([

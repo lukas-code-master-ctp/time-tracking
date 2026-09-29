@@ -8,7 +8,7 @@ import { connectAuthEmulator, getAuth, GoogleAuthProvider, signInWithCredential,
 import { beforeAll, describe, expect, it } from 'vitest';
 import { EMULATOR_PORTS, FIREBASE_DEMO_PROJECT_ID } from '@timetracking/shared';
 import { devGoogleIdToken } from '../../src/background/auth';
-import { uploadToStorage, type FirebaseHandles } from '../../src/background/firebase';
+import { storageObjectExists, uploadToStorage, type FirebaseHandles } from '../../src/background/firebase';
 
 const HOST = '127.0.0.1';
 const BUCKET = `${FIREBASE_DEMO_PROJECT_ID}.appspot.com`;
@@ -83,6 +83,16 @@ describe('uploadToStorage (Storage REST + storage.rules)', () => {
     const p = path('twice');
     await uploadToStorage(handles, p, JPEG, 'image/jpeg');
     await expect(uploadToStorage(handles, p, JPEG, 'image/jpeg')).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  it('a refused re-upload of an existing file is recognized by the metadata GET (screenshot retries are idempotent)', async () => {
+    const p = path('exists');
+    expect(await storageObjectExists(handles, p)).toBe(false);
+    await uploadToStorage(handles, p, JPEG, 'image/jpeg');
+    await expect(uploadToStorage(handles, p, JPEG, 'image/jpeg')).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(await storageObjectExists(handles, p)).toBe(true);
+    // Files of another uid are not readable: never taken as "ours".
+    expect(await storageObjectExists(handles, path('x', 'someone-else'))).toBe(false);
   });
 
   it('a disabled user cannot upload', async () => {

@@ -50,9 +50,11 @@ Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 
 - Pestañas de incógnito no se miden (la extensión no está habilitada en incógnito).
 
 ### 3.3 Capturas
-- Si `screenshotsEnabled` y la ventana de Chrome está enfocada en el instante sorteado → captura. Si no, se registra "sin captura: fuera de Chrome".
-- Difuminado (`blurScreenshots`) con `OffscreenCanvas` + filtro blur en el service worker, antes de subir.
-- Subida a `screenshots/{uid}/{fecha}/{id}.jpg` en Storage + doc metadatos.
+- Si `screenshotsEnabled` y la ventana de Chrome está enfocada en el instante sorteado → captura. Si no, no se captura.
+  - **Decisión (Tarea 5):** "sin captura" **no se registra**: el modelo (§5) no tiene campo para eso y `screenshots` exige un archivo. El portal simplemente no muestra captura para ese bloque.
+- Instante: al ver un bloque por primera vez (pulso de 30 s con jornada abierta) se sortea un instante en `[ahora, fin del bloque − 30 s]` y se **persiste** (`chrome.storage.local`), así sobrevive al sueño del service worker. Hay **un solo intento por bloque**: el primer pulso en o después del instante decide (jornada abierta + `screenshotsEnabled` + ventana normal enfocada con pestaña http/https + pantalla no bloqueada). Nunca hay dos capturas del mismo bloque.
+- `chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg' })` → `createImageBitmap` + `OffscreenCanvas` en el service worker: ancho ≤ 1280 px, difuminado (`blurScreenshots`) con `ctx.filter = 'blur(≈ancho/100 px)'` (respaldo si el contexto no soporta `filter`: reducción fuerte + ampliación) antes de subir; JPEG `< 1 MB` bajando la calidad (0,7 → 0,25) y luego el tamaño.
+- Subida a `screenshots/{uid}/{fecha}/{id}.jpg` en Storage + doc metadatos, con **id determinista** `{uid}_{slotStart}`. Cola offline persistente (JPEG en base64 en `chrome.storage.local`, permiso `unlimitedStorage`), máx. 20: se descartan las más antiguas. Como las reglas de Storage no permiten sobrescribir, un reintento rechazado cuyo archivo ya existe (GET de metadatos, el dueño puede leer) cuenta como subido; luego se escribe el doc (re-escribir los mismos datos está permitido).
 
 ### 3.4 Envío
 - El bloque en curso se sube (upsert, id determinista `uid_slotStartMs`, idempotente) cada ~60 s y al cerrarse; el latido de la sesión (`lastHeartbeatAt`) se actualiza en el mismo ciclo. Así el admin ve casi en tiempo real.
@@ -112,6 +114,14 @@ Reglas:
 - Sin consentimiento → pantalla de aviso + aceptar.
 - Sin invitación → "Pide a tu admin que te invite".
 - Normal → botón grande **Iniciar jornada / Cerrar jornada**, cronómetro de la jornada, horas de hoy, % actividad de hoy, qué se mide.
+
+### Decisiones de implementación (Tarea 5)
+- **Aviso**: página de la extensión `consent.html`. Se abre sola tras iniciar sesión si falta aceptar `CONSENT_VERSION`; `session.start` la exige (`consentVersion === CONSENT_VERSION`). Aceptar escribe `consentAcceptedAt` + `consentVersion` juntos en `users/{uid}`. Cambiar `CONSENT_VERSION` obliga a todos a aceptar de nuevo.
+- **Horas y % de hoy**: se calculan solo con datos locales (resumen diario en `chrome.storage.local` alimentado por los snapshots del acumulador, día de America/Santiago como el portal). Solo cuentan lo medido en **este** navegador; no se lee Firestore.
+- **`config/org`**: `getDoc` (Firestore lite) al iniciar jornada, al despertar el service worker (si tiene más de 1 min) y cada 5 min desde el pulso; se cachea. Sin leer o sin doc → capturas desactivadas.
+- **Login prod**: `chrome.identity.getAuthToken` (cuenta de Google del perfil de Chrome) → `GoogleAuthProvider.credential(null, accessToken)`. Un token rechazado se quita de la caché de Chrome y se reintenta una vez. Cerrar sesión también quita el token en caché.
+- **Sesión de Firebase terminada con la jornada abierta** (token revocado, usuario borrado): la jornada se cierra localmente y se **encola** el cierre; se envía si el mismo usuario vuelve a entrar (si entra otro, se descarta y el cierre automático del servidor la cierra en el último latido).
+- **Íconos**: reloj azul; reloj verde + insignia "ON" durante la jornada.
 
 ## 9. Criterios de aceptación
 1. Admin invita `x@dominio`; se crea invitación y se envía (o registra) correo.

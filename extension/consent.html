@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aviso de medición — Registro de jornada</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <img src="icons/icon-48.png" alt="" width="40" height="40" />
+        <div>
+          <h1>Aviso de medición de jornada</h1>
+          <p class="muted">Léelo antes de usar la extensión. Solo tomará un minuto.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <p>
+          Esta extensión registra tu jornada laboral <strong>solo mientras tú la tengas iniciada</strong>.
+          Cuando cierras la jornada, no mide nada. Mientras está iniciada, el ícono de la extensión muestra
+          <span class="badge">ON</span>.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Qué se mide</h2>
+        <ul class="list yes">
+          <li><strong>Inicio y cierre de tu jornada</strong> y su duración.</li>
+          <li>
+            <strong>Nivel de actividad:</strong> si hubo uso de teclado o mouse en cada segundo (solo el hecho de
+            que hubo uso), resumido en bloques de 10 minutos.
+          </li>
+          <li>
+            <strong>Sitios web:</strong> cuánto tiempo estuviste en cada sitio y página de la pestaña activa de
+            Chrome. Las direcciones se guardan sin parámetros ni lo que va después de “?” o “#”.
+          </li>
+          <li>
+            <strong>Tiempo fuera de Chrome:</strong> cuánto tiempo Chrome no estuvo en primer plano, sin saber qué
+            hacías en ese tiempo.
+          </li>
+          <li>
+            <strong>Capturas de pantalla, solo si tu administrador las activa:</strong> como máximo una cada 10
+            minutos, en un momento al azar, <strong>solo de la pestaña visible de Chrome</strong> (nunca de tu
+            pantalla completa ni de otras aplicaciones). Si el administrador activa el difuminado, se difuminan en
+            tu computador antes de enviarse.
+            <div id="capture-state" class="state muted">Consultando la configuración actual…</div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Qué NO se mide</h2>
+        <ul class="list no">
+          <li><strong>Qué teclas presionas</strong> ni lo que escribes.</li>
+          <li><strong>El contenido</strong> de las páginas, documentos, formularios, correos o mensajes.</li>
+          <li>
+            <strong>Aplicaciones fuera de Chrome</strong> (Word, Excel, WhatsApp de escritorio, etc.): solo se sabe
+            que estuviste “fuera de Chrome”.
+          </li>
+          <li>Ventanas de incógnito.</li>
+          <li><strong>Nada</strong> mientras tu jornada está cerrada.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Quién lo ve</h2>
+        <p>
+          Los administradores de tu empresa, en el portal de reportes. Tú ves tus horas y tu actividad de hoy en la
+          extensión. Las capturas se borran automáticamente al cumplirse el plazo de retención (90 días por
+          defecto).
+        </p>
+      </section>
+
+      <section class="card accept">
+        <div id="status" class="banner warn" hidden></div>
+        <button id="accept" type="button" class="btn primary big" disabled>Acepto y entiendo</button>
+        <p class="small muted">Versión del aviso: <span id="version"></span></p>
+      </section>
+    </main>
+    <script type="module" src="/src/consent/main.ts"></script>
+  </body>
+</html>

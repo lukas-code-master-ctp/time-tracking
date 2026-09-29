@@ -6,7 +6,7 @@
  *   one self-contained file. Service workers do not support dynamic
  *   `import()`, hence `inlineDynamicImports`.
  * - content: classic script (IIFE). Content scripts cannot be ES modules.
- * - popup: extension page (`popup.html` + module script).
+ * - popup: extension pages (`popup.html`, `consent.html`, module scripts + CSS).
  */
 import type { InlineConfig, Plugin } from 'vite';
 import { join } from 'node:path';
@@ -81,11 +81,11 @@ export function partConfig(part: Part, mode: string): InlineConfig {
         build: {
           ...build,
           rollupOptions: {
-            input: { popup: join(ROOT, 'popup.html') },
+            input: { popup: join(ROOT, 'popup.html'), consent: join(ROOT, 'consent.html') },
             output: {
               format: 'es',
-              entryFileNames: 'popup.js',
-              chunkFileNames: 'popup-[name].js',
+              entryFileNames: '[name].js',
+              chunkFileNames: 'chunk-[name].js',
               assetFileNames: 'assets/[name][extname]',
             },
           },

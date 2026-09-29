@@ -13,7 +13,8 @@
     "build": "node scripts/build.ts --mode production",
     "build:dev": "node scripts/build.ts --mode development",
     "dev": "node scripts/build.ts --mode development --watch",
-    "smoke": "node scripts/smoke.ts"
+    "smoke": "node scripts/smoke.ts",
+    "icons": "node scripts/icons.ts"
   },
   "dependencies": {
     "firebase": "^12.19.0"

@@ -8,13 +8,27 @@
  * changes or overwrite each other's writes.
  */
 import { SlotAccumulator, type UserProfile } from '@timetracking/shared';
+import { dailyFromJSON, type DailySummary } from './daily';
 import { emptyQueue, queueFromJSON, type QueueState } from './queue';
+import {
+  emptyShotQueue,
+  shotPlanFromJSON,
+  shotQueueFromJSON,
+  type ShotPlan,
+  type ShotQueue,
+} from './screenshots';
 
 export const STORAGE_KEYS = {
   acc: 'tt.acc',
   session: 'tt.session',
   queue: 'tt.queue',
   meta: 'tt.meta',
+  /** Today's hours/activity for the popup (see daily.ts). */
+  daily: 'tt.daily',
+  /** Random capture instant of the current block (see screenshots.ts). */
+  shotPlan: 'tt.shotPlan',
+  /** Screenshots waiting to be uploaded (JPEG as base64). */
+  shots: 'tt.shots',
 } as const;
 
 export type StatePart = keyof typeof STORAGE_KEYS;
@@ -31,6 +45,15 @@ export interface JoinErrorInfo {
   message: string;
 }
 
+/** `config/org` fields the extension uses, cached (refreshed every 5 min). */
+export interface OrgConfigCache {
+  /** User that read it (config is only readable by active users). */
+  uid: string;
+  screenshotsEnabled: boolean;
+  blurScreenshots: boolean;
+  fetchedAt: number;
+}
+
 export interface Meta {
   /** Last time the current block + heartbeat were queued (every ~60 s). */
   lastCurrentSyncAt: number;
@@ -42,6 +65,8 @@ export interface Meta {
   profile: UserProfile | null;
   profileUid: string | null;
   joinError: JoinErrorInfo | null;
+  /** Last `config/org` read; null until read (screenshots off meanwhile). */
+  org: OrgConfigCache | null;
 }
 
 export function defaultMeta(): Meta {
@@ -52,6 +77,7 @@ export function defaultMeta(): Meta {
     profile: null,
     profileUid: null,
     joinError: null,
+    org: null,
   };
 }
 
@@ -93,6 +119,9 @@ export class StateStore {
   session: LocalSession | null = null;
   queue: QueueState = emptyQueue();
   meta: Meta = defaultMeta();
+  daily: DailySummary | null = null;
+  shotPlan: ShotPlan | null = null;
+  shots: ShotQueue = emptyShotQueue();
 
   private readonly area: StorageAreaLike;
   private readonly persistDelayMs: number;
@@ -138,6 +167,9 @@ export class StateStore {
     this.queue = queueFromJSON(data[STORAGE_KEYS.queue]);
     const rawMeta = data[STORAGE_KEYS.meta];
     this.meta = { ...defaultMeta(), ...(rawMeta && typeof rawMeta === 'object' ? (rawMeta as Partial<Meta>) : {}) };
+    this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
+    this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
+    this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);
   }
 
   /**
@@ -160,6 +192,15 @@ export class StateStore {
           break;
         case 'meta':
           items[STORAGE_KEYS.meta] = this.meta;
+          break;
+        case 'daily':
+          items[STORAGE_KEYS.daily] = this.daily;
+          break;
+        case 'shotPlan':
+          items[STORAGE_KEYS.shotPlan] = this.shotPlan;
+          break;
+        case 'shots':
+          items[STORAGE_KEYS.shots] = this.shots;
           break;
       }
     }

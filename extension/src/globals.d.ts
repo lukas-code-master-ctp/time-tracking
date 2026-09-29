@@ -17,3 +17,6 @@ declare const __BUILD_CONFIG__: {
   allowedDomain: string;
   oauthClientId: string;
 };
+
+/** Side-effect CSS imports (bundled by Vite). */
+declare module '*.css';
