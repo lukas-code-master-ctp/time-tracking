@@ -142,33 +142,48 @@ describe('config/org', () => {
     await assertSucceeds(
       admin.doc('config/org').set(orgConfig({ allowedDomains: ['impulseai.cl', 'compratuparcela.cl', 'mail.empresa.com'] })),
     );
-    const ten = Array.from({ length: 10 }, (_, i) => `d${i}.cl`);
+    const ten = ['compratuparcela.cl', ...Array.from({ length: 9 }, (_, i) => `d${i}.cl`)];
     await assertSucceeds(admin.doc('config/org').set(orgConfig({ allowedDomains: ten })));
+  });
+
+  it("rejects a list without the domain of the admin's own account", async () => {
+    // admin is admin@compratuparcela.cl (tests/rules/test/env.ts).
+    const admin = db('admin');
+    await assertFails(admin.doc('config/org').set(orgConfig({ allowedDomains: ['impulseai.cl'] })));
+    await assertFails(admin.doc('config/org').update({ allowedDomains: ['impulseai.cl', 'otra.cl'], updatedAt: NOW + 1 }));
+    await assertSucceeds(admin.doc('config/org').update({ allowedDomains: ['compratuparcela.cl'], updatedAt: NOW + 1 }));
   });
 
   it('rejects an empty list, more than 10 domains, duplicates and invalid types', async () => {
     const admin = db('admin');
     const set = (allowedDomains: unknown) =>
       admin.doc('config/org').set({ ...orgConfig(), allowedDomains } as unknown as OrgConfig);
+    // Every list below includes the admin's own domain, so each case fails for
+    // the reason it tests. Sanity check: the same shape with valid items passes.
+    await assertSucceeds(set(['compratuparcela.cl', 'impulseai.cl']));
     await assertFails(set([]));
-    await assertFails(set(Array.from({ length: 11 }, (_, i) => `d${i}.cl`)));
-    await assertFails(set(['impulseai.cl', 'impulseai.cl']));
+    await assertFails(set(['compratuparcela.cl', ...Array.from({ length: 10 }, (_, i) => `d${i}.cl`)]));
+    await assertFails(set(['compratuparcela.cl', 'compratuparcela.cl']));
     await assertFails(set('impulseai.cl'));
     await assertFails(set({ 0: 'impulseai.cl' }));
     await assertFails(set(null));
-    await assertFails(set(['impulseai.cl', 42]));
-    await assertFails(set(['impulseai.cl', null]));
-    await assertFails(set([{ domain: 'impulseai.cl' }]));
-    await assertFails(set(['impulseai.cl', true]));
-    await assertFails(set(['']));
+    await assertFails(set(['compratuparcela.cl', 42]));
+    await assertFails(set(['compratuparcela.cl', null]));
+    await assertFails(set(['compratuparcela.cl', { domain: 'impulseai.cl' }]));
+    await assertFails(set(['compratuparcela.cl', true]));
+    await assertFails(set(['compratuparcela.cl', '']));
     // Must be normalized: lowercase, without '@', a real domain.
-    await assertFails(set(['ImpulseAI.cl']));
-    await assertFails(set(['@impulseai.cl']));
-    await assertFails(set(['impulseai']));
-    await assertFails(set(['impulse ai.cl']));
-    await assertFails(set(['a@impulseai.cl']));
+    await assertFails(set(['compratuparcela.cl', 'ImpulseAI.cl']));
+    await assertFails(set(['compratuparcela.cl', '@impulseai.cl']));
+    await assertFails(set(['compratuparcela.cl', 'impulseai']));
+    await assertFails(set(['compratuparcela.cl', 'impulse ai.cl']));
+    await assertFails(set(['compratuparcela.cl', 'a@impulseai.cl']));
+    await assertFails(set(['compratuparcela.cl', 'a..cl']));
+    await assertFails(set(['compratuparcela.cl', '-a.cl']));
+    await assertFails(set(['compratuparcela.cl', 'a-.cl']));
+    await assertFails(set(['compratuparcela.cl', '.a.cl']));
     // Invalid element in the last position also fails.
-    await assertFails(set([...Array.from({ length: 9 }, (_, i) => `d${i}.cl`), 'MAL.cl']));
+    await assertFails(set(['compratuparcela.cl', ...Array.from({ length: 8 }, (_, i) => `d${i}.cl`), 'MAL.cl']));
   });
 
   it('rejects the old single allowedDomain field and missing allowedDomains', async () => {

@@ -11,7 +11,7 @@ El admin inicial es `lukas@impulseai.cl` y el equipo usa `@compratuparcela.cl`: 
 - `BOOTSTRAP_ADMINS` por defecto en el proyecto demo: `lukas@impulseai.cl` (reemplaza a `jefa@compratuparcela.cl` en emuladores, seed y e2e).
 - `isAllowedEmail(email, domains: string | string[])`: coincidencia exacta con alguno (sigue rechazando subdominios y parecidos).
 - `joinOrg`: valida contra `allowedDomains`. Mensaje de dominio: "Usa tu cuenta de la empresa (@impulseai.cl o @compratuparcela.cl)".
-- Reglas Firestore: `config/org` exige `allowedDomains` lista de 1–10 strings en vez de `allowedDomain`; mismos 6 campos.
+- Reglas Firestore: `config/org` exige `allowedDomains` lista de 1–10 strings en vez de `allowedDomain`; mismos 6 campos. La lista debe incluir el dominio del correo del propio admin que escribe (`users/{uid}.email`), para que no se deje fuera por error (también lo impide el portal).
 - Portal:
   - Configuración: editor de lista de dominios (agregar/quitar, con advertencia al cambiar; no permite quitar el dominio del propio admin ni dejar la lista vacía).
   - Invitaciones: valida contra cualquiera de los dominios; el placeholder/ayuda los muestra.

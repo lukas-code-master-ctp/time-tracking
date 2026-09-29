@@ -67,9 +67,11 @@ service cloud.firestore {
     // ---------- config/org ----------
 
     // One normalized domain: lowercase, without '@' (e.g. 'impulseai.cl').
+    // Same shape as DOMAIN_RE in packages/shared/src/domain.ts (no empty
+    // labels like 'a..cl', no label starting or ending with '-').
     function validDomain(x) {
       return x is string && x.size() >= 4 && x.size() <= 253
-        && x.matches('[a-z0-9]([a-z0-9.-]*[a-z0-9])?[.][a-z]{2,63}');
+        && x.matches('([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+[a-z]{2,63}');
     }
 
     // Element i of the list is valid (or the list is shorter). Rules have no
@@ -94,6 +96,9 @@ service cloud.firestore {
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
         && validDomainList(d.allowedDomains)
+        // The admin cannot leave out the domain of their own account (joinOrg
+        // would then reject them at the next login).
+        && me().email.lower().split('@')[1] in d.allowedDomains
         && d.screenshotsEnabled is bool
         && d.blurScreenshots is bool
         && d.screenshotRetentionDays is int

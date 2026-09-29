@@ -143,7 +143,7 @@ En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) →
 
 1. Tipo de usuario **Externo**. **Interno** no sirve aquí: solo admite cuentas de la organización de Google Workspace dueña del proyecto, y el equipo usa dos organizaciones distintas (`@impulseai.cl` y `@compratuparcela.cl`). Quién puede entrar de verdad lo deciden `joinOrg` y la lista de dominios permitidos, no esta pantalla.
 2. Nombre de la app, correo de soporte, correo de contacto del desarrollador y solo los scopes básicos `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
-3. **Publica la app** (estado de publicación **En producción**, botón "Publicar app"). Si queda en **Prueba**, solo pueden entrar los usuarios de prueba que agregues a mano (máximo 100) y las autorizaciones caducan cada pocos días.
+3. **Publica la app** (estado de publicación **En producción**, botón "Publicar app"). Si queda en **Prueba**, solo pueden entrar los usuarios de prueba que agregues a mano (máximo 100) y sus autorizaciones caducan a los 7 días.
 4. Con solo esos scopes básicos (no sensibles), Google normalmente **no exige verificación** de la app para publicarla; a lo sumo puede pedir verificar la marca (nombre, logo, dominio) si agregas un logo o enlaces. Si la consola muestra un aviso de verificación, revisa qué dato lo provoca antes de seguir. Las políticas de Google cambian: confirma lo que muestre la consola en ese momento.
 
 ### 3. Publicar la extensión (no listada) para obtener su ID
