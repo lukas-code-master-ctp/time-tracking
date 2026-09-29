@@ -1,0 +1,10 @@
+rules_version = '2';
+
+// Initial deny-all rules. Real rules are defined in Task 2 (spec section 5).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

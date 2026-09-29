@@ -1,0 +1,26 @@
+{
+  "name": "time-tracking",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "extension",
+    "portal",
+    "functions"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:shared": "npm run build -w @timetracking/shared",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:emulator": "npm run build:shared && firebase emulators:exec --only firestore,storage --project demo-timetracking \"npm run test:emulator --workspaces --if-present\"",
+    "build": "npm run build:shared && npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.32.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+lib/
+*.tsbuildinfo
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+database-debug.log*
+ui-debug.log*
+pubsub-debug.log*
+storage-debug.log*
+emulator-data/
+.emulator-data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+functions/.secret.local
+functions/.runtimeconfig.json
+
+# Tooling
+coverage/
+.vite/
+.DS_Store
+Thumbs.db
