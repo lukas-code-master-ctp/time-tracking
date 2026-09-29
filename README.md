@@ -133,7 +133,7 @@ Los tres `e2e*` levantan y apagan sus propios emuladores: no los corras con `npm
 2. Cámbialo al plan **Blaze** (pago por uso): Cloud Functions y Cloud Storage lo exigen. Configura una **alerta de presupuesto** (p. ej. USD 10) en Google Cloud → Facturación → Presupuestos.
 3. **Firestore Database** → Crear base de datos → modo producción → ubicación **`southamerica-west1` (Santiago)**. La ubicación no se puede cambiar después y debe ser esa: las Cloud Functions corren en `southamerica-west1` y el disparador de Firestore del correo de invitación (`onInvitationWritten`) no se despliega si la base está en otra región.
 4. **Storage** → Comenzar → misma ubicación si está disponible (si no, la más cercana).
-5. **Authentication** → Comenzar → Método de acceso → **Google: habilitar**. En **Configuración → Dominios autorizados** confirma que están `<proyecto>.web.app` y `<proyecto>.firebaseapp.com` (y agrega tu dominio propio si vas a usar uno en Hosting).
+5. **Authentication** → Comenzar → Método de acceso → **Google: habilitar**. En **Configuración → Dominios autorizados** confirma que están `<proyecto>.web.app` y `<proyecto>.firebaseapp.com` (y agrega tu dominio propio si vas a usar uno en Hosting, o el de Vercel si alojas ahí el portal: ver paso 7b).
 6. **Configuración del proyecto → Tus apps → Agregar app web** (sin Hosting todavía). Copia los valores de configuración (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `appId`, `messagingSenderId`). No son secretos.
 7. En este repo, apunta la CLI al proyecto: `npx firebase login` y `npx firebase use --add <ID del proyecto>`.
 
@@ -191,6 +191,37 @@ npx firebase deploy --only firestore,storage,functions,hosting
 ```
 
 El portal queda en `https://<proyecto>.web.app`. Entra con la cuenta de `BOOTSTRAP_ADMINS`, revisa **Configuración** (capturas sí/no, difuminado, retención) e invita al equipo.
+
+### 7b. Alternativa: portal en Vercel en vez de Firebase Hosting
+
+Vercel solo aloja el **portal**. Firebase (pasos 1, 5, 6 y 7 sin `hosting`) y la extensión (pasos 3 y 4) siguen siendo necesarios.
+
+1. Despliega en Firebase todo menos el portal:
+
+   ```bash
+   npx firebase deploy --only firestore,storage,functions
+   ```
+
+2. En [vercel.com](https://vercel.com) → **Add New → Project** → importa `lukas-code-master-ctp/time-tracking`.
+   - **Root Directory**: déjalo en la raíz del repo (no `portal`): el portal usa `packages/shared`.
+   - Framework, instalación, build y carpeta de salida ya vienen en [`vercel.json`](vercel.json) (`npm ci`, `npm run build -w portal`, `portal/dist`, y la redirección de todas las rutas a `index.html`). No los cambies en el panel.
+   - **Node.js Version** (Settings → General): 22.x o superior.
+3. **Settings → Environment Variables** (entorno *Production*, y *Preview* si usarás vistas previas), con los valores de la app web del paso 1.6:
+
+   | Variable | Valor |
+   |---|---|
+   | `VITE_FIREBASE_API_KEY` | `apiKey` |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | `authDomain` (`<proyecto>.firebaseapp.com`) |
+   | `VITE_FIREBASE_PROJECT_ID` | `projectId` |
+   | `VITE_FIREBASE_STORAGE_BUCKET` | `storageBucket` |
+   | `VITE_FIREBASE_APP_ID` | `appId` |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` |
+   | `VITE_ALLOWED_DOMAIN` | `compratuparcela.cl` |
+   | `VITE_EXTENSION_INSTALL_URL` | enlace de la ficha de Chrome Web Store |
+
+   Estas variables tienen prioridad sobre `portal/.env.production`, así que no hace falta versionar los valores reales (el repo es público). Si cambias una variable, vuelve a desplegar (**Deployments → Redeploy**): Vite las incrusta al compilar.
+4. **Firebase → Authentication → Configuración → Dominios autorizados** → agrega el dominio de Vercel (`<tu-proyecto>.vercel.app` y tu dominio propio si configuras uno). Sin esto, "Iniciar sesión con Google" falla con `auth/unauthorized-domain`. Las vistas previas de Vercel usan otros dominios (`…-git-rama-….vercel.app`): agrégalos solo si necesitas iniciar sesión en ellas.
+5. Despliega (**Deploy**). Cada push a `main` vuelve a publicar el portal. Los cambios en `firestore.rules`, `storage.rules` o `functions/` **no** se publican con Vercel: para esos corre `npx firebase deploy --only firestore,storage,functions`.
 
 ### 8. Instalación forzada en Google Workspace
 
