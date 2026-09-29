@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Session, WithId } from '@timetracking/shared';
 import { dayBounds } from '../src/lib/dates';
-import { buildTeam, mergeSessions, sessionOverlaps, sessionViews } from '../src/lib/team';
+import { buildTeam, mergeActivity, mergeSessions, sessionOverlaps, sessionViews } from '../src/lib/team';
 import { member, slot } from './fakes';
 
 const M = 60_000;
@@ -72,5 +72,18 @@ describe('buildTeam', () => {
     expect(ana).toMatchObject({ inSession: true, trackedSeconds: 1200, activityPercent: 75, sessionCount: 1 });
     expect(team.rows[1]).toMatchObject({ trackedSeconds: 0, activityPercent: null, inSession: false });
     expect(team.totals).toMatchObject({ members: 3, membersInSession: 1, trackedSeconds: 1800 });
+  });
+});
+
+describe('mergeActivity', () => {
+  it('keeps blocks before `since` and replaces the rest with the fresh read', () => {
+    const prev = [slot('ana', at(9), 600, 100), slot('ana', at(10), 300, 100), slot('ana', at(11), 200, 100)];
+    const fresh = [slot('ana', at(10), 600, 500), slot('ana', at(12), 600, 600)];
+    const merged = mergeActivity(prev, fresh, at(10));
+    expect(merged.map((s) => [s.slotStart, s.trackedSeconds])).toEqual([
+      [at(9), 600],
+      [at(10), 600],
+      [at(12), 600],
+    ]);
   });
 });

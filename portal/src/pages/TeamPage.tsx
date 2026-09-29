@@ -1,13 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router';
-import { formatDuration, teamSummaryToCsv } from '@timetracking/shared';
+import { formatDuration, teamSummaryToCsv, type ActivitySlot } from '@timetracking/shared';
 import { RangePicker } from '../components/RangePicker';
 import { TeamTable } from '../components/TeamTable';
 import { Empty, ErrorState, Loading, PageHeader, Stat, ActivityMeter } from '../components/ui';
 import { useData } from '../data/context';
-import { describeRange, isRangePreset, presetRange, rangeIncludes, zonedDate, type DateRange } from '../lib/dates';
+import { describeRange, isRangePreset, presetRange, rangeIncludes, startOfDay, zonedDate, type DateRange } from '../lib/dates';
 import { downloadText } from '../lib/download';
-import { buildTeam } from '../lib/team';
+import { buildTeam, mergeActivity } from '../lib/team';
 import { useLoad } from '../lib/useLoad';
 
 const REFRESH_MS = 60_000;
@@ -25,22 +25,53 @@ export function TeamPage() {
   // The range is resolved against "now" at render time; `today` rolls over at midnight.
   const range = rangeFromParams(params, Date.now());
 
+  // Activity already read for this range; automatic refreshes re-read only
+  // from `since` (see mergeActivity). `full` forces a whole read ("Actualizar").
+  const cache = useRef<{ from: number; to: number; since: number; slots: ActivitySlot[] } | null>(null);
+  const full = useRef(true);
+
   const load = useLoad(async () => {
-    const [users, slots, sessions] = await Promise.all([
+    const startedAt = Date.now();
+    const prev =
+      !full.current && cache.current && cache.current.from === range.from && cache.current.to === range.to
+        ? cache.current
+        : null;
+    full.current = false;
+    const since = prev ? Math.max(range.from, prev.since) : range.from;
+    const [users, fresh, sessions] = await Promise.all([
       data.listUsers(),
-      data.listActivity(range),
+      data.listActivity(prev ? { from: since, to: range.to } : range),
       data.listSessions(range),
     ]);
+    const slots = prev ? mergeActivity(prev.slots, fresh, since) : fresh;
+    cache.current = {
+      from: range.from,
+      to: range.to,
+      since: Math.max(range.from, startOfDay(zonedDate(startedAt))),
+      slots,
+    };
     const now = Date.now();
     return { team: buildTeam(users, slots, sessions, range, now), now };
   }, [data, range.from, range.to]);
 
   const live = rangeIncludes(range, Date.now());
   const { reload } = load;
+  const reloadAll = useCallback(() => {
+    full.current = true;
+    reload();
+  }, [reload]);
   useEffect(() => {
     if (!live) return;
-    const t = setInterval(reload, REFRESH_MS);
-    return () => clearInterval(t);
+    // No reads while the tab is hidden; catch up when it is shown again.
+    const refresh = (): void => {
+      if (!document.hidden) reload();
+    };
+    const t = setInterval(refresh, REFRESH_MS);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [live, reload]);
 
   const detailDate = useMemo(() => {
@@ -70,7 +101,7 @@ export function TeamPage() {
         subtitle={`Horas y actividad por colaborador · ${describeRange(range)} (hora de Chile)`}
         actions={
           <>
-            <button type="button" className="btn" onClick={load.reload} disabled={load.loading}>
+            <button type="button" className="btn" onClick={reloadAll} disabled={load.loading}>
               {load.loading && team ? 'Actualizando…' : 'Actualizar'}
             </button>
             <button type="button" className="btn primary" onClick={exportCsv} disabled={!team || team.rows.length === 0}>
@@ -96,7 +127,7 @@ export function TeamPage() {
 
       <section className="card flush" aria-label="Colaboradores">
         {load.error && !team ? (
-          <ErrorState error={load.error} onRetry={load.reload} />
+          <ErrorState error={load.error} onRetry={reloadAll} />
         ) : !team ? (
           <Loading label="Cargando el equipo…" />
         ) : team.rows.length === 0 ? (

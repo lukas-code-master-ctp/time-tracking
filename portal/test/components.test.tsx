@@ -1,14 +1,16 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { summarizeTeam, type OrgConfig } from '@timetracking/shared';
 import { App } from '../src/App';
 import { TeamTable } from '../src/components/TeamTable';
 import { Timeline } from '../src/components/Timeline';
+import { ScreenshotGallery } from '../src/components/Screenshots';
 import { BackendProvider } from '../src/data/context';
 import { JoinError, type Backend } from '../src/data/types';
-import { dayBounds } from '../src/lib/dates';
+import { dayBounds, startOfDay } from '../src/lib/dates';
 import { buildTimeline } from '../src/lib/timeline';
 import { InviteForm } from '../src/pages/InvitationsPage';
 import { SettingsForm } from '../src/pages/SettingsPage';
@@ -336,5 +338,68 @@ describe('Invitaciones page', () => {
     await userEvent.click(within(again).getByRole('button', { name: 'Revocar' }));
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revocar' }));
     await waitFor(() => expect(db.invitations.find((i) => i.id === 'vieja@compratuparcela.cl')?.status).toBe('revoked'));
+  });
+});
+
+describe('Equipo: refresco automático', () => {
+  it('re-reads only today while live, pauses when hidden and "Actualizar" reads the whole range', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const backend = backendOf(seededDb(), ADMIN);
+    renderApp(backend, '/?rango=thisMonth');
+    await screen.findByRole('table');
+    const month = { from: startOfDay('2026-09-01'), to: startOfDay('2026-10-01') };
+    expect(backend.data.listActivity).toHaveBeenLastCalledWith(expect.objectContaining(month));
+
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await waitFor(() => expect(backend.data.listActivity).toHaveBeenLastCalledWith({ from: day.from, to: month.to }));
+    const calls = vi.mocked(backend.data.listActivity).mock.calls.length;
+
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(vi.mocked(backend.data.listActivity).mock.calls.length).toBe(calls);
+    hidden.mockRestore();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualizar' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+    await waitFor(() => expect(backend.data.listActivity).toHaveBeenLastCalledWith(expect.objectContaining(month)));
+    // Totals still include the blocks kept from the previous read.
+    expect(within(await screen.findByRole('table')).getAllByRole('row')).toHaveLength(5);
+  });
+});
+
+describe('Lightbox', () => {
+  it('does not show the previous image while the next one loads', async () => {
+    const data = fakeData(emptyDb());
+    vi.mocked(data.screenshotUrl).mockImplementation((path: string) =>
+      path.endsWith('b.jpg') ? new Promise<string>(() => undefined) : Promise.resolve(`https://example.test/${path}`),
+    );
+    const shots = ['a', 'b'].map((id, i) => ({
+      id,
+      uid: 'ana',
+      sessionId: 's',
+      takenAt: at(9, i * 10 + 2),
+      storagePath: `screenshots/ana/2026-09-29/${id}.jpg`,
+      blurred: false,
+      width: 1280,
+      height: 720,
+    }));
+    function Harness() {
+      const [open, setOpen] = useState<string | null>('a');
+      return <ScreenshotGallery shots={shots} openId={open} onOpen={setOpen} onClose={() => setOpen(null)} />;
+    }
+    render(
+      <BackendProvider backend={{ data, auth: fakeAuth(null, ADMIN) }}>
+        <Harness />
+      </BackendProvider>,
+    );
+    expect(await screen.findByTestId('lightbox-img')).toHaveAttribute('src', expect.stringContaining('a.jpg'));
+    await userEvent.click(screen.getByRole('button', { name: 'Siguiente →' }));
+    expect(await screen.findByRole('heading', { name: 'Captura de las 09:12' })).toBeInTheDocument();
+    expect(screen.queryByTestId('lightbox-img')).toBeNull();
+    expect(within(screen.getByRole('dialog')).getByText('Cargando…')).toBeInTheDocument();
   });
 });

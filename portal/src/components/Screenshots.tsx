@@ -11,7 +11,9 @@ const urlCache = new Map<string, Promise<string>>();
 
 function useScreenshotUrl(path: string, enabled: boolean): { url: string | null; failed: boolean } {
   const data = useData();
-  const [state, setState] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
+  // Tagged with its path: in the lightbox the path changes (previous/next) and
+  // the previous image must not be shown under the new time.
+  const [state, setState] = useState<{ path: string; url: string | null; failed: boolean } | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
@@ -22,14 +24,14 @@ function useScreenshotUrl(path: string, enabled: boolean): { url: string | null;
       p.catch(() => urlCache.delete(path));
     }
     p.then(
-      (url) => alive && setState({ url, failed: false }),
-      () => alive && setState({ url: null, failed: true }),
+      (url) => alive && setState({ path, url, failed: false }),
+      () => alive && setState({ path, url: null, failed: true }),
     );
     return () => {
       alive = false;
     };
   }, [data, path, enabled]);
-  return state;
+  return state && state.path === path ? { url: state.url, failed: state.failed } : { url: null, failed: false };
 }
 
 /** True once the element is (about to be) visible. */
