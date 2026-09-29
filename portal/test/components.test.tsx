@@ -215,7 +215,7 @@ describe('InviteForm', () => {
     await userEvent.type(input, 'Nueva@CompraTuParcela.cl');
     await userEvent.click(screen.getByRole('button', { name: 'Invitar' }));
     expect(onInvite).toHaveBeenCalledWith('nueva@compratuparcela.cl', 'nueva@compratuparcela.cl');
-    expect(await screen.findByRole('status')).toHaveTextContent('Invitación enviada a nueva@compratuparcela.cl.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Invitación creada para nueva@compratuparcela.cl. Comparte el enlace de instalación con la persona.');
     expect(input).toHaveValue('');
 
     await userEvent.type(input, 'Otro@ImpulseAI.cl');

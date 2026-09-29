@@ -339,14 +339,14 @@ async function main(): Promise<void> {
     await page.getByText('Solo puedes invitar correos @impulseai.cl o @compratuparcela.cl.').waitFor();
     await email.fill('nuevo.colaborador@compratuparcela.cl');
     await page.getByRole('button', { name: 'Invitar' }).click();
-    await page.getByText('Invitación enviada a nuevo.colaborador@compratuparcela.cl.').waitFor();
+    await page.getByText('Invitación creada para nuevo.colaborador@compratuparcela.cl. Comparte el enlace de instalación con la persona.').waitFor();
     const inv = await until('invitación en Firestore', async () => (await getFirestore().doc('invitations/nuevo.colaborador@compratuparcela.cl').get()).data());
     if (inv.status !== 'pending' || inv.invitedBy !== adminUid || typeof inv.invitedAt !== 'number') fail(`invitación: ${JSON.stringify(inv)}`);
     await page.locator('.list-item').filter({ hasText: 'nuevo.colaborador@compratuparcela.cl' }).waitFor();
     // The other Workspace organization is allowed too.
     await email.fill('otra.persona@impulseai.cl');
     await page.getByRole('button', { name: 'Invitar' }).click();
-    await page.getByText('Invitación enviada a otra.persona@impulseai.cl.').waitFor();
+    await page.getByText('Invitación creada para otra.persona@impulseai.cl. Comparte el enlace de instalación con la persona.').waitFor();
     await until('invitación @impulseai.cl en Firestore', async () => (await getFirestore().doc('invitations/otra.persona@impulseai.cl').get()).data());
     ok('Invitaciones creadas en ambos dominios (pending, invitedBy = admin); correo de otro dominio rechazado.');
     await shootAll(page, '05-invitaciones');

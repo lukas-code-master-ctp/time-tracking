@@ -45,7 +45,7 @@ export function InviteForm({ allowedDomains, invitations, users, onInvite }: Inv
     setBusy(true);
     try {
       await onInvite(check.id, check.email);
-      setDone(`Invitación enviada a ${check.email}.`);
+      setDone(`Invitación creada para ${check.email}. Comparte el enlace de instalación con la persona.`);
       setEmail('');
     } catch (err) {
       setError(errorMessage(err));
@@ -77,7 +77,7 @@ export function InviteForm({ allowedDomains, invitations, users, onInvite }: Inv
         </button>
       </div>
       <p id={`${id}-help`} className="muted small">
-        Solo cuentas {formatDomains(allowedDomains)}. Le llegará un correo con el enlace para instalar la extensión.
+        Solo cuentas {formatDomains(allowedDomains)}. Comparte con la persona el enlace de instalación de la extensión (si el envío de correos está activado, además le llega por correo).
       </p>
       {error ? (
         <p id={`${id}-error`} className="field-error" role="alert">
@@ -134,7 +134,7 @@ export function InvitationsPage() {
       const inv = pending.invitation;
       const next = pending.kind === 'resend' ? buildResend(inv, uid, Date.now()) : buildRevoke(inv);
       await data.putInvitation(inv.id, next);
-      setNotice(pending.kind === 'resend' ? `Invitación reenviada a ${inv.email}.` : `Invitación de ${inv.email} revocada.`);
+      setNotice(pending.kind === 'resend' ? `Invitación de ${inv.email} renovada.` : `Invitación de ${inv.email} revocada.`);
       setPending(null);
       load.reload();
     } catch (err) {
@@ -234,7 +234,7 @@ export function InvitationsPage() {
           message={
             pending.kind === 'resend' ? (
               <p>
-                Se enviará de nuevo el correo de invitación a <strong>{pending.invitation.email}</strong>.
+                Se renovará la invitación de <strong>{pending.invitation.email}</strong> (si el envío de correos está activado, se le enviará de nuevo el correo).
               </p>
             ) : (
               <p>

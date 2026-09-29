@@ -101,6 +101,7 @@ Reglas:
 ## 6. Cloud Functions
 - `joinOrg` (callable): exige correo verificado, valida dominio (`config/org.allowedDomains` o `ALLOWED_DOMAIN`, lista; coincidencia exacta con alguno — ver [spec multi-dominio](2026-09-29-multi-dominio.md)) + invitación `pending|accepted` o bootstrap admin; crea `users/{uid}`, marca invitación `accepted`. Idempotente (si ya existe devuelve el perfil; si está `disabled` rechaza). Responde `{ profile }`; errores `HttpsError` en español con `details.reason` (`unauthenticated`, `no-email`, `email-not-verified`, `domain-not-allowed`, `no-invitation`, `invitation-revoked`, `user-disabled`).
 - `onInvitationWritten` (trigger Firestore): envía correo con link de instalación cuando la invitación queda `pending` (creada, reinvitada desde otro estado o con `invitedAt` nuevo); si no hay SMTP configurado o corre en emulador, log.
+  - **Nota (correo opcional):** el envío es opt-in con `INVITE_EMAIL_ENABLED` en `functions/.env.<proyecto>` (`true`/`false`, por defecto `false`), leído de `process.env` al cargar el módulo (el CLI carga los `.env` antes del análisis del deploy). Si no es `true`, no se declara ningún secreto SMTP (el deploy no los pide) y al crear/reenviar una invitación solo se registra con `logger.info` destinatario y asunto; la función sigue desplegada, así que activarlo es cambiar la variable a `true`, crear los secretos y desplegar. Con `true`, declara `SMTP_HOST/PORT/USER/PASS/FROM` y envía. En el emulador nunca se vinculan secretos ni se envía (log con cuerpo, como antes). El portal no sabe si el correo está activo: sus textos dicen "Invitación creada… Comparte el enlace de instalación" y mencionan el correo solo como condicional.
 - `purgeOldScreenshots` (programada diaria): borra archivos y docs más antiguos que `screenshotRetentionDays`, incluidos archivos huérfanos en Storage (sin doc) creados antes del corte.
 - `autoCloseStaleSessions` (programada cada hora): cierra jornadas sin latido hace >30 min o >16 h abiertas, `endedAt = lastHeartbeatAt`, `endReason = auto`.
 
@@ -160,6 +161,6 @@ Reglas:
 ## 10. Pasos que requieren al usuario (despliegue, fuera de este MVP local)
 - Crear proyecto Firebase (plan **Blaze**, requerido por Storage y Functions; costo estimado para 30 personas: bajo, del orden de USD 0–5/mes).
 - Crear cliente OAuth tipo "Extensión de Chrome" con el ID de la extensión.
-- Configurar SMTP para correos (ej. cuenta Workspace con contraseña de aplicación) en Secret Manager.
+- (Opcional) Configurar SMTP para correos (ej. cuenta Workspace con contraseña de aplicación) en Secret Manager y poner `INVITE_EMAIL_ENABLED=true`.
 - Publicar extensión (cuenta de desarrollador Chrome, USD 5 único) y forzar instalación en la consola de Workspace (de cada organización; pantalla de consentimiento OAuth **Externa**; ver [spec multi-dominio](2026-09-29-multi-dominio.md)).
 - Autorizar el despliegue (`firebase deploy`).

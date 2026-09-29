@@ -8,10 +8,14 @@
  *   Read from `process.env` on purpose: string params without a value would
  *   make the CLI prompt (and block `emulators:exec`).
  * - Param `EXTENSION_INSTALL_URL` (has a default, so it never prompts).
+ * - Env `INVITE_EMAIL_ENABLED` (`true`/`false`, default `false`): invitation
+ *   email is opt-in. Read at module load (the CLI loads `.env` before the
+ *   deploy analysis). When not `true`, no secret is declared and the email is
+ *   only logged (recipient and subject).
  * - Secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
- *   (Secret Manager). Only `onInvitationWritten` binds them. In the emulator
- *   they come from `functions/.secret.local` if present; when missing the
- *   email is only logged.
+ *   (Secret Manager), declared only with `INVITE_EMAIL_ENABLED=true`. Only
+ *   `onInvitationWritten` binds them, and never in the emulator (which only
+ *   logs the email).
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -36,7 +40,10 @@ import {
   SMTP_SECRET_NAMES,
   buildInvitationEmail,
   deliverEmail,
+  isInviteEmailEnabled,
   resolveSmtpConfig,
+  shouldBindSmtpSecrets,
+  shouldDeclareSmtpSecrets,
   shouldSendInvitationEmail,
   type SendMail,
   type SmtpSecretName,
@@ -54,12 +61,21 @@ const EXTENSION_INSTALL_URL = defineString('EXTENSION_INSTALL_URL', {
 
 const isEmulator = (): boolean => process.env.FUNCTIONS_EMULATOR === 'true';
 
-const SMTP_SECRETS = Object.fromEntries(
-  SMTP_SECRET_NAMES.map((name) => [name, defineSecret(name)]),
-) as Record<SmtpSecretName, ReturnType<typeof defineSecret>>;
+/** Decided once at module load (the CLI loads `functions/.env.<project>` before analysing for deploy). */
+const INVITE_EMAIL_ENABLED = isInviteEmailEnabled(process.env);
 
-/** Secret value, or undefined when it is not available (e.g. emulator without `.secret.local`). */
+// When email is disabled the secrets are not declared at all, so `firebase deploy`
+// does not require them in Secret Manager.
+const SMTP_SECRETS = shouldDeclareSmtpSecrets({ emailEnabled: INVITE_EMAIL_ENABLED })
+  ? (Object.fromEntries(SMTP_SECRET_NAMES.map((name) => [name, defineSecret(name)])) as Record<
+      SmtpSecretName,
+      ReturnType<typeof defineSecret>
+    >)
+  : null;
+
+/** Secret value, or undefined when it is not available (disabled, or emulator without `.secret.local`). */
 function secretValue(name: SmtpSecretName): string | undefined {
+  if (!SMTP_SECRETS) return undefined;
   try {
     const v = SMTP_SECRETS[name].value();
     return v ? v : undefined;
@@ -116,10 +132,16 @@ const sendMail: SendMail = async (smtp, message) => {
 export const onInvitationWritten = onDocumentWritten(
   {
     document: `${COLLECTIONS.invitations}/{invitationId}`,
-    // The emulator never sends email, so it does not bind the secrets: otherwise it
-    // tries to read them from Secret Manager (or asks for `.secret.local`) on
-    // every invocation. Deploy/discovery runs without FUNCTIONS_EMULATOR and binds them.
-    secrets: isEmulator() ? [] : Object.values(SMTP_SECRETS),
+    // Bound only when email is enabled and outside the emulator. The emulator never
+    // sends, and binding would make it read them from Secret Manager (or ask for
+    // `.secret.local`) on every invocation. Deploy/discovery runs without
+    // FUNCTIONS_EMULATOR and binds them only with INVITE_EMAIL_ENABLED=true.
+    // The function stays deployed when email is off: it just logs, so enabling
+    // email later is only changing the variable and deploying again.
+    secrets:
+      SMTP_SECRETS && shouldBindSmtpSecrets({ emailEnabled: INVITE_EMAIL_ENABLED, isEmulator: isEmulator() })
+        ? Object.values(SMTP_SECRETS)
+        : [],
   },
   async (event) => {
     const before = event.data?.before.data() as Invitation | undefined;
@@ -130,8 +152,9 @@ export const onInvitationWritten = onDocumentWritten(
     const message = buildInvitationEmail({ to, installUrl: EXTENSION_INSTALL_URL.value() });
     await deliverEmail({
       message,
-      smtp: isEmulator() ? null : resolveSmtpConfig(secretValue),
+      smtp: isEmulator() || !INVITE_EMAIL_ENABLED ? null : resolveSmtpConfig(secretValue),
       isEmulator: isEmulator(),
+      emailEnabled: INVITE_EMAIL_ENABLED,
       sendMail,
       logger,
     });

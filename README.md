@@ -41,7 +41,7 @@ La primera vez, la extensión muestra un **aviso** que explica esto y el colabor
 ```
 
 - **Sin servidor propio**: la extensión y el portal escriben/leen Firestore y Storage directamente; las **reglas de seguridad** deciden qué puede hacer cada uno (un colaborador solo escribe y lee lo suyo; nadie cambia su propio rol).
-- **Cloud Functions** (región `southamerica-west1`): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
+- **Cloud Functions** (región `southamerica-west1`): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación si `INVITE_EMAIL_ENABLED=true`; si no, solo lo registra en el log), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
 - Todos los tiempos se guardan como milisegundos epoch; los días se calculan en hora de Chile (`America/Santiago`).
 
 ## Estructura del repositorio
@@ -168,14 +168,16 @@ En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) →
   ALLOWED_DOMAIN=impulseai.cl,compratuparcela.cl
   BOOTSTRAP_ADMINS=lukas@impulseai.cl
   EXTENSION_INSTALL_URL=https://chromewebstore.google.com/detail/.../<ID>
+  INVITE_EMAIL_ENABLED=false
   ```
 
   - `ALLOWED_DOMAIN`: dominios permitidos separados por coma (de 1 a 10, sin `@`). Se usan hasta que exista `config/org`; el primer admin la crea con esta lista y desde entonces manda la lista de **Configuración → Dominios permitidos** del portal. Solo se aceptan correos exactos de esos dominios (no subdominios como `@sub.impulseai.cl`).
   - `BOOTSTRAP_ADMINS`: correos (separados por coma) que quedan como admin en su primer login sin invitación. Deben ser de un dominio permitido.
+  - `INVITE_EMAIL_ENABLED`: `true` o `false` (por defecto `false`). Con `false` (o sin la línea) no se envía el correo de invitación y el despliegue **no pide secretos SMTP**: `onInvitationWritten` se despliega igual y solo registra en el log el destinatario y el asunto. Comparte el enlace con **Copiar enlace de instalación** en Invitaciones. Para activar el correo más adelante: crea los secretos del paso 6, cambia a `true` y vuelve a desplegar.
 
-### 6. Secretos SMTP (correo de invitación)
+### 6. Secretos SMTP (correo de invitación, opcional)
 
-Son **obligatorios para desplegar** (la función de invitación los declara). Opciones recomendadas:
+**Solo si pones `INVITE_EMAIL_ENABLED=true`** en el paso 5; con `false` sáltate este paso. Con `true`, la función de invitación declara los cinco secretos y `firebase deploy` exige que existan. Opciones recomendadas:
 
 - Una cuenta de Workspace dedicada (p. ej. `no-responder@compratuparcela.cl`) con verificación en dos pasos y una **contraseña de aplicación**: host `smtp.gmail.com`, puerto `465`.
 - O el **SMTP relay** de Google Workspace (Consola de administración → Gmail → Enrutamiento → Servicio de relay SMTP): host `smtp-relay.gmail.com`, puerto `465` o `587`.
@@ -259,8 +261,8 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | "Esta cuenta no es de la empresa" (prod) | El perfil de Chrome usa una cuenta personal (`getAuthToken` usa siempre la cuenta del perfil) o el dominio de la cuenta no está en **Configuración → Dominios permitidos** del portal. |
 | "Google rechazó el acceso" (prod) | El cliente OAuth no corresponde al ID de la extensión o está en otro proyecto (ver paso 4). |
 | El primer `firebase deploy` de functions falla con un error de permisos de Eventarc o de "service agent" | Es normal en proyectos nuevos: Google tarda unos minutos en crear los permisos de los disparadores. Espera 5–10 minutos y vuelve a correr el mismo `npx firebase deploy`. |
-| `firebase deploy` pide valores de `SMTP_*` o falla por secretos | Faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). |
-| No llegan correos de invitación | Revisa los secretos SMTP y los logs de `onInvitationWritten` (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |
+| `firebase deploy` pide valores de `SMTP_*` o falla por secretos | `functions/.env.<proyecto>` tiene `INVITE_EMAIL_ENABLED=true` y faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). Si no quieres correo, pon `INVITE_EMAIL_ENABLED=false` y vuelve a desplegar. |
+| No llegan correos de invitación | Con `INVITE_EMAIL_ENABLED=false` (o sin la línea) no se envían: el log de `onInvitationWritten` dice "Correo de invitación desactivado". Con `true`, revisa los secretos SMTP y los logs (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |
 | El portal no muestra capturas | Capturas desactivadas en Configuración, o el colaborador estaba fuera de Chrome / en una página que no es http(s) en el instante sorteado. |
 | Jornada "En jornada" que ya terminó | Sin señal hace > 30 min el portal la muestra "Fuera"; el cierre automático la cierra en la próxima hora. |
 

@@ -107,7 +107,7 @@ async function main(): Promise<void> {
     await admin.getByTestId('install-url-warning').waitFor();
     await admin.getByLabel('Correo de la persona').fill(COLLAB);
     await admin.getByRole('button', { name: 'Invitar' }).click();
-    await admin.getByText(`Invitación enviada a ${COLLAB}.`).waitFor();
+    await admin.getByText(`Invitación creada para ${COLLAB}. Comparte el enlace de instalación con la persona.`).waitFor();
     const inv = await until('invitación pendiente', () => firestoreDoc(`invitations/${COLLAB}`));
     if (inv.status !== 'pending' || inv.invitedBy !== adminUid) throw new Error(`invitación: ${JSON.stringify(inv)}`);
     ok(`Invitación a ${COLLAB} creada desde el portal (pending; aviso de enlace de instalación de ejemplo visible).`);
