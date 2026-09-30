@@ -66,7 +66,10 @@ export function PrivacyPage() {
             actividad, ni sitios, ni reuniones, ni capturas. En ese tiempo solo queda registrado que la jornada estaba
             abierta: el <strong>inicio y el cierre de la jornada se guardan siempre</strong>, también fuera del horario,
             como registro de asistencia (por ejemplo, para las horas extra). La ventana de la extensión te muestra el
-            horario de hoy y si en ese momento estás “En horario”, en “Colación” o “Fuera de horario”.
+            horario de hoy y si en ese momento estás “En horario”, en “Colación” o “Fuera de horario”. Mientras la
+            medición está en pausa, la extensión sigue viendo <strong>solo en tu computador</strong> qué pestaña está
+            activa, si hay una reunión web abierta y si hay uso de teclado o mouse, únicamente para retomar la medición
+            justo cuando vuelve tu horario: eso <strong>no se suma a ningún bloque ni se envía</strong>.
           </p>
         </section>
 

@@ -137,6 +137,11 @@ async function main(): Promise<void> {
     if (wall.hour * 60 + wall.minute >= 23 * 60 + 50) {
       throw new Error('faltan menos de 10 minutos para la medianoche (hora de Chile): el horario de hoy no alcanzaría; vuelve a ejecutar más tarde.');
     }
+    // Before 01:00 the entry would be 00:00 and the seeded meeting (up to 40 min
+    // before the session) could fall before it or within the tolerance: no late arrival.
+    if (wall.hour < 1) {
+      throw new Error('es antes de la 01:00 (hora de Chile): la entrada de hoy quedaría a las 00:00 y el atraso esperado no sería fiable; vuelve a ejecutar más tarde.');
+    }
     const today = zonedDate(scheduleAt);
     const entry = zonedDate(scheduleAt - 3_600_000) === today ? formatTime(scheduleAt - 3_600_000) : '00:00';
     const weekday = weekdayOfDateKey(today);

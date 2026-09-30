@@ -87,6 +87,7 @@ describe('/privacidad', () => {
     const when = screen.getByRole('region', { name: 'Cuándo se recogen datos' });
     expect(when).toHaveTextContent('no mide nada fuera de tu horario ni durante la colación');
     expect(when).toHaveTextContent('inicio y el cierre de la jornada se guardan siempre');
+    expect(when).toHaveTextContent('no se suma a ningún bloque ni se envía');
     expect(no).toHaveTextContent('Nada fuera de tu horario ni en la colación');
     expect(within(yes).getByText('Tu horario laboral asignado, si tu empresa lo configura:')).toBeInTheDocument();
     expect(yes).toHaveTextContent('horario personalizado');
