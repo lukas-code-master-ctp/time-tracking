@@ -38,7 +38,7 @@ import {
   type WeekSchedule,
   type Weekday,
 } from '@timetracking/shared';
-import { formatShortDate } from './dates';
+import { formatShortDate, zonedDate } from './dates';
 
 // ---------- form model ----------
 
@@ -356,9 +356,26 @@ export function addTotals(a: ComplianceTotals, b: ComplianceTotals): ComplianceT
 }
 
 /**
+ * First day that counts for a person: the day they joined (`createdAt`), or
+ * the day of an earlier session (seeded or imported data), never before
+ * `fromDate`. Without `joinedAt` it is `fromDate`.
+ */
+export function complianceStartDate(fromDate: string, joinedAt: number | undefined, sessions: readonly Session[]): string {
+  if (joinedAt === undefined || !Number.isFinite(joinedAt)) return fromDate;
+  let first = zonedDate(joinedAt);
+  for (const s of sessions) {
+    const d = zonedDate(s.startedAt);
+    if (d < first) first = d;
+  }
+  return first > fromDate ? first : fromDate;
+}
+
+/**
  * Compliance of each person over `fromDate..toDate`, from the sessions
  * already loaded for the team table (no extra reads). null when nobody has a
- * schedule: the columns are not shown.
+ * schedule: the columns are not shown. `joinedAt` (uid → `createdAt`) keeps
+ * the days before someone joined out of the count: a person invited on the
+ * 20th has no absences nor offline time from the 1st to the 19th.
  */
 export function teamCompliance(
   uids: readonly string[],
@@ -367,6 +384,7 @@ export function teamCompliance(
   fromDate: string,
   toDate: string,
   now: number,
+  joinedAt?: ReadonlyMap<string, number>,
 ): TeamCompliance | null {
   if (!anySchedule(ctx, uids)) return null;
   const byPerson = new Map<string, Session[]>();
@@ -384,9 +402,15 @@ export function teamCompliance(
       byUid.set(uid, { source: 'none', totals: null });
       continue;
     }
-    const range = complianceForRange(fromDate, toDate, byPerson.get(uid) ?? [], eff.week, eff.holidays, eff.toleranceMinutes, now);
-    byUid.set(uid, { source: eff.source, totals: range.totals });
-    totals = addTotals(totals, range.totals);
+    const own = byPerson.get(uid) ?? [];
+    const start = complianceStartDate(fromDate, joinedAt?.get(uid), own);
+    // Joined after the period: nothing expected from them in it.
+    const personTotals =
+      start > toDate
+        ? zeroTotals()
+        : complianceForRange(start, toDate, own, eff.week, eff.holidays, eff.toleranceMinutes, now).totals;
+    byUid.set(uid, { source: eff.source, totals: personTotals });
+    totals = addTotals(totals, personTotals);
     scheduled++;
   }
   return { byUid, totals, scheduled };

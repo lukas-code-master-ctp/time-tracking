@@ -609,3 +609,36 @@ describe('Equipo: totales de horario', () => {
     expect(stats).toHaveTextContent('Ausencias0 días');
   });
 });
+
+describe('Equipo: días antes de unirse', () => {
+  const ctx = { config: general(), persons: new Map<string, PersonSchedule>() };
+  // Monday 21 → Tuesday 29 (NOW): 7 workdays with the default week.
+  const from = '2026-09-21';
+  const to = '2026-09-29';
+
+  it('without joinedAt every workday counts (6 past absences)', () => {
+    const tc = teamCompliance(['ana'], [], ctx, from, to, NOW)!;
+    expect(tc.byUid.get('ana')!.totals!.absentDays).toBe(6);
+  });
+
+  it('does not count absences nor offline time before the person joined', () => {
+    // Joined on Monday 28: only the 28th (absent) and the 29th (ongoing) count.
+    const joined = new Map([['ana', Date.UTC(2026, 8, 28, 15)]]);
+    const t = teamCompliance(['ana'], [], ctx, from, to, NOW, joined)!.byUid.get('ana')!.totals!;
+    expect(t.absentDays).toBe(1);
+    expect(t.days).toBe(2);
+    // 28th: 8 h 30; 29th until 15:30: 4 h + 1 h 30.
+    expect(t.expectedSoFarSeconds).toBe((8.5 + 5.5) * 3600);
+    expect(t.offlineSeconds).toBe(t.expectedSoFarSeconds);
+  });
+
+  it('an earlier session still counts from its day, and joining after the period gives zeros', () => {
+    const joined = new Map([['ana', Date.UTC(2026, 8, 28, 15)]]);
+    const early = { uid: 'ana', startedAt: Date.UTC(2026, 8, 24, 13), endedAt: Date.UTC(2026, 8, 24, 14), endReason: 'manual' as const, lastHeartbeatAt: Date.UTC(2026, 8, 24, 14) };
+    const t = teamCompliance(['ana'], [early], ctx, from, to, NOW, joined)!.byUid.get('ana')!.totals!;
+    expect(t.days).toBe(6); // 24 → 29
+    const late = teamCompliance(['ana'], [], ctx, from, to, NOW, new Map([['ana', Date.UTC(2026, 9, 5)]]))!;
+    expect(late.byUid.get('ana')!.totals!.days).toBe(0);
+    expect(late.totals.absentDays).toBe(0);
+  });
+});

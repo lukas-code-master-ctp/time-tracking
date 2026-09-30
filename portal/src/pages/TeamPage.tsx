@@ -69,6 +69,7 @@ export function TeamPage() {
       range.fromDate,
       range.toDate,
       now,
+      new Map(users.map((u) => [u.id, u.createdAt])),
     );
     return { team, compliance, now };
   }, [data, range.from, range.to]);
@@ -204,8 +205,8 @@ export function TeamPage() {
           Horario: “Esperadas” son las horas de horario hasta ahora, sin la colación ni los feriados ni los días libres (“de …”, las de todo el periodo); “En
           horario”, el tiempo de jornada dentro de ellas; “Fuera de horario”, el tiempo de jornada fuera del horario y de la
           colación. “Atrasos”: cuántos días la llegada superó la tolerancia, y cuánto sumaron. “Sin conexión en horario” es lo esperado hasta
-          ahora sin jornada abierta, y una ausencia es un día laboral ya terminado sin jornada. Se calcula con el horario
-          vigente.
+          ahora sin jornada abierta, y una ausencia es un día laboral ya terminado sin jornada. Los días antes de que la
+          persona se uniera no cuentan. Se calcula con el horario vigente.
         </p>
       ) : null}
     </>

@@ -185,14 +185,19 @@ async function main(): Promise<void> {
     }
     if (JSON.stringify(activity).includes('token=')) throw new Error('se guardó la query en urls');
     const shots = (await firestoreDocs('screenshots')).filter((s) => s.uid === uid);
-    const meta = shots[0];
-    if (!meta || meta.blurred !== true || meta.sessionId !== closed.id) throw new Error(`screenshots: ${JSON.stringify(shots)}`);
+    // One capture per 10-min block: a work day crossing a block boundary has two (or more).
+    if (shots.length === 0 || shots.some((m) => m.blurred !== true || m.sessionId !== closed.id)) {
+      throw new Error(`screenshots: ${JSON.stringify(shots)}`);
+    }
     const files = await storageObjects(`screenshots/${uid}/`);
-    const file = await storageMeta(String(meta.storagePath));
-    if (!files.includes(String(meta.storagePath)) || file.contentType !== 'image/jpeg') throw new Error(`Storage: ${JSON.stringify(files)}`);
+    const metas = await Promise.all(shots.map((m) => storageMeta(String(m.storagePath))));
+    if (shots.some((m) => !files.includes(String(m.storagePath))) || metas.some((f) => f.contentType !== 'image/jpeg')) {
+      throw new Error(`Storage: ${JSON.stringify(files)}`);
+    }
+    const file = metas[0]!;
     ok(
       `Jornada cerrada: ${Math.round((Number(closed.endedAt) - Number(closed.startedAt)) / 1000)} s, ${activity.length} bloque(s) ` +
-        `(${active}/${tracked} s activos), captura difuminada ${file.size} B en Storage; cola vacía.`,
+        `(${active}/${tracked} s activos), ${shots.length === 1 ? `captura difuminada ${file.size} B` : `${shots.length} capturas difuminadas (${file.size} B la primera)`} en Storage; cola vacía.`,
     );
 
     // ---------- 3. Seeded web meeting (data as extension 0.1.2 writes it) ----------
@@ -274,16 +279,22 @@ async function main(): Promise<void> {
     if (!detail.includes('% de actividad') || !detail.includes('127.0.0.1')) throw new Error(`detalle del bloque: ${detail}`);
     const domainsCard = (await admin.locator('section', { has: admin.getByRole('heading', { name: 'Sitios más usados' }) }).textContent()) ?? '';
     if (!domainsCard.includes('127.0.0.1')) throw new Error(`sitios más usados: ${domainsCard}`);
-    const thumb = admin.getByTestId('screenshot-thumb');
-    await thumb.waitFor({ timeout: 15_000 });
-    await until('miniatura cargada', () => thumb.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0));
-    await admin.getByRole('button', { name: /Captura de las .* Ampliar/ }).click();
+    // As many thumbnails as captures (two when the work day crossed a 10-min block).
+    const thumbs = admin.getByTestId('screenshot-thumb');
+    await thumbs.first().waitFor({ timeout: 15_000 });
+    await until(`${shots.length} miniatura(s)`, async () => ((await thumbs.count()) === shots.length ? true : null));
+    await until('miniaturas cargadas', async () =>
+      (await thumbs.evaluateAll((imgs) => imgs.every((img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0)))
+        ? true
+        : null,
+    );
+    await admin.getByRole('button', { name: /Captura de las .* Ampliar/ }).first().click();
     const dialog = admin.getByRole('dialog');
     await dialog.waitFor();
     await until('imagen ampliada', () => admin.getByTestId('lightbox-img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0));
     if (!(await dialog.textContent())?.includes('Difuminada')) throw new Error('el lightbox no indica "Difuminada"');
     await admin.keyboard.press('Escape');
-    ok(`Detalle: ${withData} bloque(s) con datos, 127.0.0.1 entre los sitios, captura visible (miniatura + ampliada, "Difuminada").`);
+    ok(`Detalle: ${withData} bloque(s) con datos, 127.0.0.1 entre los sitios, ${shots.length} captura(s) visible(s) (miniatura + ampliada, "Difuminada").`);
 
     if (errors.length > 0) throw new Error(`errores en las páginas:\n${errors.join('\n')}`);
     console.log('E2E INTEGRADO OK: admin invita → colaborador mide en la extensión → admin ve horas, actividad y captura.');
