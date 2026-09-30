@@ -4,12 +4,13 @@
  * Output: `dist/` (prod, the store package), `dist-dev/` (dev) or `dist-qa/`
  * (prod bundle + the store item's `key`), loadable with "Load unpacked".
  * `--out-dir` builds elsewhere (e.g. a temp folder to check prod when `dist/`
- * is locked); relative paths are resolved against `extension/`.
+ * is locked); relative paths are resolved against `extension/`. The folder is
+ * wiped first, so it is restricted (see `assertSafeOutDir`).
  *
  * Runs with Node's built-in TypeScript type stripping (Node >= 22.18).
  */
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { build } from 'vite';
 import { ROOT, missingFirebaseValues, outDirOf, resolveBuildConfig, type BuildTarget } from '../build/common.ts';
 import { BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, DEV_EXTENSION_ID, ICONS, POPUP_FILE } from '../build/manifest.ts';
@@ -27,10 +28,12 @@ const mode = argOf('--mode') ?? 'production';
 const target = TARGETS[mode];
 if (!target) fail(`Modo inválido "${mode}" (usa production, development o qa).`);
 const watch = args.includes('--watch');
-const outDir = resolve(ROOT, argOf('--out-dir') || outDirOf(target));
-// rmSync below: never wipe extension/ itself or one of its parents.
-const toRoot = relative(outDir, ROOT);
-if (toRoot === '' || (!toRoot.startsWith('..') && !isAbsolute(toRoot))) fail(`--out-dir inválido: ${outDir}`);
+const outDirArg = argOf('--out-dir');
+if (outDirArg !== undefined && (outDirArg.trim() === '' || outDirArg.startsWith('--'))) {
+  fail('--out-dir necesita una carpeta (p. ej. --out-dir dist-prueba).');
+}
+const outDir = resolve(ROOT, outDirArg ?? outDirOf(target));
+assertSafeOutDir(outDir);
 
 if (target === 'qa') checkQaConfig();
 
@@ -55,6 +58,45 @@ if (watch) {
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
+}
+
+/** `child` is strictly inside `parent` (case-insensitive on Windows, via `relative`). */
+function isInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+/**
+ * The output folder is wiped before building, so `--out-dir` must not point at
+ * anything that is not (or was not) an extension build:
+ * - never `extension/` itself nor one of its parents (repo root, disk root…);
+ * - inside the repo, only a direct child of `extension/` named `dist*`
+ *   (`dist`, `dist-qa`, `dist-prueba`…), never `src/`, `packages/`, `portal/`…;
+ * - anywhere else, only a folder that does not exist, is empty, or holds a
+ *   previous build of this extension (its `manifest.json`).
+ */
+function assertSafeOutDir(dir: string): void {
+  const repo = resolve(ROOT, '..');
+  const bad = (why: string): never => fail(`--out-dir inválido (${why}): ${dir}`);
+  if (relative(dir, ROOT) === '' || isInside(ROOT, dir)) bad('es extension/ o una carpeta que la contiene');
+  if (relative(dir, repo) === '' || isInside(dir, repo)) {
+    const rel = relative(ROOT, dir);
+    if (!isInside(dir, ROOT) || rel.includes(sep) || !/^dist/i.test(rel)) {
+      bad('dentro del repo solo se permite extension/dist*');
+    }
+  }
+  if (!existsSync(dir)) return;
+  if (!statSync(dir).isDirectory()) bad('no es una carpeta');
+  if (readdirSync(dir).length === 0) return;
+  let name = '';
+  try {
+    name = (JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as { name?: unknown }).name as string;
+  } catch {
+    // No manifest (or unreadable): not a previous build.
+  }
+  if (typeof name !== 'string' || !name.startsWith('Registro de jornada')) {
+    bad('la carpeta tiene archivos y no es un build anterior de la extensión; usa una carpeta nueva o vacía');
+  }
 }
 
 /**
