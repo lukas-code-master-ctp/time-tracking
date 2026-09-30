@@ -166,6 +166,38 @@ describe('SyncEngine + SessionManager', () => {
     expect(h.chrome.world.alarms.has(PULSE_ALARM)).toBe(false);
   });
 
+  it('rules deployed before 2026-09-30 (no meetingSeconds): the block is uploaded without the field, not dropped', async () => {
+    h.backend.legacyActivityRules = true;
+    await h.app.session.start();
+    await h.settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await h.app.session.stop();
+    await h.settle();
+    const doc = h.backend.activity.get(activityDocId('u1', SLOT0));
+    expect(doc).toMatchObject({ trackedSeconds: 10 });
+    expect(doc).not.toHaveProperty('meetingSeconds');
+    expect(h.app.store.queue.items).toHaveLength(0);
+  });
+
+  it('permission-denied for another reason: the legacy write is denied too and the usual 3 attempts apply', async () => {
+    await h.app.session.start();
+    await h.settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await h.app.session.stop();
+    await h.settle();
+    const before = h.backend.ops('upsertActivity').length;
+    // User disabled: every write is denied.
+    h.app.store.queue.items.length = 0;
+    enqueueOp(h.app.store.queue, { kind: 'activity', uid: 'u1', slot: slot({ meetingSeconds: 3 }) });
+    for (let i = 0; i < 3; i++) {
+      h.backend.failures.push('permission-denied', 'permission-denied');
+      await h.app.sync.kick(true);
+    }
+    expect(h.app.store.queue.items).toHaveLength(0); // dropped after 3 attempts
+    expect(h.backend.ops('upsertActivity').length).toBe(before);
+    expect(h.backend.failures).toEqual([]); // 2 writes per attempt (current + legacy)
+  });
+
   it('closed blocks are persisted in the queue BEFORE the accumulator', async () => {
     vi.setSystemTime(SLOT0 + SLOT_MS - 30_000);
     await h.app.session.start();

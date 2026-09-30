@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SLOT_MS, SlotAccumulator, activityDocId, slotStartOf, type ActivitySlot } from '@timetracking/shared';
+import { CONSENT_VERSION, SLOT_MS, SlotAccumulator, activityDocId, slotStartOf, type ActivitySlot } from '@timetracking/shared';
 import { activity, createHarness, hello, type Harness } from './fakes';
 
 /** Start of a 10-minute block. */
@@ -157,16 +157,74 @@ describe('Tracker — web meetings ("En reunión")', () => {
     expect(current(h)).toMatchObject({ trackedSeconds: 60, meetingSeconds: 30 });
   });
 
-  it('a meeting in an incognito window or in a non-normal window does not count', async () => {
+  it('a meeting in an incognito window or in a devtools window does not count', async () => {
     await hello(h, 11);
     h.chrome.world.windows.push(
       { id: 2, focused: false, incognito: true, tabs: [{ id: 21, url: MEET, active: true, audible: true }] },
-      { id: 3, focused: false, type: 'popup', tabs: [{ id: 31, url: MEET, active: true, audible: true }] },
+      { id: 3, focused: false, type: 'devtools', tabs: [{ id: 31, url: MEET, active: true, audible: true }] },
     );
     await h.app.session.start();
     await run(30_000);
     expect(current(h)!.meetingSeconds).toBe(0);
     expect(h.chrome.session.data[AUDIBLE_KEY] ?? {}).toEqual({});
+  });
+
+  it.each(['app', 'popup'] as const)('a meeting in an installed web app / pop-out (%s window) counts', async (type) => {
+    await hello(h, 11);
+    h.chrome.world.windows.push({ id: 3, focused: false, type, tabs: [{ id: 31, url: MEET, active: true, audible: true }] });
+    await h.app.session.start();
+    await run(30_000);
+    expect(current(h)!.meetingSeconds).toBe(30);
+  });
+
+  it('screen locked: not a meeting, even with the room playing audio', async () => {
+    await hello(h, 11);
+    addMeetingTab();
+    await h.app.session.start();
+    await run(30_000);
+    h.chrome.world.idleState = 'locked';
+    await h.app.tracker.onIdleState('locked');
+    await run(60_000);
+    expect(current(h)).toMatchObject({ trackedSeconds: 90, activeSeconds: 0, meetingSeconds: 30 });
+    expect(h.app.store.acc!.inMeeting).toBe(false);
+  });
+
+  it('a work day opened before accepting the new notice (0.1.1) does not detect meetings until it is accepted', async () => {
+    await hello(h, 11);
+    addMeetingTab();
+    await h.app.session.start();
+    // As after updating 0.1.1 → 0.1.2 with the work day open: old notice.
+    h.app.store.meta.profile = { ...h.app.store.meta.profile!, consentVersion: '2026-09-29' };
+    await pulse(h);
+    await run(60_000);
+    expect(current(h)).toMatchObject({ trackedSeconds: 60, meetingSeconds: 0 });
+    // Accepted: detected from the next evaluation (here, the next pulse).
+    h.app.store.meta.profile = { ...h.app.store.meta.profile!, consentVersion: CONSENT_VERSION };
+    await run(60_000);
+    expect(current(h)).toMatchObject({ trackedSeconds: 120, meetingSeconds: 30 });
+  });
+
+  it('tabs.onUpdated of unrelated background tabs does not re-read every tab (cost)', async () => {
+    await hello(h, 11);
+    win().tabs.push({ id: 14, url: 'https://news.example.com/', active: false });
+    await h.app.session.start();
+    await h.settle();
+    const getAll = vi.spyOn(chrome.windows, 'getAll');
+    const saves = h.chrome.local.setCalls.length;
+    for (let i = 0; i < 20; i++) {
+      tab(14).url = `https://news.example.com/${i}`;
+      await h.app.tracker.onTabUpdated(14, { status: 'loading', url: tab(14).url }, tabObj(14));
+      await h.app.tracker.onTabUpdated(14, { status: 'complete' }, tabObj(14));
+      await h.app.tracker.onTabUpdated(14, { audible: false }, tabObj(14));
+    }
+    expect(getAll).not.toHaveBeenCalled();
+    expect(h.chrome.local.setCalls.length).toBe(saves);
+    // A background tab that becomes a room with audio is picked up at once.
+    tab(14).url = MEET;
+    tab(14).audible = true;
+    await h.app.tracker.onTabUpdated(14, { audible: true }, tabObj(14));
+    expect(getAll).toHaveBeenCalledTimes(1);
+    expect(h.app.store.acc!.inMeeting).toBe(true);
   });
 
   it('a focused incognito window with a room: outside Chrome and not a meeting', async () => {

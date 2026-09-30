@@ -13,12 +13,16 @@
  * - Activity: `{ type: 'activity', t }` from the content script →
  *   `markActiveSecond`.
  * - Web meeting (spec 2026-09-30, "En reunión") → `setMeeting`: some tab of
- *   a normal (not incognito) window is a meeting room (`isMeetingUrl`) and
+ *   a normal, popup or app (PWA) window, not incognito, is a meeting room
+ *   (`isMeetingUrl`) and
  *   either it is the active tab of the focused window, or it is playing
  *   audio (`tab.audible`), or it did so at most 2 min ago. Teams always needs
  *   recent audio (its URLs do not tell a meeting from the chat). Only the
  *   URL and the `audible` flag are read: never the audio or the video.
- *   Re-evaluated on `tabs.onUpdated` (audible/url/status), `onActivated`,
+ *   Never while the screen is locked, nor before the notice that describes
+ *   it (CONSENT_VERSION) was accepted.
+ *   Re-evaluated on `tabs.onUpdated` (only the events that can change it),
+ *   `onActivated`,
  *   `onRemoved`, `windows.onFocusChanged`, idle changes and every 30 s pulse
  *   (which also covers the end of the 2-minute grace period).
  *
@@ -30,10 +34,12 @@
  * a work day is open; the timestamp is taken when the event arrives.
  */
 import {
+  CONSENT_VERSION,
   IDLE_DETECTION_SECONDS,
   MEETING_AUDIO_GRACE_MS,
   SlotAccumulator,
   isMeetingInProgress,
+  isMeetingUrl,
   type FlushResult,
   type FocusInput,
   type IdleState,
@@ -122,7 +128,21 @@ export class Tracker {
       if (!navigated && info.audible === undefined) return;
       const acc = this.measuringAcc();
       if (!acc) return;
-      if (tab.active && navigated) {
+      const focusChanged = tab.active && navigated;
+      // Cost: onUpdated fires for every tab of every window. Only events that
+      // can change the meeting state re-read all tabs (windows.getAll):
+      // - audio starting while not in a meeting (stopping it, or more audio
+      //   during a meeting, cannot end it: the 2-min grace covers it);
+      // - a navigation of a room tab, or of any tab while in a meeting (the
+      //   room may have been left);
+      // - the active tab navigating (it may have become/stopped being a room).
+      // The 30 s pulse re-evaluates everything anyway.
+      const meetingMayChange =
+        focusChanged ||
+        (info.audible === true && !acc.inMeeting) ||
+        (navigated && (acc.inMeeting || isMeetingUrl(tab.url ?? tab.pendingUrl)));
+      if (!meetingMayChange) return;
+      if (focusChanged) {
         acc.setFocus(acc.idleState === 'locked' ? null : await this.computeFocus(), at);
       }
       acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
@@ -299,7 +319,9 @@ export class Tracker {
   async computeMeeting(at: number, idle: IdleState): Promise<boolean> {
     let windows: chrome.windows.Window[];
     try {
-      windows = await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+      // 'popup' and 'app' too: installed web apps (Meet/Teams PWA) and
+      // pop-out meeting windows. Never devtools.
+      windows = await chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'popup', 'app'] });
     } catch {
       return false;
     }
@@ -331,6 +353,11 @@ export class Tracker {
       }
     }
     if (changed) await this.saveAudible();
+    // Screen locked = the person is away (as for focus). And meeting
+    // detection is only used once the notice that describes it (CONSENT_VERSION
+    // 2026-09-30) was accepted: a work day opened with 0.1.1 keeps measuring
+    // as before until the person accepts the new notice.
+    if (idle === 'locked' || this.store.meta.profile?.consentVersion !== CONSENT_VERSION) return false;
     return meeting;
   }
 

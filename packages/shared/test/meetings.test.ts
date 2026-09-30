@@ -22,6 +22,8 @@ const positives: [MeetingPlatform, string][] = [
   ['teams', 'https://teams.microsoft.com/v2/'],
   ['teams', 'https://teams.live.com/light-meetings/launch?p=abc'],
   ['teams', 'https://teams.cloud.microsoft/v2/'],
+  ['teams', 'https://teams.cloud.microsoft/'],
+  ['zoom', 'https://app.zoom.us/wc/81234567890/join'],
   ['webex', 'https://acme.webex.com/meet/juan.perez'],
   ['webex', 'https://acme.webex.com/wbxmjs/joinservice/sites/acme/meeting/download/abc'],
   ['webex', 'https://web.webex.com/webappng/sites/acme/meeting/info/abc'],
@@ -46,6 +48,12 @@ const negatives: string[] = [
   'https://us05web.zoom.us/j/123456789?pwd=x',
   'https://zoom.us/signin',
   'https://notzoom.us/wc/123/join',
+  // Zoom Workplace web app and the page after leaving: not rooms.
+  'https://app.zoom.us/wc/home',
+  'https://app.zoom.us/wc/team-chat',
+  'https://app.zoom.us/wc/calendar',
+  'https://app.zoom.us/wc/leave?meetingId=123456789',
+  'https://zoom.us/wc/123/join',
   // Teams: chat, calendar, home.
   'https://teams.microsoft.com/_#/conversations/General?threadId=19:x',
   'https://teams.microsoft.com/_#/calendarv2',
@@ -55,6 +63,9 @@ const negatives: string[] = [
   // Webex: portal.
   'https://acme.webex.com/',
   'https://acme.webex.com/webappng',
+  'https://acme.webex.com/webappng/sites/acme/dashboard',
+  'https://acme.webex.com/webappng/sites/acme/recording',
+  'https://acme.webex.com/meet/',
   'https://www.webex.com/pricing',
   // Jitsi / Whereby: home and non-room pages.
   'https://meet.jit.si/',

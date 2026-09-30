@@ -46,6 +46,8 @@ export class FakeBackend implements Remote {
   sessions = new Map<string, Session>();
   org: OrgConfig | null = { ...ORG };
   orgFetches = 0;
+  /** Behave like firestore.rules before 2026-09-30 (no `meetingSeconds`). */
+  legacyActivityRules = false;
   /** storage.rules refuse every upload (e.g. user disabled). */
   denyUploads = false;
   users = new Map<string, Partial<UserProfile>>();
@@ -64,6 +66,8 @@ export class FakeBackend implements Remote {
 
   async upsertActivity(docId: string, data: ActivitySlot): Promise<void> {
     this.check();
+    // firestore.rules before 2026-09-30: `meetingSeconds` is an unknown field.
+    if (this.legacyActivityRules && 'meetingSeconds' in data) throw new BackendError('permission-denied');
     this.calls.push({ op: 'upsertActivity', docId, data });
     this.activity.set(docId, data);
   }

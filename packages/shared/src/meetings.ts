@@ -85,9 +85,14 @@ export function meetingPlatformOf(url: string | null | undefined): MeetingPlatfo
     return null;
   }
   if (hostIs(host, 'zoom.us')) {
-    return /^\/wc\/[^/]+/i.test(path) ? 'zoom' : null;
+    // Only the web client of a meeting (`/wc/<id>/join|start`, `/wc/join/<id>`).
+    // `app.zoom.us/wc/home`, `/wc/team-chat`, `/wc/calendar`… are the Zoom
+    // Workplace web app, and `/wc/leave` the page after leaving: not rooms.
+    return /^\/wc\/(?:join\/)?\d{9,12}(?:\/|$)/i.test(path) ? 'zoom' : null;
   }
   if (TEAMS_HOSTS.includes(host)) {
+    // New client on its own domain: every route (audio is always required).
+    if (host === 'teams.cloud.microsoft') return 'teams';
     const route = path + u.hash;
     if (/^\/_#\/(l\/)?meetup-join(\/|$)/i.test(route)) return 'teams';
     if (/^\/l\/meetup-join\//i.test(path)) return 'teams';
@@ -96,7 +101,10 @@ export function meetingPlatformOf(url: string | null | undefined): MeetingPlatfo
     return null;
   }
   if (hostIs(host, 'webex.com')) {
-    return /^\/(meet|wbxmjs|webappng)\/[^/]*/i.test(path) ? 'webex' : null;
+    // `/webappng/sites/<site>/dashboard`, recordings, preferences… are the
+    // site portal: only its `/meeting/` routes count.
+    if (/^\/webappng\/sites\/[^/]+\/meeting\//i.test(path)) return 'webex';
+    return /^\/(meet|wbxmjs)\/[^/]+/i.test(path) ? 'webex' : null;
   }
   if (host === 'meet.jit.si') {
     const room = singleSegment(path);

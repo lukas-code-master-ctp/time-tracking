@@ -134,6 +134,12 @@ export function toActivityDoc(slot: ActivitySlot): ActivitySlot {
   };
 }
 
+/** The document without `meetingSeconds`, as firestore.rules before 2026-09-30 accept it. */
+export function toLegacyActivityDoc(doc: ActivitySlot): ActivitySlot {
+  const { meetingSeconds: _dropped, ...legacy } = doc;
+  return legacy;
+}
+
 /** The `sessions` document at creation: exactly the 5 fields, open. */
 export function toNewSessionDoc(uid: string, startedAt: number): Session {
   const t = nonNegInt(startedAt);
@@ -146,7 +152,20 @@ export async function execOp(backend: Backend, op: SyncOp): Promise<void> {
       const doc = toActivityDoc(op.slot);
       // A block without session id (should not happen) would be rejected by the rules.
       if (!doc.sessionId) throw new BackendError('invalid-argument', 'activity sin sessionId');
-      await backend.upsertActivity(activityDocId(doc.uid, doc.slotStart), doc);
+      const docId = activityDocId(doc.uid, doc.slotStart);
+      try {
+        await backend.upsertActivity(docId, doc);
+      } catch (err) {
+        // firestore.rules older than 2026-09-30 reject the extra field
+        // `meetingSeconds` with permission-denied. Rather than losing the
+        // block (3 denied attempts → dropped), send it as extension 0.1.1
+        // did: the meeting time is lost, the rest is kept. With current
+        // rules the first write succeeds and this never runs; if the denial
+        // has another cause (user disabled…) the legacy write is denied too
+        // and the usual classification applies.
+        if (errorCode(err) !== 'permission-denied' || !('meetingSeconds' in doc)) throw err;
+        await backend.upsertActivity(docId, toLegacyActivityDoc(doc));
+      }
       return;
     }
     case 'sessionCreate':

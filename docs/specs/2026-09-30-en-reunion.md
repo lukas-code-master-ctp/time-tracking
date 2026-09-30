@@ -9,16 +9,16 @@ En una videollamada web donde la persona solo escucha no hay teclado ni mouse, y
 Todo el tiempo en **sitios web de reuniones** se registra como **"En reunión"**: una categoría aparte que **no sube ni baja** el % de actividad.
 
 ## Qué es "estar en reunión"
-Un segundo cuenta como **en reunión** si **no** fue activo por teclado/mouse **y** en ese segundo hay una **reunión en curso** en alguna pestaña de una ventana normal (no incógnito) de Chrome, esté o no al frente.
+Un segundo cuenta como **en reunión** si **no** fue activo por teclado/mouse **y** en ese segundo hay una **reunión en curso** en alguna pestaña de una ventana de Chrome que no sea incógnito (normal, emergente o app web instalada, p. ej. Meet o Teams como PWA; nunca DevTools), esté o no al frente. Con la pantalla bloqueada nunca hay reunión (la persona no está).
 
 Una pestaña tiene una **reunión en curso** si su URL (sanitizada) coincide con el patrón de sala de una plataforma conocida:
 
 | Plataforma | Patrón (host + ruta) |
 |---|---|
 | Google Meet | `meet.google.com/<código>` con código `xxx-xxxx-xxx` (letras) o `lookup/…` |
-| Zoom web | `*.zoom.us/wc/…` o `app.zoom.us/wc/…` |
-| Microsoft Teams | `teams.microsoft.com`, `teams.live.com`, `teams.cloud.microsoft` con ruta de llamada/reunión (`/_#/meetup-join`, `/l/meetup-join/`, `/v2/`, `/light-meetings/`), **y** la pestaña está reproduciendo audio o lo hizo en los últimos 2 min |
-| Webex | `*.webex.com/meet/…`, `*.webex.com/wbxmjs/…`, `*.webex.com/webappng/…` |
+| Zoom web | `*.zoom.us/wc/<id>/…` o `*.zoom.us/wc/join/<id>` con `<id>` numérico (9–12 dígitos); no `app.zoom.us/wc/home`, `/wc/team-chat`, `/wc/leave`… (app web de Zoom Workplace) |
+| Microsoft Teams | `teams.microsoft.com`, `teams.live.com` con ruta de llamada/reunión (`/_#/meetup-join`, `/l/meetup-join/`, `/v2/`, `/light-meetings/`), o cualquier ruta de `teams.cloud.microsoft` (cliente nuevo), **y** la pestaña está reproduciendo audio o lo hizo en los últimos 2 min |
+| Webex | `*.webex.com/meet/<sala>`, `*.webex.com/wbxmjs/…`, `*.webex.com/webappng/sites/<sitio>/meeting/…` (no el resto del portal `webappng`: panel, grabaciones…) |
 | Jitsi | `meet.jit.si/<sala>` |
 | Whereby | `whereby.com/<sala>` |
 | GoTo Meeting | `app.goto.com/meeting/…`, `meet.goto.com/…` |
@@ -47,7 +47,16 @@ La lista vive en `packages/shared` (`meetings.ts`) con tests por patrón. No hay
 ## Extensión
 - Popup: "En reunión hoy" junto a horas y actividad; "Qué se mide" agrega "Reuniones web (Meet, Zoom, Teams…)".
 - Aviso de consentimiento y política de privacidad: explican que se detecta si hay una reunión web abierta (por la dirección de la página y si la pestaña reproduce audio) para no contarla como inactividad; nunca se accede al audio ni al video. **`CONSENT_VERSION` sube**, así que cada persona vuelve a aceptar una vez.
+- La detección de reuniones solo se usa cuando la persona aceptó el aviso nuevo: una jornada abierta con 0.1.1 que se actualiza a 0.1.2 sigue midiendo como antes (sin "En reunión") hasta que acepte.
 - Versión **0.1.2**. La 0.1.1 está en revisión en la tienda: la 0.1.2 se usa en QA (`build:qa`) y se sube a la tienda después de que aprueben la 0.1.1.
+
+## Despliegue (orden obligatorio)
+1. **Primero** desplegar `firestore.rules` (acepta `meetingSeconds`).
+2. **Después** distribuir la extensión 0.1.2 (QA o tienda).
+
+Si una 0.1.2 escribe contra reglas antiguas, Firestore rechaza el bloque con `permission-denied` por el campo desconocido. Como resguardo, el cliente reintenta de inmediato ese mismo bloque sin `meetingSeconds` (como la 0.1.1): no se pierde el bloque, solo el tiempo en reunión. Es un resguardo, no el camino previsto.
+
+**Limitaciones conocidas:** una sala de Meet/Zoom/etc. que queda **al frente** cuenta como reunión aunque no haya audio (p. ej. la pantalla "Saliste de la reunión" en la misma URL, o la sala de espera antes de entrar) hasta que la persona cambia de pestaña o bloquea la pantalla. En Teams, como su URL no distingue la reunión del chat, un sonido de notificación da hasta 2 min de "reunión" si no hay teclado/mouse. El fin del período de gracia de 2 min se aplica en el siguiente pulso (hasta 30 s tarde).
 
 ## Criterios de aceptación
 1. Meet en una sala, sin tocar nada por 5 min: el bloque queda con `meetingSeconds` ≈ lo medido y el portal lo muestra "En reunión" sin bajar el %.
