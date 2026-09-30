@@ -192,6 +192,10 @@ describe('validation', () => {
     expect(read.week).not.toBe(c.week);
     expect(readScheduleConfig({ ...c, toleranceMinutes: 90 })).toBeNull();
     expect(readScheduleConfig(undefined)).toBeNull();
+    // The rules accept an impossible date (2026-02-30): it is dropped, the schedule is kept.
+    expect(readScheduleConfig({ ...c, holidays: ['2026-02-30', '2026-12-25'] })?.holidays).toEqual(['2026-12-25']);
+    // A bad format still invalidates the document.
+    expect(readScheduleConfig({ ...c, holidays: ['2026-2-3'] })).toBeNull();
     expect(readPersonSchedule({ week: WEEK, updatedAt: 1, updatedBy: 'a' })).toEqual({ week: WEEK, updatedAt: 1, updatedBy: 'a' });
     expect(readPersonSchedule({ week: { ...WEEK, mon: { ...LJ, start: 'x' } }, updatedAt: 1, updatedBy: 'a' })).toBeNull();
   });
@@ -443,6 +447,28 @@ describe('complianceForRange', () => {
     expect(r.totals.inScheduleSeconds + r.totals.offlineSeconds).toBe(r.totals.expectedSoFarSeconds);
     // Reversed bounds are swapped.
     expect(complianceForRange('2026-10-04', MON, sessions, WEEK, ['2026-09-30'], 5, LATER).totals).toEqual(r.totals);
+  });
+
+  it('gives the same days as complianceForDay (sessions merged once per range)', () => {
+    const sessions = [
+      closed(SUN, '22:00', '01:30', MON), // crosses midnight
+      closed(MON, '09:20', '13:30'),
+      closed(MON, '10:00', '11:00'), // overlapped
+      open(at('2026-09-29', '08:50'), at('2026-09-29', '16:00')),
+    ];
+    const now = at('2026-09-29', '17:00');
+    const r = complianceForRange(SUN, '2026-09-30', sessions, WEEK, [], 5, now);
+    expect(r.days).toEqual(
+      [SUN, MON, '2026-09-29', '2026-09-30'].map((d) => complianceForDay(d, sessions, WEEK, [], 5, now)),
+    );
+  });
+
+  it('30 people × 93 days stays fast (conversions are memoized)', () => {
+    const sessions = Array.from({ length: 93 }, (_, i) => closed(addDaysToDateKey('2026-07-01', i), '08:55', '18:40'));
+    const t0 = performance.now();
+    for (let p = 0; p < 30; p++) complianceForRange('2026-07-01', '2026-10-01', sessions, WEEK, CHILE_HOLIDAY_DATES, 5, LATER);
+    // Without the memo this took ~200 ms on a laptop; generous bound for slow CI.
+    expect(performance.now() - t0).toBeLessThan(1500);
   });
 
   it('rejects invalid dates and ranges that are too long', () => {

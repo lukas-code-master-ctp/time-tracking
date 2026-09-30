@@ -127,6 +127,21 @@ function wallClockAsUtc(ms: number, timeZone: string): number {
  * repeated time to its first occurrence (see the header).
  */
 export function zonedDateTimeToMs(date: string, time: string, timeZone: string = DEFAULT_TIME_ZONE): EpochMs {
+  // Memoized: Intl is slow (a team report of 30 people × 93 days converts the
+  // same few dates and times thousands of times) and the result never changes.
+  const key = `${timeZone}|${date}|${time}`;
+  const hit = zonedCache.get(key);
+  if (hit !== undefined) return hit;
+  const ms = computeZonedDateTimeToMs(date, time, timeZone);
+  if (zonedCache.size >= ZONED_CACHE_MAX) zonedCache.clear();
+  zonedCache.set(key, ms);
+  return ms;
+}
+
+const ZONED_CACHE_MAX = 20_000;
+const zonedCache = new Map<string, number>();
+
+function computeZonedDateTimeToMs(date: string, time: string, timeZone: string): EpochMs {
   const { y, m, d } = parseDateKey(date);
   const minutes = timeToMinutes(time);
   const target = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60);
@@ -306,11 +321,18 @@ function cleanWeek(week: Record<string, unknown>): WeekSchedule {
 
 /** A valid `config/schedule` read from Firestore (a clean copy), or null. */
 export function readScheduleConfig(raw: unknown): ScheduleConfig | null {
-  if (validateScheduleConfig(raw).length > 0) return null;
+  if (!isPlainObject(raw)) return null;
+  // The rules check the format of the holidays but not the calendar (they
+  // accept 2026-02-30): drop such a date instead of ignoring the whole
+  // schedule (which would make the extension measure at every hour).
+  const holidays = Array.isArray(raw.holidays)
+    ? raw.holidays.filter((h) => typeof h !== 'string' || !DATE_KEY_RE.test(h) || isValidDateKey(h))
+    : raw.holidays;
+  if (validateScheduleConfig({ ...raw, holidays }).length > 0) return null;
   const d = raw as Record<string, unknown>;
   return {
     week: cleanWeek(d.week as Record<string, unknown>),
-    holidays: [...(d.holidays as string[])],
+    holidays: [...(holidays as string[])],
     toleranceMinutes: d.toleranceMinutes as number,
     remindersEnabled: d.remindersEnabled as boolean,
     updatedAt: d.updatedAt as number,
@@ -543,9 +565,21 @@ export function complianceForDay(
   now: number,
   timeZone: string = DEFAULT_TIME_ZONE,
 ): DayCompliance {
+  return complianceFromPieces(date, connectedPieces(sessions, now), week, holidays, toleranceMinutes, now, timeZone);
+}
+
+function complianceFromPieces(
+  date: string,
+  connected: readonly Piece[],
+  week: WeekSchedule | null,
+  holidays: readonly string[],
+  toleranceMinutes: number,
+  now: number,
+  timeZone: string,
+): DayCompliance {
   const plan = planForDay(date, week, holidays, timeZone);
   const day = zonedDayBounds(date, timeZone);
-  const pieces = clip(connectedPieces(sessions, now), day);
+  const pieces = clip(connected, day);
   const toleranceMs = Math.max(0, toleranceMinutes) * 60_000;
 
   const connectedMs = overlapMs(pieces, day);
@@ -680,11 +714,12 @@ export function complianceForRange(
   parseDateKey(a);
   parseDateKey(b);
   const days: DayCompliance[] = [];
+  const connected = connectedPieces(sessions, now);
   for (let d = a; d <= b; d = addDaysToDateKey(d, 1)) {
     if (days.length >= MAX_COMPLIANCE_RANGE_DAYS) {
       throw new RangeError(`El rango supera ${MAX_COMPLIANCE_RANGE_DAYS} días.`);
     }
-    days.push(complianceForDay(d, sessions, week, holidays, toleranceMinutes, now, timeZone));
+    days.push(complianceFromPieces(d, connected, week, holidays, toleranceMinutes, now, timeZone));
   }
   return { days, totals: sumCompliance(days) };
 }
