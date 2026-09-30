@@ -29,6 +29,9 @@ export function TeamTable({ team, now, detailDate }: Props) {
             <th scope="col">Actividad</th>
             <th scope="col">Estado</th>
             <th scope="col" className="num">
+              En reunión
+            </th>
+            <th scope="col" className="num">
               Fuera de Chrome
             </th>
             <th scope="col">Última actividad</th>
@@ -66,7 +69,7 @@ export function TeamTable({ team, now, detailDate }: Props) {
                   {r.trackedSeconds > 0 ? <span className="sub">medidas {formatDuration(r.trackedSeconds)}</span> : null}
                 </td>
                 <td>
-                  <ActivityMeter percent={r.activityPercent} />
+                  <ActivityMeter percent={r.activityPercent} measured={r.trackedSeconds > 0} />
                 </td>
                 <td>
                   {r.status === 'disabled' ? (
@@ -80,6 +83,7 @@ export function TeamTable({ team, now, detailDate }: Props) {
                     <span className="chip muted-chip">Fuera</span>
                   )}
                 </td>
+                <td className="num">{r.trackedSeconds > 0 ? formatDuration(r.meetingSeconds) : '—'}</td>
                 <td className="num">{r.trackedSeconds > 0 ? formatDuration(r.outsideChromeSeconds) : '—'}</td>
                 <td>{r.lastActivityAt === null ? <span className="muted">—</span> : formatRelativeDateTime(r.lastActivityAt, now)}</td>
                 <td className="num">{r.sessionCount}</td>
@@ -95,9 +99,10 @@ export function TeamTable({ team, now, detailDate }: Props) {
               {totals.trackedSeconds > 0 ? <span className="sub">medidas {formatDuration(totals.trackedSeconds)}</span> : null}
             </td>
             <td>
-              <ActivityMeter percent={totals.activityPercent} />
+              <ActivityMeter percent={totals.activityPercent} measured={totals.trackedSeconds > 0} />
             </td>
             <td>{totals.membersInSession} en jornada</td>
+            <td className="num">{totals.trackedSeconds > 0 ? formatDuration(totals.meetingSeconds) : '—'}</td>
             <td className="num">{totals.trackedSeconds > 0 ? formatDuration(totals.outsideChromeSeconds) : '—'}</td>
             <td />
             <td className="num">{rows.reduce((n, r) => n + r.sessionCount, 0)}</td>

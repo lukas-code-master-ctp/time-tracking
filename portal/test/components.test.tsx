@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { summarizeTeam, type OrgConfig } from '@timetracking/shared';
+import { secondsToHours, summarizeTeam, teamSummaryToCsv, type OrgConfig } from '@timetracking/shared';
 import { App } from '../src/App';
 import { TeamTable } from '../src/components/TeamTable';
 import { Timeline } from '../src/components/Timeline';
@@ -151,6 +151,84 @@ describe('Equipo', () => {
   });
 });
 
+describe('En reunión', () => {
+  function meetingDb(): FakeDb {
+    const db = seededDb();
+    db.activity = [
+      // Ana: a 30-min daily (09:30–10:00) plus a normal block.
+      slot('ana', at(9, 20), 600, 480),
+      slot('ana', at(9, 30), 600, 30, { meetingSeconds: 540 }),
+      slot('ana', at(9, 40), 600, 0, { meetingSeconds: 600 }),
+      slot('ana', at(9, 50), 600, 60, { meetingSeconds: 480 }),
+      // Beto: extension 0.1.1 (no meetingSeconds).
+      slot('beto', at(10), 300, 60),
+    ];
+    return db;
+  }
+
+  it('Equipo: "En reunión" column and totals, same values as the CSV', async () => {
+    const backend = backendOf(meetingDb(), ADMIN);
+    renderApp(backend);
+    const table = await screen.findByRole('table');
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent);
+    expect(headers).toContain('En reunión');
+    const col = headers.indexOf('En reunión');
+    const rows = within(table).getAllByRole('row');
+    const cell = (row: HTMLElement) => row.querySelectorAll('td, th')[col]!.textContent;
+    const ana = rows.find((r) => r.textContent?.includes('Ana Rojas'))!;
+    const beto = rows.find((r) => r.textContent?.includes('Beto Díaz'))!;
+    const total = rows.find((r) => r.textContent?.includes('Total ('))!;
+    expect(cell(ana)).toBe('27 min'); // 540 + 600 + 480 s
+    expect(cell(beto)).toBe('0 min');
+    expect(cell(total)).toBe('27 min');
+    // % without the meeting: Ana (480 + 30 + 0 + 60) / (2400 - 1620) = 73 %.
+    expect(ana).toHaveTextContent('73 %');
+    expect(screen.getByRole('region', { name: 'Totales del periodo' })).toHaveTextContent('En reunión27 min');
+
+    // The CSV export carries the same meeting time.
+    const { buildTeam } = await import('../src/lib/team');
+    const [users, slots, sessions] = await Promise.all([
+      backend.data.listUsers(),
+      backend.data.listActivity(day),
+      backend.data.listSessions(day),
+    ]);
+    const csv = teamSummaryToCsv(buildTeam(users, slots, sessions, day, NOW), { separator: ';', decimalSeparator: ',' });
+    const [head, ...lines] = csv.trim().split(/\r\n/);
+    const idx = head!.split(';').indexOf('Horas en reunión');
+    expect(idx).toBeGreaterThan(-1);
+    const csvOf = (name: string) => lines.find((l) => l.startsWith(name))!.split(';')[idx];
+    expect(csvOf('Ana Rojas')).toBe(String(secondsToHours(1620)).replace('.', ',')); // 0,45 h = 27 min
+    expect(csvOf('Beto Díaz')).toBe('0');
+  });
+
+  it('member detail: "En reunión" card and the meeting blocks in the timeline', async () => {
+    renderApp(backendOf(meetingDb(), ADMIN), '/colaborador/ana?fecha=2026-09-29');
+    const stats = await screen.findByRole('region', { name: 'Resumen del día' });
+    expect(stats).toHaveTextContent('En reunión27 min');
+    expect(stats).toHaveTextContent('73 %');
+    const cells = screen.getAllByTestId('timeline-cell');
+    const b930 = cells.find((c) => c.getAttribute('aria-label')?.startsWith('09:30'))!;
+    expect(b930).toHaveClass('lvl-meeting', 'has-meeting');
+    expect(b930).toHaveTextContent('50'); // 30 / (600 - 540)
+    const b940 = cells.find((c) => c.getAttribute('aria-label')?.startsWith('09:40'))!;
+    expect(b940).toHaveClass('lvl-meeting');
+    expect(b940).toHaveTextContent('—');
+    const b920 = cells.find((c) => c.getAttribute('aria-label')?.startsWith('09:20'))!;
+    expect(b920).not.toHaveClass('has-meeting');
+    expect(b920).not.toHaveClass('lvl-meeting');
+  });
+
+  it('only meetings: the % shows "—" instead of "Sin datos"', async () => {
+    const db = seededDb();
+    db.activity = [slot('ana', at(9, 30), 600, 0, { meetingSeconds: 600 })];
+    renderApp(backendOf(db, ADMIN), '/colaborador/ana?fecha=2026-09-29');
+    const stats = await screen.findByRole('region', { name: 'Resumen del día' });
+    expect(stats).toHaveTextContent('Actividad— (sin % de actividad: todo el tiempo medido fue en reunión)');
+    expect(stats).toHaveTextContent('En reunión10 min');
+    expect(stats).not.toHaveTextContent('Sin datos');
+  });
+});
+
 describe('TeamTable', () => {
   it('links each collaborator to the detail of the chosen day', () => {
     const team = summarizeTeam(
@@ -188,6 +266,50 @@ describe('Timeline', () => {
     expect(detail).toHaveTextContent('90 % de actividad');
     expect(detail).toHaveTextContent('docs.google.com');
     expect(detail).toHaveTextContent('Fuera de Chrome1 min');
+  });
+});
+
+describe('Timeline with meetings', () => {
+  it('meeting color, marker, "—" and "En reunión X min" in the label, detail and legend', async () => {
+    const t = buildTimeline(day.from, day.to, [
+      slot('ana', at(9), 600, 60, { meetingSeconds: 480 }),
+      slot('ana', at(9, 10), 600, 0, { meetingSeconds: 600 }),
+      slot('ana', at(9, 20), 600, 400, { meetingSeconds: 60 }),
+      slot('ana', at(9, 30), 600, 400),
+    ]);
+    render(<Timeline timeline={t} />);
+    const [mostly, whole, some, none] = screen.getAllByTestId('timeline-cell');
+    expect(mostly).toHaveClass('lvl-meeting', 'has-meeting');
+    expect(mostly).toHaveTextContent('50');
+    expect(mostly).toHaveAccessibleName(
+      '09:00–09:10: 50 % de actividad, medido 10 min, en reunión 8 min, sitios: mail.google.com',
+    );
+    expect(whole).toHaveClass('lvl-meeting', 'has-meeting');
+    expect(whole).toHaveTextContent('—');
+    expect(whole).toHaveAccessibleName(
+      '09:10–09:20: sin % de actividad (todo en reunión), medido 10 min, en reunión 10 min, sitios: mail.google.com',
+    );
+    // Some meeting: marker, but its own activity color (400 / 540 → 74 %).
+    expect(some).toHaveClass('lvl-high', 'has-meeting');
+    expect(some).not.toHaveClass('lvl-meeting');
+    expect(some).toHaveTextContent('74');
+    expect(none).toHaveClass('lvl-mid');
+    expect(none).not.toHaveClass('has-meeting');
+
+    await userEvent.hover(whole!);
+    const detail = screen.getByTestId('timeline-detail');
+    expect(detail).toHaveTextContent('Actividad: —');
+    expect(detail).toHaveTextContent('En reunión');
+    expect(detail).toHaveTextContent('En reunión10 min');
+    await userEvent.hover(some!);
+    expect(detail).toHaveTextContent('74 % de actividad');
+    expect(detail).toHaveTextContent('En reunión1 min');
+    await userEvent.hover(none!);
+    expect(detail).not.toHaveTextContent('En reunión');
+
+    const legend = screen.getByRole('list', { name: 'Leyenda' });
+    expect(legend).toHaveTextContent('En reunión (la mitad del bloque o más)');
+    expect(legend).toHaveTextContent('Con tiempo en reunión');
   });
 });
 

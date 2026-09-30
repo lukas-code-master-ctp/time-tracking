@@ -35,9 +35,21 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   );
 }
 
-/** Percentage with a small bar colored by level (baja / media / alta). */
-export function ActivityMeter({ percent }: { percent: number | null }) {
-  if (percent === null) return <span className="muted">Sin datos</span>;
+/**
+ * Percentage with a small bar colored by level (baja / media / alta).
+ * `percent` null: "Sin datos", or "—" when time was `measured` but all of it
+ * was a meeting (meeting time is left out of the percentage).
+ */
+export function ActivityMeter({ percent, measured = false }: { percent: number | null; measured?: boolean }) {
+  if (percent === null) {
+    return measured ? (
+      <span className="muted" title="Sin % de actividad: todo el tiempo medido fue en reunión">
+        —<span className="sr-only"> (sin % de actividad: todo el tiempo medido fue en reunión)</span>
+      </span>
+    ) : (
+      <span className="muted">Sin datos</span>
+    );
+  }
   const level = activityLevel(percent);
   return (
     <span className="meter" title={`Actividad ${percent} %`}>

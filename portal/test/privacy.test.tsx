@@ -62,7 +62,8 @@ describe('/privacidad', () => {
     expect(text).toContain('no se venden');
     expect(text).toContain('sin parámetros ni fragmentos');
     expect(text).toContain(PRIVACY_UPDATED_AT);
-    expect(PRIVACY_UPDATED_AT).toBe('29 de septiembre de 2026');
+    expect(PRIVACY_UPDATED_AT).toBe('30 de septiembre de 2026');
+    expect(document.querySelector('time')).toHaveAttribute('dateTime', '2026-09-30');
 
     const contacts = screen.getAllByRole('link', { name: PRIVACY_CONTACT });
     expect(contacts.length).toBeGreaterThan(0);
@@ -71,6 +72,17 @@ describe('/privacidad', () => {
     const no = screen.getByRole('region', { name: 'Qué NO se recoge' });
     expect(within(no).getByText(/Qué teclas presionas/)).toBeInTheDocument();
     expect(within(no).getByText('Pestañas de incógnito:')).toBeInTheDocument();
+    // Web meeting detection (extension 0.1.2), same terms as extension/consent.html.
+    expect(within(no).getByText('El audio ni el video')).toBeInTheDocument();
+    expect(no).toHaveTextContent('nunca se escuchan, graban ni envían');
+    const yes = screen.getByRole('region', { name: 'Qué datos se recogen' });
+    expect(within(yes).getByText('Reuniones web:')).toBeInTheDocument();
+    for (const platform of ['Google Meet', 'Zoom', 'Microsoft Teams', 'Webex', 'Jitsi', 'Whereby', 'GoTo Meeting']) {
+      expect(yes).toHaveTextContent(platform);
+    }
+    expect(yes).toHaveTextContent('si alguna está reproduciendo sonido');
+    expect(yes).toHaveTextContent('no sube ni baja tu % de actividad');
+    expect(yes).toHaveTextContent('aplicaciones de escritorio (fuera de Chrome) no se detectan');
   });
 
   it('the login page links to the privacy policy', async () => {

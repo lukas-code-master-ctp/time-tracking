@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { DEFAULT_SCREENSHOT_RETENTION_DAYS, FUNCTIONS_REGION, SCHEDULER_REGION } from '@timetracking/shared';
 
 export const PRIVACY_PATH = '/privacidad';
-export const PRIVACY_UPDATED_AT = '29 de septiembre de 2026';
+export const PRIVACY_UPDATED_AT = '30 de septiembre de 2026';
 export const PRIVACY_CONTACT = 'lukas@impulseai.cl';
 
 export const PRIVACY_TITLE = 'Política de privacidad · Registro de jornada';
@@ -36,7 +36,7 @@ export function PrivacyPage() {
           <h1>Política de privacidad</h1>
           <p className="muted">
             Extensión de Chrome “Registro de jornada” y su portal de administración. Última actualización:{' '}
-            <time dateTime="2026-09-29">{PRIVACY_UPDATED_AT}</time>.
+            <time dateTime="2026-09-30">{PRIVACY_UPDATED_AT}</time>.
           </p>
         </header>
 
@@ -85,6 +85,15 @@ export function PrivacyPage() {
               (se descarta todo lo que va después de “?” o “#”).
             </li>
             <li>
+              <strong>Reuniones web:</strong> si tienes abierta una reunión en Chrome (Google Meet, Zoom, Microsoft
+              Teams, Webex, Jitsi, Whereby o GoTo Meeting), para no contar como inactividad el tiempo en que escuchas
+              sin usar el teclado ni el mouse. Para saberlo, la extensión solo revisa la <strong>dirección</strong> de
+              tus pestañas de Chrome (no las de incógnito) y <strong>si alguna está reproduciendo sonido</strong>. Se
+              guarda únicamente cuánto tiempo de cada bloque estuviste “En reunión”; de las pestañas en segundo plano
+              no se guarda la dirección. Ese tiempo no sube ni baja tu % de actividad. Las reuniones en aplicaciones de
+              escritorio (fuera de Chrome) no se detectan.
+            </li>
+            <li>
               <strong>Tiempo fuera de Chrome:</strong> cuánto tiempo Chrome no estuvo en primer plano, sin saber qué
               aplicación usabas en ese tiempo.
             </li>
@@ -105,6 +114,10 @@ export function PrivacyPage() {
             </li>
             <li>
               <strong>El contenido</strong> de páginas, documentos, formularios, correos o mensajes.
+            </li>
+            <li>
+              <strong>El audio ni el video</strong> de tus reuniones ni de ninguna página: nunca se escuchan, graban ni
+              envían. Solo se sabe si una pestaña está sonando.
             </li>
             <li>
               <strong>Qué aplicaciones usas fuera de Chrome</strong> (Word, Excel, WhatsApp de escritorio, etc.): solo se

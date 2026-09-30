@@ -12,7 +12,7 @@ import {
   dateKey as dateKeyOf,
 } from '@timetracking/shared';
 import { mockScreenHtml } from '../lib/mockScreens';
-import { PENDING_INVITE, PEOPLE, SITES, atLocal, buildDataset, rng } from '../lib/seedData';
+import { LEGACY_DAYS, PENDING_INVITE, PEOPLE, SITES, atLocal, buildDataset, rng } from '../lib/seedData';
 import { ADMIN_EMAIL, DOMAINS } from '../lib/emulators';
 import { zonedParts } from '../../portal/src/lib/dates';
 
@@ -68,6 +68,12 @@ describe('seed data', () => {
       expect(a.activeSeconds).toBeGreaterThanOrEqual(0);
       expect(a.activeSeconds).toBeLessThanOrEqual(a.trackedSeconds);
       expect(a.outsideChromeSeconds).toBeLessThanOrEqual(a.trackedSeconds);
+      // Same constraints as firestore.rules: optional, integer >= 0, active + meeting <= tracked.
+      if (a.meetingSeconds !== undefined) {
+        expect(Number.isInteger(a.meetingSeconds)).toBe(true);
+        expect(a.meetingSeconds).toBeGreaterThanOrEqual(0);
+        expect(a.activeSeconds + a.meetingSeconds).toBeLessThanOrEqual(a.trackedSeconds);
+      }
       const inDomains = Object.values(a.domains).reduce((s, v) => s + v, 0);
       expect(inDomains + a.outsideChromeSeconds).toBe(a.trackedSeconds);
       expect(a.urls.length).toBeLessThanOrEqual(20);
@@ -119,6 +125,49 @@ describe('seed data', () => {
       expect(s.id).toBe(`${s.uid}_${slotStartOf(s.takenAt)}`);
       expect(s.task).not.toBe('outside');
     }
+  });
+
+  it('meetings: 30-min dailies, a 1-hour meeting and old days without meetingSeconds (0.1.1)', () => {
+    const today = dateKeyOf(NOW);
+    const legacyUntil = dateKeyOf(NOW - LEGACY_DAYS * 86_400_000);
+    const local = (a: { slotStart: number }) => zonedParts(a.slotStart);
+    const mostlyMeeting = (a: { trackedSeconds: number; meetingSeconds?: number }) => (a.meetingSeconds ?? 0) >= a.trackedSeconds / 2;
+    const topDomain = (a: { domains: Record<string, number> }) => Object.entries(a.domains).sort((x, y) => y[1] - x[1])[0]![0];
+
+    // Old days are written like extension 0.1.1 (no field); recent ones always carry it.
+    for (const a of data.activity) {
+      if (local(a).date <= legacyUntil) expect(a).not.toHaveProperty('meetingSeconds');
+      else expect(a).toHaveProperty('meetingSeconds');
+    }
+
+    // Daily 09:30–10:00 on every recent past weekday, for everyone with data that day.
+    const recentDays = new Set(data.activity.map((a) => local(a).date).filter((d) => d > legacyUntil && d < today));
+    expect(recentDays.size).toBeGreaterThanOrEqual(3);
+    for (const date of recentDays) {
+      for (const p of PEOPLE) {
+        const uid = UIDS[p.key as keyof typeof UIDS];
+        const daily = data.activity.filter((a) => a.uid === uid && local(a).date === date && local(a).hour === 9 && local(a).minute >= 30);
+        if (!data.activity.some((a) => a.uid === uid && local(a).date === date)) continue;
+        expect(daily, `${p.key} ${date}`).toHaveLength(3);
+        for (const a of daily) {
+          expect(mostlyMeeting(a)).toBe(true);
+          expect(topDomain(a)).toBe('meet.google.com');
+        }
+      }
+    }
+
+    // Ana's weekly 1-hour meeting: Monday 2026-09-28, 15:00–16:00 (6 blocks).
+    const weekly = data.activity.filter((a) => a.uid === 'u-ana' && local(a).date === '2026-09-28' && local(a).hour === 15);
+    expect(weekly).toHaveLength(6);
+    for (const a of weekly) expect(mostlyMeeting(a)).toBe(true);
+    const meetingSeconds = weekly.reduce((n, a) => n + (a.meetingSeconds ?? 0), 0);
+    expect(meetingSeconds).toBeGreaterThan(45 * 60);
+    expect(meetingSeconds).toBeLessThanOrEqual(3600);
+
+    // Most blocks are not meetings.
+    const withMeeting = data.activity.filter((a) => (a.meetingSeconds ?? 0) > 0).length;
+    expect(withMeeting).toBeGreaterThan(15);
+    expect(withMeeting).toBeLessThan(data.activity.length / 2);
   });
 
   it('uses typical sites and mock-ups are blurred', () => {

@@ -5,11 +5,13 @@
  *   firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking)
  *
  * 1. Seeds with the Admin SDK: config/org, 2 collaborators, today's sessions
- *    and activity, 1 screenshot (file in Storage + doc).
+ *    and activity (Ana with web-meeting blocks: `meetingSeconds`), 1
+ *    screenshot (file in Storage + doc).
  * 2. Starts the portal's Vite dev server (development mode → emulators).
  * 3. In Chromium (Playwright): dev login as the bootstrap admin
  *    (`lukas@impulseai.cl`, functions/.env.demo-timetracking), team table
- *    with hours > 0, collaborator detail with timeline and screenshot
+ *    with hours > 0 and "En reunión" (same value as the CSV), collaborator
+ *    detail with the "En reunión" card, meeting blocks, timeline and screenshot
  *    (thumbnail + lightbox), invitation, role change, settings; each write is
  *    checked in Firestore. No horizontal scroll at 375 px.
  *    Public privacy policy at /privacidad (no session) and its link from the login.
@@ -30,6 +32,9 @@ import {
   FIREBASE_DEMO_PROJECT_ID,
   SLOT_MS,
   activityDocId,
+  formatDuration,
+  meetingSecondsOf,
+  secondsToHours,
   screenshotStoragePath,
   slotStartOf,
   type ActivitySlot,
@@ -84,6 +89,27 @@ interface Seed {
   ana: string;
   beto: string;
   shotId: string;
+  /** Ana's seconds in a meeting today (sum of `meetingSeconds`). */
+  anaMeetingSeconds: number;
+}
+
+/**
+ * Turns some of Ana's blocks into web meetings, as extension 0.1.2 writes
+ * them: block 1 mostly meeting (with %), block 2 entirely meeting ("—") and
+ * block 4 with a short meeting (marker only). Block 0 keeps its high activity.
+ */
+function withMeetings(slots: ActivitySlot[]): ActivitySlot[] {
+  const meet = (s: ActivitySlot): Pick<ActivitySlot, 'domains' | 'urls'> => {
+    const inChrome = s.trackedSeconds - s.outsideChromeSeconds;
+    return { domains: { 'meet.google.com': inChrome }, urls: [{ url: 'https://meet.google.com/abc-defg-hij', seconds: inChrome }] };
+  };
+  return slots.map((s, i) => {
+    const t = s.trackedSeconds;
+    if (i === 1) return { ...s, ...meet(s), activeSeconds: Math.round(t * 0.05), meetingSeconds: Math.round(t * 0.9) };
+    if (i === 2) return { ...s, ...meet(s), activeSeconds: 0, meetingSeconds: t };
+    if (i === 4) return { ...s, meetingSeconds: Math.min(60, t - s.activeSeconds) };
+    return { ...s, meetingSeconds: 0 };
+  });
 }
 
 function slotsFor(uid: string, sessionId: string, start: number, end: number, pattern: readonly number[]): ActivitySlot[] {
@@ -156,10 +182,11 @@ async function seed(browser: Browser): Promise<Seed> {
   const betoSession: Session = { uid: beto, startedAt: start, endedAt: betoEnd, endReason: 'manual', lastHeartbeatAt: betoEnd };
   await db.doc(`sessions/s-ana`).set(anaSession);
   await db.doc(`sessions/s-beto`).set(betoSession);
-  const slots = [
-    ...slotsFor(ana, 's-ana', start, now - 60_000, [92, 85, 74, 61, 88, 45, 97, 30, 80]),
-    ...slotsFor(beto, 's-beto', start, betoEnd, [35, 55, 20, 65]),
-  ];
+  const anaSlots = withMeetings(slotsFor(ana, 's-ana', start, now - 60_000, [92, 85, 74, 61, 88, 45, 97, 30, 80]));
+  if (anaSlots.length < 5) fail('muy pocos bloques de hoy para sembrar reuniones: vuelve a ejecutar más tarde.');
+  const anaMeetingSeconds = anaSlots.reduce((n, s) => n + meetingSecondsOf(s), 0);
+  // Beto: blocks as extension 0.1.1 wrote them (no meetingSeconds, read as 0).
+  const slots = [...anaSlots, ...slotsFor(beto, 's-beto', start, betoEnd, [35, 55, 20, 65])];
   const batch = db.batch();
   for (const s of slots) batch.set(db.doc(`${COLLECTIONS.activity}/${activityDocId(s.uid, s.slotStart)}`), s);
   await batch.commit();
@@ -179,8 +206,11 @@ async function seed(browser: Browser): Promise<Seed> {
   await uploadJpeg(storagePath, new Uint8Array(jpeg));
   const meta: ScreenshotMeta = { uid: ana, sessionId: 's-ana', takenAt, storagePath, blurred: true, width: 1280, height: 720 };
   await db.doc(`${COLLECTIONS.screenshots}/${shotId}`).set(meta);
-  ok(`Semilla: config/org, 2 colaboradores, 2 jornadas, ${slots.length} bloques de actividad, 1 captura (${storagePath}).`);
-  return { ana, beto, shotId };
+  ok(
+    `Semilla: config/org, 2 colaboradores, 2 jornadas, ${slots.length} bloques de actividad ` +
+      `(Ana ${formatDuration(anaMeetingSeconds)} en reunión), 1 captura (${storagePath}).`,
+  );
+  return { ana, beto, shotId, anaMeetingSeconds };
 }
 
 /** Start of today in America/Santiago, with the portal's own helper (same code as the UI). */
@@ -297,6 +327,18 @@ async function main(): Promise<void> {
     if (!(await betoRow.textContent())?.includes('Fuera')) fail('Beto no aparece "Fuera"');
     const anaPct = await anaRow.locator('.meter-value').textContent();
     ok(`Tabla del equipo: Ana ${anaHours} (${anaPct}, en jornada), Beto ${betoHours} (fuera).`);
+    // "En reunión" column (and totals): Ana's seeded meetings, Beto 0.1.1 data → 0.
+    const headers = (await table.locator('thead th').allTextContents()).map((h) => h.trim());
+    const meetingCol = headers.indexOf('En reunión');
+    if (meetingCol === -1) fail(`la tabla no tiene la columna "En reunión": ${headers.join(' | ')}`);
+    const anaMeeting = (await anaRow.locator('td').nth(meetingCol).textContent())?.trim() ?? '';
+    const betoMeeting = (await betoRow.locator('td').nth(meetingCol).textContent())?.trim();
+    const totalMeeting = (await table.locator('tfoot tr').locator('th, td').nth(meetingCol).textContent())?.trim();
+    const expectedMeeting = formatDuration(seeded.anaMeetingSeconds);
+    if (anaMeeting !== expectedMeeting || betoMeeting !== '0 min' || totalMeeting !== expectedMeeting) {
+      fail(`columna "En reunión": Ana "${anaMeeting}", Beto "${betoMeeting}", total "${totalMeeting}" (esperado ${expectedMeeting})`);
+    }
+    ok(`Columna "En reunión": Ana ${anaMeeting}, Beto ${betoMeeting} (datos 0.1.1), total ${totalMeeting}.`);
     const users = await getFirestore().collection('users').where('email', '==', ADMIN_EMAIL).get();
     const adminUid = users.docs[0]?.id;
     if (!adminUid || users.docs[0]!.data().role !== 'admin') fail('joinOrg no creó al admin bootstrap');
@@ -310,7 +352,17 @@ async function main(): Promise<void> {
     if (!csv.startsWith('﻿Nombre;Correo;Estado;') || !csv.includes('Ana Rojas;ana.rojas@compratuparcela.cl;En jornada;')) {
       fail(`CSV inesperado: ${csv.slice(0, 200)}`);
     }
-    ok(`CSV exportado (${download.suggestedFilename()}).`);
+    // The CSV and the table agree on the meeting time.
+    const [csvHead = '', ...csvLines] = csv.replace(/^\uFEFF/, '').trim().split(/\r\n/);
+    const csvCol = csvHead.split(';').indexOf('Horas en reunión');
+    const csvAna = csvLines.find((l) => l.startsWith('Ana Rojas;'))?.split(';')[csvCol] ?? '';
+    const csvBeto = csvLines.find((l) => l.startsWith('Beto Díaz;'))?.split(';')[csvCol];
+    const expectedCsv = String(secondsToHours(seeded.anaMeetingSeconds)).replace('.', ',');
+    if (csvCol === -1 || csvAna !== expectedCsv || csvBeto !== '0') fail(`CSV "Horas en reunión": Ana "${csvAna}", Beto "${csvBeto}" (esperado ${expectedCsv})`);
+    const m = /^(?:(\d+) h )?(\d+) min$/.exec(anaMeeting);
+    const tableMinutes = m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : NaN;
+    if (!(Math.abs(Number(csvAna.replace(',', '.')) * 60 - tableMinutes) <= 1)) fail(`CSV (${csvAna} h) y tabla (${anaMeeting}) no coinciden`);
+    ok(`CSV exportado (${download.suggestedFilename()}): "Horas en reunión" de Ana ${csvAna} h = ${anaMeeting} de la tabla.`);
 
     // 3. Collaborator detail: timeline + screenshot + lightbox.
     await anaRow.getByRole('link').click();
@@ -327,7 +379,24 @@ async function main(): Promise<void> {
     await thumb.waitFor({ timeout: 15_000 });
     await until('miniatura cargada', () => thumb.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0));
     ok(`Detalle: ${await cells.count()} bloques (${withData} con datos), detalle al pasar el cursor, miniatura cargada desde Storage.`);
+
+    // "En reunión": card, meeting color + "—", marker, detail and legend.
+    const stats = (await page.getByRole('region', { name: 'Resumen del día' }).textContent()) ?? '';
+    if (!stats.includes(`En reunión${formatDuration(seeded.anaMeetingSeconds)}`)) fail(`tarjeta "En reunión": ${stats}`);
+    const meetingCells = page.locator('.cell.lvl-meeting');
+    const meetingTexts = (await meetingCells.allTextContents()).map((t) => t.trim());
+    if (meetingTexts.length !== 2 || meetingTexts[1] !== '—' || !/^\d+$/.test(meetingTexts[0] ?? '')) fail(`bloques en reunión: ${JSON.stringify(meetingTexts)}`);
+    if ((await page.locator('.cell.has-meeting:not(.lvl-meeting)').count()) !== 1) fail('falta el marcador del bloque con poca reunión');
+    const legend = (await page.getByRole('list', { name: 'Leyenda' }).textContent()) ?? '';
+    if (!legend.includes('En reunión')) fail(`leyenda: ${legend}`);
+    // Pinned (click) so the detail stays open in the screenshots.
+    await meetingCells.nth(1).click();
+    await page.mouse.move(0, 0);
+    const meetingDetail = (await page.getByTestId('timeline-detail').textContent()) ?? '';
+    if (!meetingDetail.includes('Actividad: —') || !/En reunión\d+ min/.test(meetingDetail)) fail(`detalle del bloque en reunión: ${meetingDetail}`);
+    ok(`"En reunión": tarjeta ${formatDuration(seeded.anaMeetingSeconds)}, 2 bloques con su color (${meetingTexts.join(', ')}), marcador, detalle y leyenda.`);
     await shootAll(page, '03-colaborador');
+    await meetingCells.nth(1).click(); // unpin
 
     await page.getByRole('button', { name: /Captura de las .* Ampliar/ }).click();
     const dialog = page.getByRole('dialog');

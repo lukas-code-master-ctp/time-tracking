@@ -8,11 +8,23 @@ interface Props {
   onOpenScreenshot?(id: string): void;
 }
 
+/** Percentage text of a block with data: "90 % de actividad", or "—" when it was all a meeting. */
+function percentText(b: TimelineBlock): string {
+  return b.percent === null ? 'sin % de actividad (todo en reunión)' : `${b.percent} % de actividad`;
+}
+
+/** CSS classes of a cell: meeting color for mostly-meeting blocks, activity level otherwise. */
+export function cellClass(b: TimelineBlock): string {
+  const color = b.mostlyMeeting ? 'lvl-meeting' : `lvl-${b.level}`;
+  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}`;
+}
+
 function describe(b: TimelineBlock): string {
   if (b.trackedSeconds === 0) {
     return `${b.rangeLabel}: sin datos${b.screenshots.length > 0 ? ', con captura' : ''}`;
   }
-  const parts = [`${b.rangeLabel}: ${b.percent} % de actividad`, `medido ${formatDuration(b.trackedSeconds)}`];
+  const parts = [`${b.rangeLabel}: ${percentText(b)}`, `medido ${formatDuration(b.trackedSeconds)}`];
+  if (b.meetingSeconds > 0) parts.push(`en reunión ${formatDuration(b.meetingSeconds)}`);
   if (b.outsideChromeSeconds > 0) parts.push(`fuera de Chrome ${formatDuration(b.outsideChromeSeconds)}`);
   if (b.topDomains.length > 0) parts.push(`sitios: ${b.topDomains.map((d) => d.domain).join(', ')}`);
   if (b.screenshots.length > 0) parts.push('con captura');
@@ -35,7 +47,7 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
                 <button
                   key={b.slotStart}
                   type="button"
-                  className={`cell lvl-${b.level}${b.screenshots.length > 0 ? ' has-shot' : ''}${shown?.slotStart === b.slotStart ? ' selected' : ''}`}
+                  className={`${cellClass(b)}${shown?.slotStart === b.slotStart ? ' selected' : ''}`}
                   aria-label={describe(b)}
                   aria-pressed={pinned === b.slotStart}
                   data-testid="timeline-cell"
@@ -44,7 +56,13 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
                   onBlur={() => setActive(null)}
                   onClick={() => setPinned((p) => (p === b.slotStart ? null : b.slotStart))}
                 >
-                  {b.percent !== null ? <span className="cell-pct">{b.percent}</span> : null}
+                  {b.percent !== null ? (
+                    <span className="cell-pct">{b.percent}</span>
+                  ) : b.trackedSeconds > 0 ? (
+                    <span className="cell-pct" aria-hidden="true">
+                      —
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -68,6 +86,14 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
           </li>
         ))}
         <li>
+          <span className="swatch lvl-meeting" aria-hidden="true" />
+          En reunión (la mitad del bloque o más)
+        </li>
+        <li>
+          <span className="swatch lvl-mid has-meeting" aria-hidden="true" />
+          Con tiempo en reunión
+        </li>
+        <li>
           <span className="swatch lvl-none" aria-hidden="true" />
           Sin datos
         </li>
@@ -85,11 +111,16 @@ function BlockDetail({ block, onOpenScreenshot }: { block: TimelineBlock; onOpen
     <div className="block-detail">
       <p className="block-title">
         <span className="strong">{block.rangeLabel}</span>
-        {block.percent !== null ? (
-          <span className={`chip lvl-chip lvl-${block.level}`}>{block.percent} % de actividad</span>
-        ) : (
+        {block.trackedSeconds === 0 ? (
           <span className="chip muted-chip">Sin datos</span>
+        ) : block.percent === null ? (
+          <span className="chip muted-chip" title="Todo el tiempo medido fue en reunión: no hay % de actividad">
+            Actividad: —
+          </span>
+        ) : (
+          <span className={`chip lvl-chip lvl-${block.level}`}>{block.percent} % de actividad</span>
         )}
+        {block.mostlyMeeting ? <span className="chip lvl-chip lvl-meeting">En reunión</span> : null}
       </p>
       {block.trackedSeconds > 0 ? (
         <dl className="block-facts">
@@ -101,6 +132,12 @@ function BlockDetail({ block, onOpenScreenshot }: { block: TimelineBlock; onOpen
             <dt>Con actividad</dt>
             <dd>{formatDuration(block.activeSeconds)}</dd>
           </div>
+          {block.meetingSeconds > 0 ? (
+            <div>
+              <dt>En reunión</dt>
+              <dd>{formatDuration(block.meetingSeconds)}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Fuera de Chrome</dt>
             <dd>{formatDuration(block.outsideChromeSeconds)}</dd>

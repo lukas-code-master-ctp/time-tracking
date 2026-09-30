@@ -10,6 +10,10 @@
  * - Sessions and activity for the last 7 days (working hours in Santiago,
  *   variable %, typical sites, time outside Chrome), one session open right
  *   now (Ana) and a few blurred sample screenshots in Storage + docs.
+ * - Web meetings ("En reunión"): a 30-min daily every weekday at 09:30, one
+ *   1-hour meeting per person and week, and the video calls in between carry
+ *   `meetingSeconds`; the oldest day is written like extension 0.1.1 (no
+ *   `meetingSeconds`).
  *
  * Auth accounts are created with the same fake Google token as the dev login,
  * so you can sign in as any of them in the dev portal / dev extension.
@@ -185,6 +189,8 @@ async function main(): Promise<void> {
   }
 
   const open = data.sessions.filter((s) => s.data.endedAt === null).length;
+  const meetingBlocks = data.activity.filter((a) => (a.meetingSeconds ?? 0) > 0).length;
+  const meetingHours = data.activity.reduce((n, a) => n + (a.meetingSeconds ?? 0), 0) / 3600;
   console.log(
     [
       'Semilla cargada en los emuladores (proyecto demo-timetracking):',
@@ -193,6 +199,7 @@ async function main(): Promise<void> {
       `  invitaciones: ${PEOPLE.length} aceptadas, 1 pendiente (${PENDING_INVITE})`,
       configCreated ? '  config/org: creada (capturas difuminadas activas)' : '  config/org: ya existía, se dejó tal cual',
       `  jornadas: ${data.sessions.length} (${open} abierta ahora), bloques de actividad: ${data.activity.length}, capturas: ${shots}`,
+      `  en reunión: ${meetingBlocks} bloques (${meetingHours.toFixed(1)} h; dailies de 30 min y una reunión de 1 h por persona a la semana)`,
       removed + removedFiles > 0 ? `  reemplazados de la corrida anterior: ${removed} documentos, ${removedFiles} archivos` : '',
       '  Portal dev: npm run dev -w portal → http://127.0.0.1:5173 → "Entrar (emulador)" con el correo del admin.',
     ]

@@ -44,6 +44,7 @@ Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 
 - **Dentro de Chrome**: content script en todas las páginas escucha `keydown`, `mousedown`, `mousemove`, `wheel`, `touchstart` (solo el hecho, nunca qué tecla ni contenido) y avisa al service worker como máximo 1 vez por segundo. Se marca ese segundo como activo.
 - **Fuera de Chrome o en páginas sin content script** (chrome://, Web Store, PDF): `chrome.idle` con umbral de 15 s. Mientras el estado es `active`, los segundos cuentan como activos; en `idle`/`locked` no.
 - `activityPercent = segundosActivos / segundosMedidos` del bloque. Un segundo cuenta una sola vez aunque venga de ambas fuentes.
+- **Actualización 2026-09-30 ("En reunión", extensión 0.1.2)**: los segundos sin teclado ni mouse con una reunión web en curso en Chrome (Meet, Zoom, Teams…) se guardan aparte en `meetingSeconds` y no cuentan para el %: `activityPercent = segundosActivos / (segundosMedidos − segundosEnReunión)`; si todo el bloque fue reunión, el % se muestra "—" y no entra en promedios. Las horas de jornada no cambian. Ver [spec "En reunión"](2026-09-30-en-reunion.md).
 
 ### 3.2 Sitios
 - Se registra la pestaña activa de la ventana enfocada (`tabs.onActivated`, `tabs.onUpdated`, `windows.onFocusChanged`).

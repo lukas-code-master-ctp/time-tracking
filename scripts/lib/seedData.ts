@@ -5,7 +5,13 @@
  * (two sessions per day), variable activity per person and per block, typical
  * Google Workspace sites, time outside Chrome, a forgotten "close" (auto
  * close) and one day off. Today: one open session right now, one closed
- * morning session, one person without data. Deterministic for a given
+ * morning session, one person without data.
+ *
+ * Web meetings ("En reunión", spec 2026-09-30): a 30-minute daily at 09:30
+ * every weekday, a weekly 1-hour meeting per person (15:00–16:00) and the
+ * random video calls (task "meet") carry `meetingSeconds`. The oldest days
+ * (`LEGACY_DAYS`) are written like extension 0.1.1: without `meetingSeconds`
+ * (the portal reads it as 0). Deterministic for a given
  * `now` (seeded PRNG per person and day), so re-running the seed on the same
  * day produces the same documents.
  */
@@ -19,6 +25,16 @@ import {
 import { addDays, startOfDay, weekdayIndex, zonedDate, zonedParts } from '../../portal/src/lib/dates.ts';
 
 const MIN = 60_000;
+
+/** Days back (inclusive) written like extension 0.1.1, without `meetingSeconds`. */
+export const LEGACY_DAYS = 6;
+
+/** Daily stand-up: 09:30–10:00 (Santiago), every weekday. */
+export const DAILY = { hour: 9, minute: 30, minutes: 30 } as const;
+
+/** Weekly 1-hour meeting, 15:00–16:00 (Santiago), on this weekday (0 = Monday) per person. */
+export const WEEKLY_MEETING: Record<string, number> = { ana: 0, beto: 2, carla: 3 };
+export const WEEKLY_MEETING_HOUR = 15;
 
 export type Task = 'mail' | 'docs' | 'sheets' | 'drive' | 'calendar' | 'meet' | 'slides' | 'chat' | 'web' | 'whatsapp' | 'outside';
 
@@ -195,6 +211,22 @@ interface Span {
   endReason: SessionEndReason | null;
 }
 
+interface Window {
+  start: number;
+  end: number;
+}
+
+/** Scheduled meetings of a person on `date` (the daily and, if it is that weekday, the 1-hour meeting). */
+export function meetingWindows(person: SeedPerson, date: string): Window[] {
+  const daily = atLocal(date, DAILY.hour, DAILY.minute);
+  const out: Window[] = [{ start: daily, end: daily + DAILY.minutes * MIN }];
+  if (WEEKLY_MEETING[person.key] === weekdayIndex(date)) {
+    const start = atLocal(date, WEEKLY_MEETING_HOUR);
+    out.push({ start, end: start + 60 * MIN });
+  }
+  return out;
+}
+
 /** Sessions (lunch split) of a past weekday. */
 function pastDay(person: SeedPerson, date: string, r: () => number): Span[] {
   const inM = atLocal(date, 8, Math.round(between(r, 20, 70)));
@@ -226,7 +258,15 @@ function todaySpans(person: SeedPerson, date: string, now: number): Span[] {
   return [];
 }
 
-function slotsOf(person: SeedPerson, uid: string, sessionId: string, span: Span, r: () => number): { slots: ActivitySlot[]; tasks: Task[] } {
+function slotsOf(
+  person: SeedPerson,
+  uid: string,
+  sessionId: string,
+  span: Span,
+  r: () => number,
+  meetings: readonly Window[],
+  legacy: boolean,
+): { slots: ActivitySlot[]; tasks: Task[] } {
   const slots: ActivitySlot[] = [];
   const tasks: Task[] = [];
   const weights = Object.entries(person.tasks) as [Task, number][];
@@ -239,10 +279,25 @@ function slotsOf(person: SeedPerson, uid: string, sessionId: string, span: Span,
     // Now and then a gap without data (computer asleep, browser closed).
     if (r() < 0.03) tracked = Math.floor(tracked * between(r, 0.2, 0.6));
     if (r() > 0.65) task = pick(r, weights);
-    const pct = clamp(person.activity + TASK_ACTIVITY[task] + (r() * 2 - 1) * person.spread, 3, 99);
+    const scheduled = meetings.some((m) => s >= m.start && s < m.end);
+    // In a scheduled meeting: the Meet tab in front, little keyboard/mouse.
+    const blockTask: Task = scheduled ? 'meet' : task;
+    const pct = scheduled
+      ? between(r, 3, 15)
+      : clamp(person.activity + TASK_ACTIVITY[blockTask] + (r() * 2 - 1) * person.spread, 3, 99);
     const active = Math.min(tracked, Math.round((tracked * pct) / 100));
-    let outside = task === 'outside' ? Math.round(tracked * between(r, 0.6, 1)) : r() < 0.25 ? Math.round(tracked * between(r, 0.05, 0.3)) : 0;
+    let outside = scheduled
+      ? 0
+      : blockTask === 'outside'
+        ? Math.round(tracked * between(r, 0.6, 1))
+        : r() < 0.25
+          ? Math.round(tracked * between(r, 0.05, 0.3))
+          : 0;
     outside = Math.min(outside, tracked);
+    // A video call: most seconds without keyboard/mouse are "En reunión"
+    // (a few are not: e.g. the call had not started yet). Extension 0.1.1
+    // did not detect meetings.
+    const meeting = blockTask === 'meet' && !legacy ? Math.round((tracked - active) * between(r, 0.85, 1)) : 0;
     const inChrome = tracked - outside;
     const domains: Record<string, number> = {};
     const urlSeconds = new Map<string, number>();
@@ -254,9 +309,9 @@ function slotsOf(person: SeedPerson, uid: string, sessionId: string, span: Span,
       urlSeconds.set(url, (urlSeconds.get(url) ?? 0) + seconds);
     };
     if (inChrome > 0) {
-      const main: Exclude<Task, 'outside'> = task === 'outside' ? 'mail' : task;
+      const main: Exclude<Task, 'outside'> = blockTask === 'outside' ? 'mail' : blockTask;
       const other = pick(r, weights.filter(([t]) => t !== 'outside' && t !== main) as [Exclude<Task, 'outside'>, number][]);
-      const mainShare = Math.round(inChrome * between(r, 0.6, 0.95));
+      const mainShare = Math.round(inChrome * (scheduled ? between(r, 0.85, 0.98) : between(r, 0.6, 0.95)));
       add(main, mainShare);
       add(other, inChrome - mainShare);
     }
@@ -266,11 +321,13 @@ function slotsOf(person: SeedPerson, uid: string, sessionId: string, span: Span,
       slotStart: s,
       trackedSeconds: tracked,
       activeSeconds: active,
+      // Extension 0.1.2 always sends it (0 without a meeting); 0.1.1 did not.
+      ...(legacy ? {} : { meetingSeconds: Math.min(meeting, tracked - active) }),
       outsideChromeSeconds: outside,
       domains,
       urls: [...urlSeconds].map(([url, seconds]) => ({ url, seconds })).sort((a, b) => b.seconds - a.seconds),
     });
-    tasks.push(task);
+    tasks.push(blockTask);
   }
   return { slots, tasks };
 }
@@ -298,7 +355,7 @@ export function buildDataset(now: number, uids: Record<string, string>): SeedDat
           id: sessionId,
           data: { uid, startedAt: span.start, endedAt: span.endReason ? span.end : null, endReason: span.endReason, lastHeartbeatAt: span.lastHeartbeatAt },
         });
-        const { slots, tasks } = slotsOf(person, uid, sessionId, span, r);
+        const { slots, tasks } = slotsOf(person, uid, sessionId, span, r, meetingWindows(person, date), back >= LEGACY_DAYS);
         out.activity.push(...slots);
         // Screenshots only on the two most recent days with data (retention demo, few files).
         if (back <= 1 || (back <= 3 && person.key === 'carla')) {

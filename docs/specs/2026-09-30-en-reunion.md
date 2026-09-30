@@ -65,3 +65,10 @@ Si una 0.1.2 escribe contra reglas antiguas, Firestore rechaza el bloque con `pe
 4. Docs 0.1.1 sin `meetingSeconds` siguen válidos y se leen como 0.
 5. Reglas: rechazan `meetingSeconds` negativo, no entero o que rompa la suma.
 6. Todos los tests, typecheck, build y e2e en verde.
+
+## Decisiones de implementación del portal (Tarea 2)
+- Línea de tiempo: color `--lvl-meeting` (#b4a7f5 claro, #8b7fe0 oscuro; tinta sobre él 8,28:1 y 5,75:1, verificado en `portal/test/contrast.test.ts` leyendo `styles.css`) para bloques con reunión ≥ 50 % de lo medido; marcador (barra de tinta arriba a la izquierda, libre del % en celdas angostas de teléfono) en cualquier bloque con reunión. El % de la celda excluye la reunión; si todo fue reunión muestra "—".
+- Detalle del bloque: "En reunión X min" y "Actividad: —" cuando no hay %. `ActivityMeter` muestra "—" (no "Sin datos") si hubo tiempo medido pero todo fue reunión.
+- Equipo: columna "En reunión" entre "Estado" y "Fuera de Chrome" (mismo orden relativo que el CSV), total en el pie y tarjeta en los totales del periodo.
+- Seed: daily 09:30–10:00 cada día hábil, una reunión de 1 h (15:00–16:00) por persona a la semana, videollamadas al azar con `meetingSeconds`, y los días más antiguos sin el campo (como la 0.1.1).
+- `e2e` no puede entrar a una sala real: siembra dos bloques con `meetingSeconds` para el colaborador y verifica tabla y detalle.

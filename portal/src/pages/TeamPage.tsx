@@ -120,7 +120,11 @@ export function TeamPage() {
         <section className="stats" aria-label="Totales del periodo">
           <Stat label="En jornada ahora" value={`${team.totals.membersInSession} de ${team.totals.members}`} />
           <Stat label="Horas en jornada" value={formatDuration(team.totals.sessionSeconds)} hint={`medidas ${formatDuration(team.totals.trackedSeconds)}`} />
-          <Stat label="Actividad promedio" value={<ActivityMeter percent={team.totals.activityPercent} />} />
+          <Stat
+            label="Actividad promedio"
+            value={<ActivityMeter percent={team.totals.activityPercent} measured={team.totals.trackedSeconds > 0} />}
+          />
+          <Stat label="En reunión" value={formatDuration(team.totals.meetingSeconds)} />
           <Stat label="Fuera de Chrome" value={formatDuration(team.totals.outsideChromeSeconds)} />
         </section>
       ) : null}
@@ -145,7 +149,8 @@ export function TeamPage() {
       </section>
       <p className="muted small footnote">
         “Horas” es el tiempo de jornada abierta (hasta la última señal de la extensión); “medidas”, el tiempo con datos de
-        actividad. “En jornada” indica el estado actual, sin importar el periodo elegido.
+        actividad. “En reunión” es el tiempo en reuniones web (Meet, Zoom, Teams…) sin usar teclado ni mouse: no sube ni baja
+        el % de actividad. “En jornada” indica el estado actual, sin importar el periodo elegido.
       </p>
     </>
   );

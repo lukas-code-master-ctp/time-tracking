@@ -12,16 +12,21 @@
  *    the invited e-mail → joinOrg (member, invitation accepted) → notice →
  *    starts the work day → real keyboard/mouse activity on a local page for
  *    ~70 s → forced pulse + forced capture → closes the work day → queue empty.
- * 3. Admin, in the portal: the collaborator appears with hours > 0; the detail
- *    shows the timeline with data, the local site among the domains and the
- *    screenshot (thumbnail + lightbox "Difuminada").
+ * 3. A web meeting cannot be joined here (no real Meet/Zoom room), so two
+ *    blocks with `meetingSeconds` (a 20-min daily, as extension 0.1.2 writes
+ *    them) are seeded for the collaborator right before the measured session.
+ * 4. Admin, in the portal: the collaborator appears with hours > 0 and the
+ *    seeded time in the "En reunión" column; the detail shows the "En reunión"
+ *    card, the meeting blocks (color, "—") and the measured block with the
+ *    local site, and the screenshot (thumbnail + lightbox "Difuminada").
  */
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
 import type { ViteDevServer } from 'vite';
-import { CONSENT_VERSION } from '@timetracking/shared';
+import { CONSENT_VERSION, SLOT_MS, activityDocId, formatDuration, slotStartOf } from '@timetracking/shared';
+import { startOfDay, zonedDate } from '../portal/src/lib/dates.ts';
 import { EXTENSION_DEV_DIR, launchExtension, sendFrom, startPortal, type ExtensionBrowser } from './lib/browser.ts';
 import { chromiumPath } from './lib/chromium.ts';
 import {
@@ -30,6 +35,7 @@ import {
   clearEmulators,
   firestoreDoc,
   firestoreDocs,
+  firestoreWrite,
   storageMeta,
   storageObjects,
   until,
@@ -189,24 +195,81 @@ async function main(): Promise<void> {
         `(${active}/${tracked} s activos), captura difuminada ${file.size} B en Storage; cola vacía.`,
     );
 
-    // ---------- 3. Admin sees the collaborator ----------
+    // ---------- 3. Seeded web meeting (data as extension 0.1.2 writes it) ----------
+    const meetingStart = slotStartOf(Number(closed.startedAt)) - 3 * SLOT_MS;
+    if (meetingStart < startOfDay(zonedDate(Date.now()))) {
+      throw new Error('faltan menos de 30 minutos desde la medianoche (hora de Chile): vuelve a ejecutar más tarde.');
+    }
+    const meetingBlocks = [
+      { activeSeconds: 30, meetingSeconds: 540 }, // mostly meeting: 30 / (600 − 540) = 50 %
+      { activeSeconds: 0, meetingSeconds: 600 }, // all meeting: no % ("—")
+    ];
+    const meetingSessionId = `e2e-reunion-${uid}`;
+    const meetingEnd = meetingStart + meetingBlocks.length * SLOT_MS;
+    await firestoreWrite(`sessions/${meetingSessionId}`, {
+      uid,
+      startedAt: meetingStart,
+      endedAt: meetingEnd,
+      endReason: 'manual',
+      lastHeartbeatAt: meetingEnd,
+    });
+    for (const [i, b] of meetingBlocks.entries()) {
+      const slotStart = meetingStart + i * SLOT_MS;
+      await firestoreWrite(`activity/${activityDocId(uid, slotStart)}`, {
+        uid,
+        sessionId: meetingSessionId,
+        slotStart,
+        trackedSeconds: 600,
+        ...b,
+        outsideChromeSeconds: 0,
+        domains: { 'meet.google.com': 600 },
+        urls: [{ url: 'https://meet.google.com/abc-defg-hij', seconds: 600 }],
+      });
+    }
+    const meetingTotal = formatDuration(meetingBlocks.reduce((n, b) => n + b.meetingSeconds, 0));
+    ok(`Reunión web sembrada: ${meetingBlocks.length} bloques con meetingSeconds (${meetingTotal}) antes de la jornada medida.`);
+
+    // ---------- 4. Admin sees the collaborator ----------
     await admin.bringToFront();
     await navTo(admin, 'Equipo');
     await admin.getByRole('button', { name: 'Actualizar' }).click();
-    const row = admin.getByRole('table').getByRole('row').filter({ hasText: COLLAB });
+    const table = admin.getByRole('table');
+    const row = table.getByRole('row').filter({ hasText: COLLAB });
     await row.waitFor({ timeout: 15_000 });
     const hours = await until('horas > 0', async () => {
       const t = (await row.locator('td').nth(1).locator('.strong').textContent())?.trim() ?? '';
       return t && t !== '0 min' ? t : null;
     });
-    ok(`Equipo: ${COLLAB_NAME} con ${hours} (${(await row.locator('.meter-value').textContent())?.trim()} de actividad).`);
+    const headers = (await table.locator('thead th').allTextContents()).map((h) => h.trim());
+    const meetingCol = headers.indexOf('En reunión');
+    if (meetingCol === -1) throw new Error(`la tabla del equipo no tiene la columna "En reunión": ${headers.join(' | ')}`);
+    const meetingCell = await until('columna "En reunión"', async () => {
+      const t = (await row.locator('td').nth(meetingCol).textContent())?.trim();
+      return t === meetingTotal ? t : null;
+    });
+    ok(
+      `Equipo: ${COLLAB_NAME} con ${hours} (${(await row.locator('.meter-value').textContent())?.trim()} de actividad, ` +
+        `sin contar la reunión) y ${meetingCell} en reunión.`,
+    );
 
     await row.getByRole('link').click();
     await admin.getByRole('heading', { name: COLLAB_NAME }).waitFor();
     await admin.getByTestId('timeline-cell').first().waitFor();
-    const withData = await admin.locator('.cell:not(.lvl-none)').count();
+    const stats = (await admin.getByRole('region', { name: 'Resumen del día' }).textContent()) ?? '';
+    if (!stats.includes(`En reunión${meetingTotal}`)) throw new Error(`tarjeta "En reunión": ${stats}`);
+    const meetingCells = admin.locator('.cell.lvl-meeting');
+    if ((await meetingCells.count()) !== meetingBlocks.length) throw new Error(`bloques "En reunión": ${await meetingCells.count()}`);
+    const meetingTexts = (await meetingCells.allTextContents()).map((t) => t.trim());
+    if (JSON.stringify(meetingTexts) !== JSON.stringify(['50', '—'])) throw new Error(`% de los bloques en reunión: ${JSON.stringify(meetingTexts)}`);
+    await meetingCells.nth(1).hover();
+    const meetingDetail = (await admin.getByTestId('timeline-detail').textContent()) ?? '';
+    if (!meetingDetail.includes('En reunión10 min') || !meetingDetail.includes('Actividad: —')) throw new Error(`detalle del bloque en reunión: ${meetingDetail}`);
+    ok(`Detalle: tarjeta "En reunión" ${meetingTotal}; bloques en reunión con su color, "50" y "—", y "En reunión 10 min" en el detalle.`);
+    // The block measured by the extension (not a meeting).
+    const measured = admin.locator('.cell:not(.lvl-none):not(.lvl-meeting)');
+    const withData = await measured.count();
     if (withData === 0) throw new Error('la línea de tiempo no tiene bloques con datos');
-    await admin.locator('.cell:not(.lvl-none)').first().hover();
+    await measured.first().hover();
     const detail = (await admin.getByTestId('timeline-detail').textContent()) ?? '';
     if (!detail.includes('% de actividad') || !detail.includes('127.0.0.1')) throw new Error(`detalle del bloque: ${detail}`);
     const domainsCard = (await admin.locator('section', { has: admin.getByRole('heading', { name: 'Sitios más usados' }) }).textContent()) ?? '';

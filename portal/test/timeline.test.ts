@@ -61,6 +61,28 @@ describe('buildTimeline', () => {
     expect(t.rows[0]!.blocks[0]).toMatchObject({ activeSeconds: 600, outsideChromeSeconds: 600, percent: 100 });
   });
 
+  it('meeting time is left out of the % and marks the block', () => {
+    const t = buildTimeline(day.from, day.to, [
+      // 5 min meeting of 10: 60 active of the 300 outside the meeting → 20 %, mostly meeting.
+      slot('u1', at(9), 600, 60, { meetingSeconds: 300 }),
+      // Short meeting: marker only, colored by its level (270 / 480 → 56 %).
+      slot('u1', at(9, 10), 600, 270, { meetingSeconds: 120 }),
+      // The whole block in a meeting: no % ("—").
+      slot('u1', at(9, 20), 600, 0, { meetingSeconds: 600 }),
+      // Extension 0.1.1 (no field): read as 0.
+      slot('u1', at(9, 30), 600, 300),
+      // Inconsistent (active + meeting > tracked): meeting clamped to 600 - 500.
+      slot('u1', at(9, 40), 600, 500, { meetingSeconds: 400 }),
+    ]);
+    const [b0, b10, b20, b30, b40] = t.rows[0]!.blocks;
+    expect(b0).toMatchObject({ meetingSeconds: 300, mostlyMeeting: true, percent: 20, level: 'low' });
+    expect(b10).toMatchObject({ meetingSeconds: 120, mostlyMeeting: false, percent: 56, level: 'mid' });
+    expect(b20).toMatchObject({ meetingSeconds: 600, mostlyMeeting: true, percent: null, level: 'none', trackedSeconds: 600 });
+    expect(b30).toMatchObject({ meetingSeconds: 0, mostlyMeeting: false, percent: 50 });
+    expect(b40).toMatchObject({ meetingSeconds: 100, mostlyMeeting: false, percent: 100 });
+    expect(t.blocksWithData).toBe(5);
+  });
+
   it('shows hours with only a screenshot', () => {
     const t = buildTimeline(day.from, day.to, [], [shot(at(13, 5))]);
     expect(t.rows.map((r) => r.hourLabel)).toEqual(['13:00']);

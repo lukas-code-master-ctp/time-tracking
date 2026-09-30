@@ -107,7 +107,11 @@ export function MemberPage() {
         <>
           <section className="stats" aria-label="Resumen del día">
             <Stat label="Horas en jornada" value={formatDuration(view.summary.sessionSeconds)} hint={`medidas ${formatDuration(view.summary.trackedSeconds)}`} />
-            <Stat label="Actividad" value={<ActivityMeter percent={view.summary.activityPercent} />} />
+            <Stat
+              label="Actividad"
+              value={<ActivityMeter percent={view.summary.activityPercent} measured={view.summary.trackedSeconds > 0} />}
+            />
+            <Stat label="En reunión" value={formatDuration(view.summary.meetingSeconds)} hint="no cuenta en la actividad" />
             <Stat label="Fuera de Chrome" value={formatDuration(view.summary.outsideChromeSeconds)} />
             <Stat label="Jornadas" value={String(view.sessions.length)} />
           </section>

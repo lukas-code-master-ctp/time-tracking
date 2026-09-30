@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertLocalDemo, clearEmulators } from '../lib/emulators';
+import { assertLocalDemo, clearEmulators, firestoreWrite, plainFields, restFields } from '../lib/emulators';
 
 const LOCAL = {
   FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080',
@@ -35,6 +35,29 @@ describe('assertLocalDemo: nunca contra producción', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     await expect(clearEmulators()).rejects.toThrow(/solo corre contra emuladores/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('restFields / firestoreWrite', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('round-trips with plainFields (integers stay integers, as the rules require)', () => {
+    const doc = { uid: 'u', trackedSeconds: 600, meetingSeconds: 540, ratio: 0.5, ok: true, none: null, domains: { 'meet.google.com': 600 }, urls: [{ url: 'https://meet.google.com/abc-defg-hij', seconds: 600 }] };
+    const fields = restFields(doc);
+    expect(fields.meetingSeconds).toEqual({ integerValue: '540' });
+    expect(fields.ratio).toEqual({ doubleValue: 0.5 });
+    expect(plainFields(fields)).toEqual(doc);
+  });
+
+  it('firestoreWrite does not send anything without emulators', async () => {
+    for (const k of Object.keys(LOCAL)) vi.stubEnv(k, '');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(firestoreWrite('activity/x', { a: 1 })).rejects.toThrow(/solo corre contra emuladores/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

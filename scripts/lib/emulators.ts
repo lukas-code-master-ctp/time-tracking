@@ -112,6 +112,32 @@ export function plainFields(fields: Record<string, unknown>): Record<string, unk
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, plainValue(v as Record<string, unknown>)]));
 }
 
+/** Plain value → Firestore REST value (inverse of `plainValue`; integers stay integers). */
+export function restValue(v: unknown): Record<string, unknown> {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'string') return { stringValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map((x) => restValue(x)) } };
+  if (typeof v === 'object') return { mapValue: { fields: restFields(v as Record<string, unknown>) } };
+  throw new Error(`valor no soportado: ${String(v)}`);
+}
+
+export function restFields(data: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, restValue(v)]));
+}
+
+/** Creates or replaces a document (admin access, no rules). Emulators only. */
+export async function firestoreWrite(path: string, data: Record<string, unknown>): Promise<void> {
+  assertLocalDemo();
+  const res = await fetch(`${firestoreUrl()}/v1/projects/${PROJECT}/databases/(default)/documents/${path}`, {
+    method: 'PATCH',
+    headers: { ...OWNER, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: restFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore ${path}: HTTP ${res.status} ${await res.text()}`);
+}
+
 /** All documents of a collection (plain values + `id`). */
 export async function firestoreDocs(collection: string): Promise<({ id: string } & Record<string, unknown>)[]> {
   const out: ({ id: string } & Record<string, unknown>)[] = [];

@@ -6,6 +6,7 @@ import {
   DEFAULT_TIME_ZONE,
   SLOT_MS,
   activityPercent,
+  meetingSecondsOf,
   slotsBetween,
   type ActivitySlot,
   type ScreenshotMeta,
@@ -21,6 +22,12 @@ export const ACTIVITY_LEVELS: readonly { level: Exclude<ActivityLevel, 'none'>; 
   { level: 'mid', label: 'Media (40 a 69 %)', min: 40 },
   { level: 'high', label: 'Alta (70 % o más)', min: 70 },
 ];
+
+/**
+ * A block is "mostly in a meeting" when its meeting time is at least half of
+ * the measured time: it gets the meeting color instead of its activity level.
+ */
+export const MEETING_BLOCK_SHARE = 0.5;
 
 export function activityLevel(percent: number | null): ActivityLevel {
   if (percent === null) return 'none';
@@ -38,7 +45,14 @@ export interface TimelineBlock {
   trackedSeconds: number;
   activeSeconds: number;
   outsideChromeSeconds: number;
-  /** null = no data in this block. */
+  /** Seconds in a web meeting without keyboard/mouse (0 for 0.1.1 docs). */
+  meetingSeconds: number;
+  /** meetingSeconds >= 50 % of trackedSeconds: painted with the meeting color. */
+  mostlyMeeting: boolean;
+  /**
+   * active / (tracked - meeting). null = no data in this block, or the whole
+   * block was a meeting (shown as "—").
+   */
   percent: number | null;
   level: ActivityLevel;
   topDomains: { domain: string; seconds: number }[];
@@ -102,7 +116,9 @@ export function buildTimeline(
     const slot = bySlot.get(slotStart);
     const tracked = Math.max(0, slot?.trackedSeconds ?? 0);
     const active = Math.min(Math.max(0, slot?.activeSeconds ?? 0), tracked);
-    const percent = activityPercent(active, tracked);
+    const meeting = slot ? meetingSecondsOf({ trackedSeconds: tracked, activeSeconds: active, meetingSeconds: slot.meetingSeconds }) : 0;
+    // Meeting time neither raises nor lowers the percentage.
+    const percent = activityPercent(active, tracked, meeting);
     return {
       slotStart,
       label: formatTime(slotStart, timeZone),
@@ -110,6 +126,8 @@ export function buildTimeline(
       trackedSeconds: tracked,
       activeSeconds: active,
       outsideChromeSeconds: Math.min(Math.max(0, slot?.outsideChromeSeconds ?? 0), tracked),
+      meetingSeconds: meeting,
+      mostlyMeeting: tracked > 0 && meeting >= tracked * MEETING_BLOCK_SHARE,
       percent,
       level: activityLevel(percent),
       topDomains: Object.entries(slot?.domains ?? {})

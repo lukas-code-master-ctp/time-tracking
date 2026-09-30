@@ -7,7 +7,7 @@ Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de u
 - Mientras la jornada está abierta, la extensión mide el nivel de actividad, los sitios usados y, si está activado, toma capturas de la pestaña visible.
 - La persona admin ve todo en la **reportería del portal**: horas, % de actividad, sitios, línea de tiempo y capturas.
 
-Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [detalles de la extensión](extension/README.md).
+Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [spec de "En reunión"](docs/specs/2026-09-30-en-reunion.md) · [detalles de la extensión](extension/README.md).
 
 ## Qué mide (y qué NO)
 
@@ -16,9 +16,12 @@ Solo mide **con la jornada iniciada** y con sesión iniciada en la extensión. T
 | Mide | NO mide |
 |---|---|
 | **Nivel de actividad**: % de segundos con uso de teclado o mouse (solo el *hecho* de que hubo uso). Fuera de Chrome usa el estado de inactividad del sistema (`chrome.idle`). | **Qué teclas** presionas, qué escribes, contraseñas, contenido de formularios ni de las páginas. |
-| **Sitios**: tiempo por dominio y por URL de la pestaña activa, **sin parámetros ni `#`** (se descartan para no guardar datos sensibles). Hasta 20 URL por bloque. | El historial completo, pestañas en segundo plano, pestañas de **incógnito**. |
+| **Sitios**: tiempo por dominio y por URL de la pestaña activa, **sin parámetros ni `#`** (se descartan para no guardar datos sensibles). Hasta 20 URL por bloque. | El historial completo, las direcciones de las pestañas en segundo plano (solo se revisan para detectar una reunión, sin guardarlas), pestañas de **incógnito**. |
+| **En reunión** (extensión 0.1.2): segundos sin teclado ni mouse con una **reunión web en curso** en Chrome (Google Meet, Zoom, Microsoft Teams, Webex, Jitsi, Whereby, GoTo Meeting). Se detecta solo por la **dirección de la sala** y si la pestaña **reproduce sonido** (o está al frente). Ese tiempo **no sube ni baja el % de actividad**: % = activos ÷ (medidos − en reunión). | El **audio ni el video** de las reuniones: nunca se escuchan, graban ni envían. Las reuniones en **apps de escritorio** (Zoom, Teams…) no se detectan. |
 | **Tiempo fuera de Chrome**: cuando ninguna ventana de Chrome está enfocada. | **Qué** programa usas fuera de Chrome (Word, Excel, WhatsApp de escritorio…): solo se sabe que estuviste "fuera de Chrome". |
 | **Capturas** (opcional, lo decide la admin): 1 por bloque de 10 min, en un instante al azar, **solo de la pestaña visible**, reducidas a ≤ 1280 px y **difuminadas en el computador** antes de subirlas (si el difuminado está activo). | La pantalla completa, otras ventanas, micrófono, cámara ni ubicación. Nada fuera de la jornada. |
+
+El portal muestra "En reunión" como tarjeta en el detalle del colaborador, columna (y total) en Equipo, columna "Horas en reunión" en el CSV y, en la línea de tiempo, un marcador en los bloques con reunión y un color propio en los que son reunión en la mitad o más (con su % o "—" si todo fue reunión).
 
 La primera vez, la extensión muestra un **aviso** que explica esto y el colaborador debe aceptarlo. Durante la jornada el ícono muestra la insignia **ON** y el popup dice qué se está midiendo.
 
@@ -117,9 +120,9 @@ Las cuentas se crean con el mismo token simulado que el login dev, así que pued
 | `npm run build` | Builds de producción: shared, extensión (`extension/dist`), portal (`portal/dist`), functions (`functions/lib`). Falla si el build prod contiene código dev. |
 | `npm run build:extension:qa` | Build QA de la extensión (`extension/dist-qa`): el bundle prod con el mismo ID que el ítem de la tienda, para probar contra producción. Ver [QA sin la tienda](#qa-sin-la-tienda). |
 | `npm run e2e:extension` | Extensión dev en Chromium contra emuladores: login dev → aviso → jornada → captura difuminada → cierre; verifica Firestore y Storage. |
-| `npm run e2e:portal` | Portal dev en Chromium con datos sembrados: tabla del equipo, detalle, lightbox, invitación, rol, configuración, CSV; capturas de pantalla en `%TEMP%/timetracking-portal-shots`. |
-| `npm run e2e` | **Flujo completo en el orden real**: la admin activa capturas e invita desde el portal (UI) → el colaborador entra en la extensión, acepta el aviso, trabaja ~70 s en una página local, se fuerza una captura y cierra la jornada → la admin ve al colaborador con horas > 0, su actividad y su captura en el detalle. |
-| `npm run seed` | Datos de ejemplo (con los emuladores ya levantados). |
+| `npm run e2e:portal` | Portal dev en Chromium con datos sembrados: tabla del equipo (con "En reunión", igual que el CSV), detalle (tarjeta y bloques "En reunión"), lightbox, invitación, rol, configuración, CSV; capturas de pantalla en `%TEMP%/timetracking-portal-shots`. |
+| `npm run e2e` | **Flujo completo en el orden real**: la admin activa capturas e invita desde el portal (UI) → el colaborador entra en la extensión, acepta el aviso, trabaja ~70 s en una página local, se fuerza una captura y cierra la jornada → la admin ve al colaborador con horas > 0, su actividad y su captura en el detalle. Como no se puede entrar a una sala real de Meet o Zoom, se siembran dos bloques con `meetingSeconds` y se verifica "En reunión" en la tabla y en el detalle. |
+| `npm run seed` | Datos de ejemplo (con los emuladores ya levantados): incluye una daily de 30 min cada día hábil, una reunión de 1 h por persona a la semana y días antiguos sin `meetingSeconds` (como la extensión 0.1.1). |
 | `npm run emulators` / `npm run emulators:persist` | Levanta los emuladores (sin / con datos persistentes en `.emulator-data/`, ignorada por git). |
 
 Los tres `e2e*` levantan y apagan sus propios emuladores: no los corras con `npm run emulators` abierto (usan los mismos puertos).
@@ -166,6 +169,8 @@ Mientras la tienda revisa una versión, puedes probarla contra producción carg�
 1. `npm run build:extension:qa` → `extension/dist-qa` (mismo código y configuración que `npm run build`, más la `key` pública del ítem de la tienda). El build muestra el ID (`egaklokkbnbnccnjicaahaifnkaeobfj`) y falla si no coincide o si falta `VITE_OAUTH_CLIENT_ID` o algún valor real de Firebase.
 2. `chrome://extensions` → **Modo de desarrollador** → **Cargar descomprimida** → `extension/dist-qa`.
 
+Antes de cargar una versión QA que escribe campos nuevos (p. ej. la 0.1.2 con `meetingSeconds`), despliega las reglas de Firestore: ver el orden obligatorio en [7. Desplegar](#7-desplegar).
+
 Como el ID coincide con el de la tienda, el login con Google funciona. Ojo: **los datos van a producción**; no puedes tener instaladas a la vez la de la tienda y la de QA (mismo ID: Chrome usa una sola), y la política de Google Workspace puede bloquear las extensiones descomprimidas. A la tienda se sube siempre `dist`, nunca `dist-qa`. Detalles en [extension/README.md](extension/README.md#qa-sin-la-tienda).
 
 ### 5. Configuración del portal y de functions
@@ -208,6 +213,8 @@ Aunque el correo falle, el portal permite **copiar el enlace de instalación** p
 npm run typecheck && npm test && npm run test:emulator && npm run build
 npx firebase deploy --only firestore,storage,functions,hosting
 ```
+
+> **Orden obligatorio para la extensión 0.1.2 ("En reunión")**: **primero** despliega las reglas de Firestore (`npx firebase deploy --only firestore:rules`, o el `deploy` completo de arriba) y **solo después** distribuye la 0.1.2 (build QA o tienda). Las reglas nuevas aceptan el campo opcional `meetingSeconds`; con las reglas antiguas, Firestore rechaza el bloque (`permission-denied`) y la extensión lo reintenta sin `meetingSeconds`: no se pierde el bloque, pero sí el tiempo en reunión. Las reglas nuevas siguen aceptando los bloques de la 0.1.1 (sin el campo), así que desplegarlas antes no afecta a quien aún no actualiza.
 
 El portal queda en `https://<proyecto>.web.app`. Entra con la cuenta de `BOOTSTRAP_ADMINS`, revisa **Configuración** (capturas sí/no, difuminado, retención y dominios permitidos) e invita al equipo (correos de cualquiera de los dominios de la lista).
 
@@ -280,6 +287,10 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 ## Limitaciones conocidas
 
 - **Apps fuera de Chrome** (Word, Excel, WhatsApp de escritorio, Zoom…): solo se sabe que estuviste "fuera de Chrome"; la actividad ahí se estima con `chrome.idle` (umbral 15 s).
+- **"En reunión" solo para reuniones web en Chrome** (lista fija en `packages/shared/src/meetings.ts`, sin configuración en el portal). Las reuniones en **apps de escritorio** (Zoom, Teams, Meet en otra app) no se detectan y siguen contando como inactividad si no hay teclado ni mouse.
+- Una sala de Meet/Zoom/etc. que queda **al frente** cuenta como reunión aunque no haya audio (p. ej. la pantalla "Saliste de la reunión" en la misma dirección, o la sala de espera) hasta que la persona cambia de pestaña o bloquea la pantalla. En **Teams**, como su dirección no distingue la reunión del chat, un sonido de notificación puede dar hasta 2 min de "reunión" sin teclado ni mouse. El fin de los 2 min de gracia tras el último audio se aplica en el pulso siguiente (hasta 30 s tarde).
+- Los bloques de la extensión **0.1.1** (y los datos anteriores) no traen `meetingSeconds`: el portal los lee como 0 (sin tiempo en reunión). Una jornada abierta con la 0.1.1 que se actualiza a la 0.1.2 no mide reuniones hasta que la persona acepta el aviso nuevo.
+- Si la 0.1.2 se distribuye **antes** de desplegar las reglas nuevas, se pierde el tiempo en reunión de esos bloques (ver [7. Desplegar](#7-desplegar)).
 - **Otros navegadores** (Edge, Firefox, Safari) y **pestañas de incógnito** no se miden.
 - **Capturas solo de la pestaña visible**, no de la pantalla completa ni de otras apps. Hay **un solo intento por bloque**: si en ese instante Chrome no está enfocado, la pantalla está bloqueada o la pestaña no es http(s), ese bloque queda sin captura (no se reintenta ni se registra).
 - **Reloj adelantado > 15 min**: las reglas rechazan tiempos "del futuro"; un computador con la hora muy adelantada no podrá subir datos hasta corregirla.

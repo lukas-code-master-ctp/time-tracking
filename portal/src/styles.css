@@ -24,6 +24,8 @@
   --lvl-low: #f59e8b;
   --lvl-mid: #f4c35a;
   --lvl-high: #34a36a;
+  /* "En reunión" blocks. Ink on it: 8.28:1 (light), 5.75:1 (dark). */
+  --lvl-meeting: #b4a7f5;
   --lvl-ink: #16181d;
   --radius: 12px;
   --radius-sm: 8px;
@@ -57,6 +59,7 @@
     --lvl-low: #c2604f;
     --lvl-mid: #c99a33;
     --lvl-high: #2f9460;
+    --lvl-meeting: #8b7fe0;
     --lvl-ink: #0b0d10;
     --shadow: none;
   }
@@ -86,6 +89,7 @@
   --lvl-low: #c2604f;
   --lvl-mid: #c99a33;
   --lvl-high: #2f9460;
+  --lvl-meeting: #8b7fe0;
   --lvl-ink: #0b0d10;
   --shadow: none;
 }
@@ -430,13 +434,19 @@ a {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* 4 or 5 cards in one row on desktop, two per row on phones. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 480px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Odd number of cards (5): the last one takes the whole row. */
+  .stats > .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -969,6 +979,10 @@ a.person:hover .person-name {
   background: var(--lvl-high);
 }
 
+.lvl-meeting {
+  background: var(--lvl-meeting);
+}
+
 .chip.lvl-chip {
   color: var(--lvl-ink);
   border-color: transparent;
@@ -1032,7 +1046,8 @@ a.person:hover .person-name {
 
 .cell-pct {
   /* Full ink, no opacity: contrast ≥ 4.5:1 (WCAG AA, small text) on every
-     level color in light and dark themes (lowest: 4.7:1, dark "baja"). */
+     level color in light and dark themes (lowest: 4.7:1, dark "baja"; the
+     meeting color: 8.28:1 light, 5.75:1 dark). */
   color: var(--lvl-ink);
 }
 
@@ -1046,6 +1061,21 @@ a.person:hover .person-name {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 1.5px var(--surface);
+}
+
+/* Block with some meeting time: a small bar at the top left, clear of the
+   % even in narrow phone cells (not only color; the screenshot dot sits at
+   the top right). Ink on every level color is ≥ 4.5:1, above the 3:1 for
+   graphics. */
+.has-meeting::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 9px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--lvl-ink);
 }
 
 .timeline-detail {
@@ -1119,6 +1149,13 @@ a.person:hover .person-name {
 .swatch.lvl-none {
   border: 1px dashed var(--border-strong);
   background: transparent;
+}
+
+.swatch.has-meeting::before {
+  left: 2px;
+  top: 2px;
+  width: 7px;
+  height: 2px;
 }
 
 .swatch.has-shot::after {
