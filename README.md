@@ -4,26 +4,57 @@ Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de u
 
 - La persona **admin** invita a los colaboradores desde un **portal web** (les comparte el enlace de instalación; el correo de invitación es opcional).
 - Cada **colaborador** instala una **extensión de Chrome**, entra con su cuenta de la empresa y **abre y cierra su jornada**.
-- Mientras la jornada está abierta, la extensión mide el nivel de actividad, los sitios usados y, si está activado, toma capturas de la pestaña visible.
-- La persona admin ve todo en la **reportería del portal**: horas, % de actividad, sitios, línea de tiempo y capturas.
+- Mientras la jornada está abierta, la extensión mide el nivel de actividad, los sitios usados y, si está activado, toma capturas de la pestaña visible. Si la admin configuró un **horario laboral**, solo mide dentro del horario y fuera de la colación (el inicio y el cierre de la jornada se registran siempre).
+- La persona admin ve todo en la **reportería del portal**: horas, % de actividad, sitios, línea de tiempo, capturas y, con horario, el **cumplimiento** (horas esperadas, atrasos, salidas anticipadas, ausencias, tiempo fuera de horario).
 
-Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [spec de "En reunión"](docs/specs/2026-09-30-en-reunion.md) · [detalles de la extensión](extension/README.md).
+Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [spec de "En reunión"](docs/specs/2026-09-30-en-reunion.md) · [spec de horarios](docs/specs/2026-09-30-horarios.md) · [plan de horarios](docs/plans/2026-09-30-horarios.md) · [detalles de la extensión](extension/README.md).
 
 ## Qué mide (y qué NO)
 
-Solo mide **con la jornada iniciada** y con sesión iniciada en la extensión. Todo se agrupa en bloques de 10 minutos.
+Solo mide **con la jornada iniciada** y con sesión iniciada en la extensión y, si hay horario configurado, **solo dentro del horario y fuera de la colación** (ver [Horario laboral y colación](#horario-laboral-y-colación)). Todo se agrupa en bloques de 10 minutos.
 
 | Mide | NO mide |
 |---|---|
+| **Inicio y cierre de la jornada** (y un latido cada ~60 s): **siempre**, también fuera del horario y en la colación, como registro de asistencia (así se ven las horas extra). | **Actividad, sitios, reuniones ni capturas fuera del horario ni en la colación**: ese tiempo aparece en el portal como "Fuera de horario" o "Colación", sin detalle. |
 | **Nivel de actividad**: % de segundos con uso de teclado o mouse (solo el *hecho* de que hubo uso). Fuera de Chrome usa el estado de inactividad del sistema (`chrome.idle`). | **Qué teclas** presionas, qué escribes, contraseñas, contenido de formularios ni de las páginas. |
 | **Sitios**: tiempo por dominio y por URL de la pestaña activa, **sin parámetros ni `#`** (se descartan para no guardar datos sensibles). Hasta 20 URL por bloque. | El historial completo, las direcciones de las pestañas en segundo plano (solo se revisan para detectar una reunión, sin guardarlas), pestañas de **incógnito**. |
 | **En reunión** (extensión 0.1.2): segundos sin teclado ni mouse con una **reunión web en curso** en Chrome (Google Meet, Zoom, Microsoft Teams, Webex, Jitsi, Whereby, GoTo Meeting). Se detecta solo por la **dirección de la sala** y si la pestaña **reproduce sonido** (o lo hizo en los últimos 2 min; estar al frente no basta). Ese tiempo **no sube ni baja el % de actividad**: % = activos ÷ (medidos − en reunión). | El **audio ni el video** de las reuniones: nunca se escuchan, graban ni envían. Las reuniones en **apps de escritorio** (Zoom, Teams…) no se detectan. |
 | **Tiempo fuera de Chrome**: cuando ninguna ventana de Chrome está enfocada. | **Qué** programa usas fuera de Chrome (Word, Excel, WhatsApp de escritorio…): solo se sabe que estuviste "fuera de Chrome". |
-| **Capturas** (opcional, lo decide la admin): 1 por bloque de 10 min, en un instante al azar, **solo de la pestaña visible**, reducidas a ≤ 1280 px y **difuminadas en el computador** antes de subirlas (si el difuminado está activo). | La pantalla completa, otras ventanas, micrófono, cámara ni ubicación. Nada fuera de la jornada. |
+| **Capturas** (opcional, lo decide la admin): 1 por bloque de 10 min, en un instante al azar, **solo de la pestaña visible**, reducidas a ≤ 1280 px y **difuminadas en el computador** antes de subirlas (si el difuminado está activo). | La pantalla completa, otras ventanas, micrófono, cámara ni ubicación. Nada fuera de la jornada, fuera del horario ni en la colación. |
 
 El portal muestra "En reunión" como tarjeta en el detalle del colaborador, columna (y total) en Equipo, columna "Horas en reunión" en el CSV y, en la línea de tiempo, un marcador en los bloques con reunión y un color propio en los que son reunión en la mitad o más (con su % o "—" si todo fue reunión).
 
 La primera vez, la extensión muestra un **aviso** que explica esto y el colaborador debe aceptarlo. Durante la jornada el ícono muestra la insignia **ON** y el popup dice qué se está midiendo.
+
+## Horario laboral y colación
+
+Desde la **extensión 0.2.0** ([spec](docs/specs/2026-09-30-horarios.md)). Sin horario configurado todo funciona como antes: se mide siempre que la jornada esté abierta y el portal no muestra cumplimiento.
+
+### Qué se mide con horario
+
+- **En horario**: se mide como siempre (actividad, sitios, reuniones, capturas).
+- **Colación** y **fuera de horario** (antes de la entrada, después de la salida, días libres y feriados): la extensión **pausa la medición**. No registra actividad, sitios, reuniones ni capturas, y ese tiempo no entra en `trackedSeconds` (no baja el %).
+- **El inicio y el cierre de la jornada se registran siempre** (colección `sessions`), también fuera de horario: es el registro de asistencia y permite ver las horas extra. El latido de la sesión sigue en la pausa.
+- La colación no cuenta como trabajada ni como fuera de horario (va aparte).
+
+### Configurarlo en el portal
+
+- **Configuración → Horario**: sin horario, "Crear horario" propone L–J 09:00–18:30 con colación 13:00–14:00, V 09:00–14:00, fin de semana libre, los feriados de Chile 2026–2027, tolerancia 5 min y recordatorios activos. No se guarda nada hasta **Guardar y activar horario**. Por cada día: libre, o entrada y salida (hora de Chile) con colación opcional; "Copiar lunes a martes–viernes". **Tolerancia** (0–60 min): margen antes de contar un atraso o una salida anticipada. **Feriados** (máx. 60): "Agregar feriados de Chile 2026–2027", agregar una fecha, quitar, "Quitar feriados pasados". **Eliminar horario** (con confirmación) vuelve a como antes del horario.
+- **Colaboradores → Horario** de cada persona: "General" o "Personalizado". "Personalizar horario" crea una **excepción** (`schedules/{uid}`) que reemplaza solo la semana; los feriados, la tolerancia y los recordatorios son siempre los generales. "Volver al general" la borra.
+- La extensión relee el horario al iniciar la jornada, al despertar y cada 5 minutos (guarda una copia local, así la pausa funciona sin conexión): un cambio se aplica en unos minutos.
+
+### Qué muestra el portal
+
+- **Equipo**: columnas **Esperadas** (hasta ahora; debajo, "de …" con las del periodo completo), **En horario**, **Fuera de horario**, **Atrasos** (cantidad y total), **Sin conexión en horario** y **Ausencias** (días), más tarjetas con los totales. El CSV agrega Horario (General, Personalizado o Sin horario), Horas esperadas, Horas esperadas a la fecha, Horas en horario, Horas fuera de horario, Atrasos, Horas de atraso, Horas sin conexión en horario y Ausencias (días). Sin horario las columnas no aparecen. Para cada persona se cuenta desde el día en que se unió.
+- **Detalle del colaborador**: el horario del día, tarjetas de cumplimiento (esperado, en horario, atraso, salida anticipada, sin conexión), la línea de tiempo con rayas grises fuera de horario, rayas turquesa en la colación y marcas de entrada y salida, y en cada jornada la parte que cayó fuera de horario.
+- Definiciones: **atraso** = primer instante conectado entre la entrada y la salida − entrada, si supera la tolerancia; **salida anticipada** = salida − fin de la última sesión, si supera la tolerancia, el horario del día terminó y la sesión está cerrada; **ausencia** = día laboral terminado sin sesiones; **sin conexión en horario** = esperado hasta ahora − en horario.
+
+### En la extensión
+
+- El popup muestra el estado: "En horario hasta 18:30" (antes de la colación, "hasta 13:00"), "Colación hasta 14:00", "Fuera de horario: no se mide", "Hoy es feriado" o "Día libre", y el horario de hoy ("Hoy (miércoles): 09:00–18:30 · colación 13:00–14:00").
+- **Recordatorios** (si están activados en el horario general y hay sesión iniciada en la extensión): a la hora de entrada + tolerancia, si no hay jornada abierta, "Tu jornada empezó a las 09:00. ¿Iniciar jornada?"; a la hora de salida + tolerancia, si sigue abierta, "Tu horario terminó a las 18:30. ¿Cerrar jornada?". Cada uno trae un botón que lo hace y sale **una vez por evento y por día** (registro local). No hay recordatorios los días libres ni los feriados, ni para quien solo tiene excepción sin horario general. Son **notificaciones locales** de Chrome: no se envía nada a ningún servidor para mostrarlas.
+- Por eso la 0.2.0 pide el permiso nuevo **`notifications`**. Justificación para la ficha de Chrome Web Store (pestaña *Privacidad* → justificación de permisos): *"Se usa para mostrar recordatorios locales del horario laboral que configura la empresa: al comienzo del horario, si la jornada no está iniciada ('¿Iniciar jornada?'), y al final, si sigue abierta ('¿Cerrar jornada?'), con un botón que lo hace. No se usa para publicidad ni se envían datos para mostrarlos."* Al actualizar desde la 0.1.x, Chrome puede mostrar la advertencia del permiso nuevo ("Mostrar notificaciones") y dejar la extensión desactivada hasta que la persona lo acepte; con la instalación forzada desde la consola de Google Workspace ([paso 8](#8-instalación-forzada-en-google-workspace-en-cada-organización)) se concede sin preguntar.
+- El aviso de consentimiento cambió (`CONSENT_VERSION = 2026-09-30.2`): explica que fuera del horario y en la colación no se mide. Para iniciar una jornada nueva hay que aceptarlo otra vez.
 
 ## Arquitectura
 
@@ -46,6 +77,7 @@ La primera vez, la extensión muestra un **aviso** que explica esto y el colabor
 - **Sin servidor propio**: la extensión y el portal escriben/leen Firestore y Storage directamente; las **reglas de seguridad** deciden qué puede hacer cada uno (un colaborador solo escribe y lee lo suyo; nadie cambia su propio rol).
 - **Cloud Functions** (región `southamerica-west1`, salvo las dos tareas programadas, que corren en `southamerica-east1` porque Cloud Scheduler no existe en Santiago): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación si `INVITE_EMAIL_ENABLED=true`; si no, solo lo registra en el log), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
 - Todos los tiempos se guardan como milisegundos epoch; los días se calculan en hora de Chile (`America/Santiago`).
+- Horario laboral: `config/schedule` (horario general: `week`, `holidays`, `toleranceMinutes`, `remindersEnabled`, `updatedAt`, `updatedBy`; lo escribe o borra solo un admin activo y lo lee cualquier usuario activo) y `schedules/{uid}` (excepción por persona: `week`, `updatedAt`, `updatedBy`; la escribe o borra solo un admin y la leen la propia persona y los admins). La lógica (tramos del día, pausa, cumplimiento) está en `packages/shared/src/schedule.ts` y la usan igual la extensión y el portal.
 
 ## Estructura del repositorio
 
@@ -96,7 +128,9 @@ npm run dev -w portal
 - Admin inicial **`lukas@impulseai.cl`** (está en `BOOTSTRAP_ADMINS` de `functions/.env.demo-timetracking`, que también define `ALLOWED_DOMAIN=impulseai.cl,compratuparcela.cl`).
 - 3 colaboradores de ambos dominios con invitación aceptada y aviso aceptado: `ana.rojas@compratuparcela.cl` (con una **jornada abierta ahora**), `beto.diaz@compratuparcela.cl`, `carla.soto@impulseai.cl`; y 1 invitación pendiente: `diego.munoz@impulseai.cl`.
 - `config/org` con los dos dominios y capturas difuminadas activas (solo si no existe: si ya cambiaste la configuración en el portal, se respeta).
-- Jornadas de los últimos 7 días hábiles en horario laboral de Chile (con pausa de almuerzo, un día libre y un cierre automático), actividad variable, sitios típicos (`mail.google.com`, `docs.google.com`, `sheets.google.com`, `drive.google.com`, `calendar.google.com`, `meet.google.com`…), tiempo fuera de Chrome y unas 20 capturas de ejemplo difuminadas en Storage.
+- `config/schedule` con el horario general: L–J 09:00–18:30 con colación 13:00–14:00, V 09:00–14:00, fin de semana libre, feriados de Chile 2026–2027, tolerancia 5 min y recordatorios activos (también solo si no existe).
+- Una excepción: Carla con **media jornada** 09:00–13:00 de lunes a viernes (`schedules/{uid}`; se reescribe en cada corrida, y se borra la excepción que hayas creado en el portal para Ana o Beto, porque sus jornadas de ejemplo siguen el horario general).
+- Jornadas de los días hábiles (según el horario de cada persona y los feriados) de la última semana: llegadas puntuales dentro de la tolerancia, Beto corta la jornada en la colación y Ana la deja abierta; **un atraso** (Beto), **una salida anticipada** y horas extra (Ana), **una ausencia** (Carla) y un cierre automático de Beto después de la salida (fuera de horario). Como en la extensión 0.2.0, la actividad solo se mide dentro del horario: los bloques de colación o fuera de horario no tienen `trackedSeconds` y las capturas caen en horario. Además: actividad variable, sitios típicos (`mail.google.com`, `docs.google.com`, `sheets.google.com`, `drive.google.com`, `calendar.google.com`, `meet.google.com`…), tiempo fuera de Chrome y unas 20 capturas de ejemplo difuminadas en Storage. Las jornadas siguen el horario del seed aunque hayas cambiado `config/schedule` en el portal.
 
 El seed y los e2e **se niegan a correr** si las variables `*_EMULATOR_HOST` no apuntan a este computador o si el proyecto no es `demo-timetracking`: nunca escriben en un proyecto real.
 
@@ -119,10 +153,10 @@ Las cuentas se crean con el mismo token simulado que el login dev, así que pued
 | `npm run test:emulator` | Reglas de Firestore/Storage, Cloud Functions y subida a Storage contra emuladores reales (`firebase emulators:exec`). |
 | `npm run build` | Builds de producción: shared, extensión (`extension/dist`), portal (`portal/dist`), functions (`functions/lib`). Falla si el build prod contiene código dev. |
 | `npm run build:extension:qa` | Build QA de la extensión (`extension/dist-qa`): el bundle prod con el mismo ID que el ítem de la tienda, para probar contra producción. Ver [QA sin la tienda](#qa-sin-la-tienda). |
-| `npm run e2e:extension` | Extensión dev en Chromium contra emuladores: login dev → aviso → jornada → captura difuminada → cierre; verifica Firestore y Storage. |
-| `npm run e2e:portal` | Portal dev en Chromium con datos sembrados: tabla del equipo (con "En reunión", igual que el CSV), detalle (tarjeta y bloques "En reunión"), lightbox, invitación, rol, configuración, CSV; capturas de pantalla en `%TEMP%/timetracking-portal-shots`. |
-| `npm run e2e` | **Flujo completo en el orden real**: la admin activa capturas e invita desde el portal (UI) → el colaborador entra en la extensión, acepta el aviso, trabaja ~70 s en una página local, se fuerza una captura y cierra la jornada → la admin ve al colaborador con horas > 0, su actividad y su captura en el detalle. Como no se puede entrar a una sala real de Meet o Zoom, se siembran dos bloques con `meetingSeconds` y se verifica "En reunión" en la tabla y en el detalle. |
-| `npm run seed` | Datos de ejemplo (con los emuladores ya levantados): incluye una daily de 30 min cada día hábil, una reunión de 1 h por persona a la semana y días antiguos sin `meetingSeconds` (como la extensión 0.1.1). |
+| `npm run e2e:extension` | Extensión dev en Chromium contra emuladores: login dev → aviso → jornada → captura difuminada → cierre; verifica Firestore y Storage. Luego, con un `config/schedule` que excluye la hora actual, el popup dice "Fuera de horario: no se mide" y no se mide ni se captura; con uno que la incluye, "En horario hasta 23:59" y vuelve a medir. |
+| `npm run e2e:portal` | Portal dev en Chromium con datos sembrados: tabla del equipo (con "En reunión", igual que el CSV), detalle (tarjeta y bloques "En reunión"), lightbox, invitación, rol, configuración, CSV; horario: columnas de cumplimiento en Equipo y el CSV (general y personalizado), tarjetas, colación y marcas en la línea de tiempo, horario personalizado y "Volver al general" en Colaboradores, y eliminar y crear el horario en Configuración; capturas de pantalla en `%TEMP%/timetracking-portal-shots`. |
+| `npm run e2e` | **Flujo completo en el orden real**: la admin activa capturas, **crea el horario** en Configuración → Horario (hoy desde hace una hora hasta las 23:59, sin colación, para que incluya "ahora") e invita desde el portal (UI) → el colaborador entra en la extensión, acepta el aviso, inicia la jornada (el popup dice "En horario hasta 23:59"), trabaja ~70 s en una página local, se fuerza una captura y cierra la jornada → la admin ve al colaborador con horas > 0, las **columnas de cumplimiento** (iguales a las funciones de `shared`: en horario, fuera de horario, 1 atraso, esperadas, sin conexión, ausencias), las tarjetas de cumplimiento, su actividad y su captura en el detalle. Como no se puede entrar a una sala real de Meet o Zoom, se siembran dos bloques con `meetingSeconds` y se verifica "En reunión" en la tabla y en el detalle. Falla a propósito entre las 23:50 y las 00:30 (hora de Chile). |
+| `npm run seed` | Datos de ejemplo (con los emuladores ya levantados): horario general y una excepción, atraso, salida anticipada, ausencia y tiempo fuera de horario; una daily de 30 min cada día hábil, una reunión de 1 h por persona a la semana y días antiguos sin `meetingSeconds` (como la extensión 0.1.1). |
 | `npm run emulators` / `npm run emulators:persist` | Levanta los emuladores (sin / con datos persistentes en `.emulator-data/`, ignorada por git). |
 
 Los tres `e2e*` levantan y apagan sus propios emuladores: no los corras con `npm run emulators` abierto (usan los mismos puertos).
@@ -169,7 +203,7 @@ Mientras la tienda revisa una versión, puedes probarla contra producción carg�
 1. `npm run build:extension:qa` → `extension/dist-qa` (mismo código y configuración que `npm run build`, más la `key` pública del ítem de la tienda). El build muestra el ID (`egaklokkbnbnccnjicaahaifnkaeobfj`) y falla si no coincide o si falta `VITE_OAUTH_CLIENT_ID` o algún valor real de Firebase.
 2. `chrome://extensions` → **Modo de desarrollador** → **Cargar descomprimida** → `extension/dist-qa`.
 
-Antes de cargar una versión QA que escribe campos nuevos (p. ej. la 0.1.2 con `meetingSeconds`), despliega las reglas de Firestore: ver el orden obligatorio en [7. Desplegar](#7-desplegar).
+Antes de cargar una versión QA que escribe campos nuevos o lee colecciones nuevas (p. ej. la 0.1.2 con `meetingSeconds` o la 0.2.0 con `schedules/{uid}`), despliega las reglas de Firestore: ver el orden obligatorio en [7. Desplegar](#7-desplegar).
 
 Como el ID coincide con el de la tienda, el login con Google funciona. Ojo: **los datos van a producción**; no puedes tener instaladas a la vez la de la tienda y la de QA (mismo ID: Chrome usa una sola), y la política de Google Workspace puede bloquear las extensiones descomprimidas. A la tienda se sube siempre `dist`, nunca `dist-qa`. Detalles en [extension/README.md](extension/README.md#qa-sin-la-tienda).
 
@@ -215,6 +249,21 @@ npx firebase deploy --only firestore,storage,functions,hosting
 ```
 
 > **Orden obligatorio para la extensión 0.1.2 ("En reunión")**: **primero** despliega las reglas de Firestore (`npx firebase deploy --only firestore:rules`, o el `deploy` completo de arriba) y **solo después** distribuye la 0.1.2 (build QA o tienda). Las reglas nuevas aceptan el campo opcional `meetingSeconds`; con las reglas antiguas, Firestore rechaza el bloque (`permission-denied`) y la extensión lo reintenta sin `meetingSeconds`: no se pierde el bloque, pero sí el tiempo en reunión. Las reglas nuevas siguen aceptando los bloques de la 0.1.1 (sin el campo), así que desplegarlas antes no afecta a quien aún no actualiza.
+
+#### Despliegue de horarios (orden obligatorio, extensión 0.2.0)
+
+1. **Reglas de Firestore** primero:
+
+   ```bash
+   npx firebase deploy --only firestore:rules --project prod
+   ```
+
+   Las reglas nuevas permiten `config/schedule` (escritura y borrado solo de un admin activo) y `schedules/{uid}` (solo admin; la lee la propia persona). Sin ellas el portal no puede guardar el horario (`permission-denied`) y la extensión 0.2.0 no puede leer la excepción (la trata como "sin excepción"). No cambian nada para la 0.1.x.
+2. **Portal**: push a `main` → Vercel lo publica ([7b](#7b-alternativa-portal-en-vercel-en-vez-de-firebase-hosting)); con Firebase Hosting, `npx firebase deploy --only hosting --project prod`. Hasta que la admin cree el horario en **Configuración → Horario** no cambia nada para nadie.
+3. **Extensión 0.2.0**:
+   - **QA** contra producción: `npm run build:extension:qa` (o `npm run build:qa -w extension`) y cárgala descomprimida ([QA sin la tienda](#qa-sin-la-tienda)).
+   - **Tienda**: súbela **después de que la 0.1.1 (en revisión) quede aprobada**. La 0.1.1 ignora el horario y sigue funcionando mientras tanto (mide siempre que la jornada esté abierta). El paquete se genera con `npm run build -w extension` → comprime el **contenido** de `extension/dist`. Ojo: si Chrome tiene cargada `extension/dist` como extensión descomprimida (o un explorador de archivos la tiene abierta), Windows bloquea la carpeta y el build falla al borrarla o reescribirla; quita esa extensión en `chrome://extensions` o cierra Chrome, o compila en otra carpeta con `npm run build -w extension -- --out-dir <carpeta nueva o vacía>` y comprime esa. La ficha debe justificar el permiso nuevo `notifications` (texto en [Horario laboral y colación](#en-la-extensión)) y la política de privacidad (`/privacidad` del portal) ya describe el horario.
+   - Al actualizar, cada persona debe aceptar el **aviso nuevo** para iniciar su próxima jornada.
 
 El portal queda en `https://<proyecto>.web.app`. Entra con la cuenta de `BOOTSTRAP_ADMINS`, revisa **Configuración** (capturas sí/no, difuminado, retención y dominios permitidos) e invita al equipo (correos de cualquiera de los dominios de la lista).
 
@@ -265,6 +314,8 @@ En [admin.google.com](https://admin.google.com) de esa organización → **Dispo
 
 Medir la actividad de las personas trabajadoras tiene implicancias legales (Código del Trabajo, derechos fundamentales, Ley 19.628 de protección de datos personales). Antes de usarlo: **informa con transparencia** qué se mide y qué no (el aviso de la extensión ayuda, pero no reemplaza la comunicación), incorpóralo al **Reglamento Interno de Orden, Higiene y Seguridad**, define quién accede a los datos y por cuánto tiempo, y **valídalo con un abogado laboral**. Esta sección no es asesoría legal.
 
+**Horario, horas extra y registro de asistencia.** El Código del Trabajo exige llevar un registro de asistencia y de las horas trabajadas, **incluidas las horas extraordinarias** (arts. 32 y 33), y la Dirección del Trabajo regula los sistemas electrónicos de registro de asistencia. Por eso la herramienta **registra siempre el inicio y el cierre de la jornada**, también fuera del horario, y solo deja de medir la actividad fuera del horario y en la colación. Aun así, **esta herramienta no es un sistema de registro de asistencia certificado ni autorizado por la Dirección del Trabajo**: los reportes de cumplimiento (atrasos, ausencias, horas fuera de horario) son informativos. Antes de usarlos para pagar horas extra, descontar atrasos o aplicar sanciones, **valida con un abogado laboral** cómo se complementan con el registro oficial de asistencia de la empresa, el pacto de horas extra y lo que diga el Reglamento Interno. No es asesoría legal.
+
 ## Solución de problemas
 
 | Síntoma | Qué revisar |
@@ -283,6 +334,11 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | No llegan correos de invitación | Con `INVITE_EMAIL_ENABLED=false` (o sin la línea) no se envían: el log de `onInvitationWritten` dice "Correo de invitación desactivado". Con `true`, revisa los secretos SMTP y los logs (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |
 | El portal no muestra capturas | Capturas desactivadas en Configuración, o el colaborador estaba fuera de Chrome / en una página que no es http(s) en el instante sorteado. |
 | Jornada "En jornada" que ya terminó | Sin señal hace > 30 min el portal la muestra "Fuera"; el cierre automático la cierra en la próxima hora. |
+| Guardar el horario falla con "permisos" (`permission-denied`) | Faltan las reglas nuevas: `npx firebase deploy --only firestore:rules --project prod` (ver [Despliegue de horarios](#despliegue-de-horarios-orden-obligatorio-extensión-020)). |
+| El popup no muestra el horario o sigue con el anterior | Versión < 0.2.0 (la 0.1.x ignora el horario), o aún no pasan los ~5 min de relectura: cerrar y volver a iniciar la jornada lo relee de inmediato. Un `config/schedule` inválido se ignora. |
+| "Fuera de horario: no se mide" con la jornada abierta | Es lo esperado fuera del horario, en días libres y feriados: la jornada queda registrada pero no se mide actividad. Revisa el horario de la persona (general o personalizado) en Colaboradores. |
+| No llegan los recordatorios | Recordatorios desactivados en Configuración → Horario; la persona no tiene sesión iniciada en la extensión; notificaciones de Chrome bloqueadas en el sistema (Windows: Configuración → Sistema → Notificaciones → Google Chrome); ya salió ese día; o solo tiene horario personalizado sin horario general. |
+| Equipo no muestra las columnas de horario | No hay `config/schedule` ni excepciones: créalo en Configuración → Horario. |
 
 ## Limitaciones conocidas
 
@@ -299,4 +355,15 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 - Sin conexión: la cola local guarda los bloques y hasta 20 capturas (se descartan las más antiguas).
 - El login de producción usa la cuenta del **perfil de Chrome** (sin selector de cuenta).
 - Rango personalizado del portal: máximo **93 días** por consulta (para acotar lecturas).
+- **Horarios**:
+  - **Sin historial de horarios**: el cumplimiento de días pasados se calcula con el horario **actual** (si cambias el horario, cambian los atrasos y ausencias de semanas anteriores). El detalle lo indica.
+  - **Sin jornadas que crucen la medianoche** (turnos de noche): cada día tiene entrada < salida el mismo día. Una sesión que cruza la medianoche cuenta en cada día por su parte.
+  - Una sola colación fija por día; sin horarios rotativos, por semanas alternas ni por fecha (salvo feriados, que son días libres completos: no hay medios días feriados).
+  - La excepción por persona reemplaza toda la semana; los feriados, la tolerancia y los recordatorios son siempre los generales. Con solo la excepción (sin horario general) no hay feriados ni recordatorios.
+  - Una persona **desactivada** sigue en Equipo y **sigue sumando ausencias** y horas sin conexión en los días del periodo después de desactivarla (no se guarda la fecha de desactivación).
+  - Los feriados de Chile vienen precargados solo para **2026–2027** (lista estática en `packages/shared/src/holidays-cl.ts`); desde 2028 hay que agregarlos a mano. Máximo 60 fechas.
+  - La zona horaria es siempre `America/Santiago` (sin horario por persona en otra zona).
+  - La pausa depende del reloj del computador: con la hora mal configurada se mide o se pausa a destiempo (la sesión queda con la hora del computador).
+  - Los datos de la 0.1.x no se reinterpretan: una 0.1.1 midió también fuera de horario y en la colación, y esos bloques se ven con su actividad aunque caigan fuera del horario.
+  - El seed siembra las jornadas con su propio horario, aunque cambies `config/schedule`.
 - Sin proyectos/tareas, pagos ni multiempresa (fuera del alcance del MVP).

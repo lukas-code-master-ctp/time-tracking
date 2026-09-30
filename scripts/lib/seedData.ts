@@ -1,14 +1,25 @@
 /**
  * Pure generator of realistic demo data for `npm run seed` (no I/O).
  *
- * Working hours in America/Santiago, Monday to Friday, with a lunch break
- * (two sessions per day), variable activity per person and per block, typical
- * Google Workspace sites, time outside Chrome, a forgotten "close" (auto
- * close) and one day off. Today: one open session right now, one closed
- * morning session, one person without data.
+ * Working hours (spec 2026-09-30-horarios): the general schedule
+ * {@link SEED_SCHEDULE} (Monday–Thursday 09:00–18:30 with lunch 13:00–14:00,
+ * Friday 09:00–14:00, weekend off, Chilean holidays 2026–2027, tolerance 5,
+ * reminders on) and one exception (Carla: half day 09:00–13:00, Monday to
+ * Friday). The sessions follow each person's schedule in America/Santiago
+ * (Beto closes the work day for the lunch, Ana keeps it open through it),
+ * with variable activity per person and per block, typical Google Workspace
+ * sites and time outside Chrome. Compliance cases: a late arrival (Beto, the
+ * most recent past workday), an early leave (Ana, the second most recent),
+ * overtime (Ana, the most recent), an absence (Carla, the second most recent)
+ * and a forgotten "close" after hours on Wednesdays (Beto, auto close). Like
+ * extension 0.2.0, activity blocks only measure time inside the working
+ * windows: nothing in the lunch nor outside the schedule (a block that is all
+ * lunch or off has no document), and screenshots are only taken in working
+ * time. Holidays and days off have no sessions. Today: one open session right
+ * now (Ana), one closed morning session (Beto), one person without data.
  *
  * Web meetings ("En reunión", spec 2026-09-30): a 30-minute daily at 09:30
- * every weekday, a weekly 1-hour meeting per person (15:00–16:00) and the
+ * every weekday, a weekly 1-hour meeting per person ({@link WEEKLY_MEETING}) and the
  * random video calls (task "meet") carry `meetingSeconds`. The oldest days
  * (`LEGACY_DAYS`) are written like extension 0.1.1: without `meetingSeconds`
  * (the portal reads it as 0). Deterministic for a given
@@ -16,11 +27,18 @@
  * day produces the same documents.
  */
 import {
+  CHILE_HOLIDAY_DATES,
+  DEFAULT_TOLERANCE_MINUTES,
   SLOT_MS,
+  planForDay,
   slotStartOf,
   type ActivitySlot,
+  type DaySchedule,
+  type Interval,
+  type ScheduleConfig,
   type Session,
   type SessionEndReason,
+  type WeekSchedule,
 } from '@timetracking/shared';
 import { addDays, startOfDay, weekdayIndex, zonedDate, zonedParts } from '../../portal/src/lib/dates.ts';
 
@@ -32,9 +50,47 @@ export const LEGACY_DAYS = 6;
 /** Daily stand-up: 09:30–10:00 (Santiago), every weekday. */
 export const DAILY = { hour: 9, minute: 30, minutes: 30 } as const;
 
-/** Weekly 1-hour meeting, 15:00–16:00 (Santiago), on this weekday (0 = Monday) per person. */
-export const WEEKLY_MEETING: Record<string, number> = { ana: 0, beto: 2, carla: 3 };
-export const WEEKLY_MEETING_HOUR = 15;
+/** Weekly 1-hour meeting per person: weekday (0 = Monday) and hour (Santiago), inside their schedule. */
+export const WEEKLY_MEETING: Readonly<Record<string, { weekday: number; hour: number }>> = {
+  ana: { weekday: 0, hour: 15 },
+  beto: { weekday: 2, hour: 15 },
+  carla: { weekday: 3, hour: 11 }, // half day: until 13:00
+};
+
+// ---------- working hours ----------
+
+const LJ: DaySchedule = { start: '09:00', end: '18:30', lunchStart: '13:00', lunchEnd: '14:00' };
+
+/** General week of `config/schedule` (the same values the portal suggests in "Crear horario"). */
+export const SEED_WEEK: WeekSchedule = {
+  mon: LJ,
+  tue: LJ,
+  wed: LJ,
+  thu: LJ,
+  fri: { start: '09:00', end: '14:00', lunchStart: null, lunchEnd: null },
+  sat: null,
+  sun: null,
+};
+
+/** `config/schedule` without `updatedAt` / `updatedBy` (the seed adds them). */
+export const SEED_SCHEDULE: Omit<ScheduleConfig, 'updatedAt' | 'updatedBy'> = {
+  week: SEED_WEEK,
+  holidays: [...CHILE_HOLIDAY_DATES],
+  toleranceMinutes: DEFAULT_TOLERANCE_MINUTES,
+  remindersEnabled: true,
+};
+
+const HALF_DAY: DaySchedule = { start: '09:00', end: '13:00', lunchStart: null, lunchEnd: null };
+
+/** Per-person exceptions (`schedules/{uid}`): Carla works half day, Monday to Friday. */
+export const SEED_EXCEPTIONS: Readonly<Record<string, WeekSchedule>> = {
+  carla: { mon: HALF_DAY, tue: HALF_DAY, wed: HALF_DAY, thu: HALF_DAY, fri: HALF_DAY, sat: null, sun: null },
+};
+
+/** Effective week of a person (the exception replaces only the week; holidays are the general ones). */
+export function weekOf(personKey: string): WeekSchedule {
+  return SEED_EXCEPTIONS[personKey] ?? SEED_WEEK;
+}
 
 export type Task = 'mail' | 'docs' | 'sheets' | 'drive' | 'calendar' | 'meet' | 'slides' | 'chat' | 'web' | 'whatsapp' | 'outside';
 
@@ -211,35 +267,77 @@ interface Span {
   endReason: SessionEndReason | null;
 }
 
-interface Window {
-  start: number;
-  end: number;
-}
-
 /** Scheduled meetings of a person on `date` (the daily and, if it is that weekday, the 1-hour meeting). */
-export function meetingWindows(person: SeedPerson, date: string): Window[] {
+export function meetingWindows(person: SeedPerson, date: string): Interval[] {
   const daily = atLocal(date, DAILY.hour, DAILY.minute);
-  const out: Window[] = [{ start: daily, end: daily + DAILY.minutes * MIN }];
-  if (WEEKLY_MEETING[person.key] === weekdayIndex(date)) {
-    const start = atLocal(date, WEEKLY_MEETING_HOUR);
+  const out: Interval[] = [{ start: daily, end: daily + DAILY.minutes * MIN }];
+  const weekly = WEEKLY_MEETING[person.key];
+  if (weekly && weekly.weekday === weekdayIndex(date)) {
+    const start = atLocal(date, weekly.hour);
     out.push({ start, end: start + 60 * MIN });
   }
   return out;
 }
 
-/** Sessions (lunch split) of a past weekday. */
-function pastDay(person: SeedPerson, date: string, r: () => number): Span[] {
-  const inM = atLocal(date, 8, Math.round(between(r, 20, 70)));
-  const lunch = atLocal(date, 12, Math.round(between(r, 45, 75)));
-  const back = lunch + Math.round(between(r, 45, 70)) * MIN;
-  const out = atLocal(date, 17, Math.round(between(r, 25, 95)));
-  const spans: Span[] = [
-    { start: inM, end: lunch, lastHeartbeatAt: lunch, endReason: 'manual' },
-    { start: back, end: out, lastHeartbeatAt: out, endReason: 'manual' },
-  ];
-  // Beto forgets to close on Wednesdays: the server closes it at the last heartbeat.
-  if (person.key === 'beto' && weekdayIndex(date) === 2) spans[1]!.endReason = 'auto';
-  return spans;
+/** What happens on a past workday (see the header). */
+export type DayKind = 'normal' | 'late' | 'earlyLeave' | 'overtime' | 'absent';
+
+/** Past workdays of a person (the 7 days before today, per their schedule and the holidays), oldest first. */
+export function pastWorkdays(personKey: string, today: string): string[] {
+  const out: string[] = [];
+  for (let back = 7; back >= 1; back--) {
+    const date = addDays(today, -back);
+    if (planForDay(date, weekOf(personKey), SEED_SCHEDULE.holidays).work.length > 0) out.push(date);
+  }
+  return out;
+}
+
+/** Kind of each past workday: the most recent and the second most recent carry the compliance cases. */
+export function dayKinds(personKey: string, workdays: readonly string[]): Map<string, DayKind> {
+  const out = new Map<string, DayKind>(workdays.map((d) => [d, 'normal']));
+  const set = (d: string | undefined, k: DayKind): void => {
+    if (d) out.set(d, k);
+  };
+  const last = workdays[workdays.length - 1];
+  const second = workdays[workdays.length - 2];
+  if (personKey === 'beto') set(last, 'late');
+  if (personKey === 'ana') {
+    set(last, 'overtime');
+    set(second, 'earlyLeave');
+  }
+  if (personKey === 'carla') set(second, 'absent');
+  return out;
+}
+
+/**
+ * Sessions of a past workday, following the person's schedule: arrival from
+ * 12 min early to 4 min late (tolerance 5), exit up to 12 min after the end.
+ * Beto and Carla close the work day for the lunch (two sessions); Ana keeps
+ * it open through the lunch (one session; nothing is measured in the lunch).
+ */
+function pastDay(person: SeedPerson, date: string, r: () => number, kind: DayKind): Span[] {
+  if (kind === 'absent') return [];
+  const plan = planForDay(date, weekOf(person.key), SEED_SCHEDULE.holidays);
+  if (!plan.span) return [];
+  const minutes = (lo: number, hi: number): number => Math.round(between(r, lo, hi)) * MIN;
+  const inM = plan.span.start + (kind === 'late' ? minutes(18, 22) : minutes(-12, 4));
+  let out = plan.span.end + minutes(0, 12);
+  if (kind === 'earlyLeave') out = plan.span.end - minutes(60, 75);
+  if (kind === 'overtime') out = plan.span.end + minutes(40, 50);
+  // Beto forgets to close on Wednesdays: Chrome stays open after hours and the
+  // server closes the work day at the last heartbeat (time outside the schedule).
+  const forgot = person.key === 'beto' && weekdayIndex(date) === 2 && kind === 'normal';
+  if (forgot) out = plan.span.end + minutes(35, 50);
+  const endReason: SessionEndReason = forgot ? 'auto' : 'manual';
+  if (plan.lunch && person.key !== 'ana' && out > plan.lunch.end) {
+    const lunch = plan.lunch.start + minutes(0, 6);
+    const back = plan.lunch.end + minutes(-6, 3);
+    return [
+      { start: inM, end: lunch, lastHeartbeatAt: lunch, endReason: 'manual' },
+      { start: back, end: out, lastHeartbeatAt: out, endReason },
+    ];
+  }
+  return [{ start: inM, end: out, lastHeartbeatAt: out, endReason }];
 }
 
 /** Today's sessions (relative to `now`). */
@@ -251,7 +349,7 @@ function todaySpans(person: SeedPerson, date: string, now: number): Span[] {
     return [{ start, end: hb, lastHeartbeatAt: hb, endReason: null }];
   }
   if (person.key === 'beto') {
-    const start = atLocal(date, 9, 5);
+    const start = atLocal(date, 9, 3);
     const end = Math.min(atLocal(date, 12, 40), now - 20 * MIN);
     return end - start >= 30 * MIN ? [{ start, end, lastHeartbeatAt: end, endReason: 'manual' }] : [];
   }
@@ -264,7 +362,8 @@ function slotsOf(
   sessionId: string,
   span: Span,
   r: () => number,
-  meetings: readonly Window[],
+  meetings: readonly Interval[],
+  work: readonly Interval[],
   legacy: boolean,
 ): { slots: ActivitySlot[]; tasks: Task[] } {
   const slots: ActivitySlot[] = [];
@@ -274,7 +373,9 @@ function slotsOf(
   for (let s = slotStartOf(span.start); s < span.end; s += SLOT_MS) {
     const from = Math.max(span.start, s);
     const to = Math.min(span.end, s + SLOT_MS);
-    let tracked = Math.floor((to - from) / 1000);
+    // Extension 0.2.0: only the seconds inside the working windows are measured
+    // (lunch and outside the schedule are a pause); a block without any has no document.
+    let tracked = Math.floor(overlapMs(from, to, work) / 1000);
     if (tracked <= 0) continue;
     // Now and then a gap without data (computer asleep, browser closed).
     if (r() < 0.03) tracked = Math.floor(tracked * between(r, 0.2, 0.6));
@@ -332,6 +433,12 @@ function slotsOf(
   return { slots, tasks };
 }
 
+function overlapMs(from: number, to: number, windows: readonly Interval[]): number {
+  let total = 0;
+  for (const w of windows) total += Math.max(0, Math.min(to, w.end) - Math.max(from, w.start));
+  return total;
+}
+
 /**
  * Sessions, activity and screenshot plans for the 7 days before today plus
  * today. `uids` maps person key → Firebase uid.
@@ -342,12 +449,14 @@ export function buildDataset(now: number, uids: Record<string, string>): SeedDat
   for (const person of PEOPLE) {
     const uid = uids[person.key];
     if (!uid) throw new Error(`falta el uid de ${person.key}`);
+    const kinds = dayKinds(person.key, pastWorkdays(person.key, today));
     for (let back = 7; back >= 0; back--) {
       const date = addDays(today, -back);
       const r = rng(`${person.key}:${date}`);
-      if (back > 0 && weekdayIndex(date) >= 5) continue; // weekend
-      if (person.key === 'carla' && back === 2) continue; // day off
-      const spans = back === 0 ? todaySpans(person, date, now) : pastDay(person, date, r);
+      const kind = kinds.get(date);
+      if (back > 0 && !kind) continue; // weekend, holiday or day off in their schedule
+      const spans = back === 0 ? todaySpans(person, date, now) : pastDay(person, date, r, kind!);
+      const work = planForDay(date, weekOf(person.key), SEED_SCHEDULE.holidays).work;
       const dayShots: SeedShot[] = [];
       spans.forEach((span, i) => {
         const sessionId = `seed-${person.key}-${date}-${i + 1}`;
@@ -355,14 +464,17 @@ export function buildDataset(now: number, uids: Record<string, string>): SeedDat
           id: sessionId,
           data: { uid, startedAt: span.start, endedAt: span.endReason ? span.end : null, endReason: span.endReason, lastHeartbeatAt: span.lastHeartbeatAt },
         });
-        const { slots, tasks } = slotsOf(person, uid, sessionId, span, r, meetingWindows(person, date), back >= LEGACY_DAYS);
+        const { slots, tasks } = slotsOf(person, uid, sessionId, span, r, meetingWindows(person, date), work, back >= LEGACY_DAYS);
         out.activity.push(...slots);
         // Screenshots only on the two most recent days with data (retention demo, few files).
         if (back <= 1 || (back <= 3 && person.key === 'carla')) {
           slots.forEach((slot, j) => {
             if (r() > 0.18 || tasks[j] === 'outside') return; // outside Chrome → no capture
-            const lo = Math.max(slot.slotStart, span.start);
-            const hi = Math.min(slot.slotStart + SLOT_MS - 30_000, span.end, now - 60_000);
+            // Only in working time: the extension does not capture in the lunch nor outside the schedule.
+            const w = work.find((x) => x.start < slot.slotStart + SLOT_MS && x.end > slot.slotStart);
+            if (!w) return;
+            const lo = Math.max(slot.slotStart, span.start, w.start);
+            const hi = Math.min(slot.slotStart + SLOT_MS - 30_000, span.end, w.end - 1_000, now - 60_000);
             if (hi <= lo) return;
             const takenAt = Math.floor(between(r, lo, hi));
             dayShots.push({ id: `${uid}_${slot.slotStart}`, uid, sessionId, takenAt, task: tasks[j]! });

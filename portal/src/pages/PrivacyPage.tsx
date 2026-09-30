@@ -60,6 +60,14 @@ export function PrivacyPage() {
             extensión indica qué se está midiendo. Antes del primer uso, la extensión te muestra un aviso con este mismo
             contenido y te pide aceptarlo.
           </p>
+          <p>
+            <strong>Horario laboral y colación:</strong> si tu empresa configuró un horario, la extensión{' '}
+            <strong>no mide nada fuera de tu horario ni durante la colación</strong>, aunque tu jornada siga iniciada: ni
+            actividad, ni sitios, ni reuniones, ni capturas. En ese tiempo solo queda registrado que la jornada estaba
+            abierta: el <strong>inicio y el cierre de la jornada se guardan siempre</strong>, también fuera del horario,
+            como registro de asistencia (por ejemplo, para las horas extra). La ventana de la extensión te muestra el
+            horario de hoy y si en ese momento estás “En horario”, en “Colación” o “Fuera de horario”.
+          </p>
         </section>
 
         <section className="card" aria-labelledby="pp-que">
@@ -72,7 +80,16 @@ export function PrivacyPage() {
             </li>
             <li>
               <strong>Inicio y cierre de la jornada</strong>, su duración y una señal periódica de que la extensión
-              sigue funcionando (para cerrar jornadas que quedaron abiertas).
+              sigue funcionando (para cerrar jornadas que quedaron abiertas). Se guardan siempre, también fuera del
+              horario laboral.
+            </li>
+            <li>
+              <strong>Tu horario laboral asignado, si tu empresa lo configura:</strong> el horario general de la empresa
+              (entrada, salida y colación de cada día, feriados, margen de tolerancia y si hay recordatorios) y, si
+              tienes un horario distinto al general, tu horario personalizado. Los define un administrador. Con ese
+              horario y el inicio y cierre de tus jornadas, el portal calcula el cumplimiento: horas esperadas, tiempo
+              en horario y fuera de horario, atrasos, salidas anticipadas y ausencias. La extensión guarda una copia del
+              horario en tu computador para aplicarlo sin conexión.
             </li>
             <li>
               <strong>Nivel de actividad por bloques de 10 minutos:</strong> en Chrome, solo si hubo uso de teclado o
@@ -104,6 +121,12 @@ export function PrivacyPage() {
               difumina <strong>en tu computador antes de enviarse</strong>.
             </li>
           </ul>
+          <p>
+            <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte una notificación de
+            Chrome para que inicies tu jornada a la hora de entrada o la cierres a la hora de salida. Son{' '}
+            <strong>notificaciones locales</strong>, generadas en tu computador: para mostrarlas no se envía ningún dato,
+            y solo se guarda en tu computador que ya se mostraron ese día.
+          </p>
         </section>
 
         <section className="card" aria-labelledby="pp-no">
@@ -130,14 +153,19 @@ export function PrivacyPage() {
             <li>
               <strong>Nada</strong> mientras tu jornada está cerrada.
             </li>
+            <li>
+              <strong>Nada fuera de tu horario ni en la colación</strong>, si tu empresa configuró un horario: ni
+              actividad, ni sitios, ni reuniones, ni capturas (solo el inicio y el cierre de la jornada).
+            </li>
           </ul>
         </section>
 
         <section className="card" aria-labelledby="pp-uso">
           <h2 id="pp-uso">Para qué se usan</h2>
           <p>
-            Solo para generar <strong>reportes internos de jornada y actividad</strong> que revisan los administradores
-            de la empresa. Los datos <strong>no se venden</strong>, <strong>no se comparten con terceros</strong> y{' '}
+            Solo para generar <strong>reportes internos de jornada y actividad</strong> y, si hay horario configurado, de{' '}
+            <strong>cumplimiento del horario</strong> (asistencia, atrasos y horas fuera de horario), que revisan los
+            administradores de la empresa. Los datos <strong>no se venden</strong>, <strong>no se comparten con terceros</strong> y{' '}
             <strong>no se usan para publicidad</strong> ni para evaluar créditos o solvencia.
           </p>
         </section>
@@ -162,11 +190,12 @@ export function PrivacyPage() {
           <h2 id="pp-acceso">Quién accede</h2>
           <ul className="privacy-list">
             <li>
-              <strong>Tú:</strong> ves tus horas y tu actividad del día en la extensión.
+              <strong>Tú:</strong> ves tus horas y tu actividad del día, y tu horario de hoy, en la extensión.
             </li>
             <li>
               <strong>Los administradores del portal</strong> (personas de Impulse AI o Compra tu Parcela designadas como
-              administradoras): ven las jornadas, la actividad, los sitios y las capturas de todo el equipo.
+              administradoras): ven las jornadas, la actividad, los sitios, las capturas, los horarios y el cumplimiento
+              del horario de todo el equipo, y son quienes definen los horarios.
             </li>
           </ul>
           <p>
@@ -182,6 +211,10 @@ export function PrivacyPage() {
             <li>
               <strong>Capturas:</strong> se borran automáticamente al cumplirse el plazo que configura el administrador
               ({DEFAULT_SCREENSHOT_RETENTION_DAYS} días por defecto).
+            </li>
+            <li>
+              <strong>Horarios:</strong> el horario vigente se reemplaza cuando un administrador lo cambia (no se guarda
+              un historial de horarios anteriores) y tu horario personalizado se borra al volver al horario general.
             </li>
             <li>
               <strong>Jornadas, actividad y sitios:</strong> se conservan mientras dure la relación laboral o por el

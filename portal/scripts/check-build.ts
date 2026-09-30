@@ -22,7 +22,7 @@ const PRIVACY_HTML = join(DIST, 'privacidad.html');
 if (!existsSync(PRIVACY_HTML)) problems.push('falta dist/privacidad.html (prerender de la política de privacidad)');
 else {
   const privacy = readFileSync(PRIVACY_HTML, 'utf8');
-  for (const s of ['<title>Política de privacidad', '<h1>Política de privacidad</h1>', 'Qué NO se recoge', 'Reuniones web:', 'El audio ni el video', 'mailto:', '<script type="module"'])
+  for (const s of ['<title>Política de privacidad', '<h1>Política de privacidad</h1>', 'Qué NO se recoge', 'Reuniones web:', 'El audio ni el video', 'Horario laboral y colación:', 'Tu horario laboral asignado', 'mailto:', '<script type="module"'])
     if (!privacy.includes(s)) problems.push(`dist/privacidad.html no contiene "${s}"`);
 }
 // Both hostings must serve /privacidad with that file (rewrites apply in order).

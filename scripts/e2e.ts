@@ -6,27 +6,49 @@
  *   inside firebase emulators:exec --only auth,firestore,functions,storage)
  *
  * 1. Admin, in the portal (UI): dev login as the bootstrap admin → turns on
- *    blurred screenshots in Configuración → invites the collaborator in
- *    Invitaciones (placeholder install link warning visible).
+ *    blurred screenshots in Configuración → creates the working hours in
+ *    Configuración → Horario from the suggested values, with today's weekday
+ *    as a workday from an hour ago to 23:59 without lunch (so "now" is in
+ *    working hours; reminders off, today's holiday removed if it is one) →
+ *    invites the collaborator in Invitaciones (placeholder install link
+ *    warning visible).
  * 2. Collaborator, in the extension (Chromium with dist-dev): dev login with
  *    the invited e-mail → joinOrg (member, invitation accepted) → notice →
- *    starts the work day → real keyboard/mouse activity on a local page for
- *    ~70 s → forced pulse + forced capture → closes the work day → queue empty.
+ *    starts the work day → the popup says "En horario hasta 23:59" → real
+ *    keyboard/mouse activity on a local page for ~70 s → forced pulse +
+ *    forced capture → closes the work day → queue empty.
  * 3. A web meeting cannot be joined here (no real Meet/Zoom room), so two
  *    blocks with `meetingSeconds` (a 20-min daily, as extension 0.1.2 writes
- *    them) are seeded for the collaborator right before the measured session.
- * 4. Admin, in the portal: the collaborator appears with hours > 0 and the
- *    seeded time in the "En reunión" column; the detail shows the "En reunión"
- *    card, the meeting blocks (color, "—") and the measured block with the
- *    local site, and the screenshot (thumbnail + lightbox "Difuminada").
+ *    them) are seeded for the collaborator right before the measured session
+ *    (inside the schedule, after the entry).
+ * 4. Admin, in the portal: the collaborator appears with hours > 0, the
+ *    seeded time in the "En reunión" column and the schedule columns
+ *    (Esperadas, En horario, Fuera de horario, Atrasos, Sin conexión en
+ *    horario, Ausencias) with the same figures as the shared compliance
+ *    functions; the detail shows the day's schedule and compliance cards,
+ *    the "En reunión" card, the meeting blocks (color, "—") and the measured
+ *    block with the local site, and the screenshot (thumbnail + lightbox
+ *    "Difuminada").
  */
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
 import type { ViteDevServer } from 'vite';
-import { CONSENT_VERSION, SLOT_MS, activityDocId, formatDuration, slotStartOf } from '@timetracking/shared';
-import { startOfDay, zonedDate } from '../portal/src/lib/dates.ts';
+import {
+  CHILE_HOLIDAY_DATES,
+  CONSENT_VERSION,
+  SLOT_MS,
+  WEEKDAY_NAMES,
+  activityDocId,
+  complianceForRange,
+  formatDuration,
+  readScheduleConfig,
+  slotStartOf,
+  weekdayOfDateKey,
+  type Session,
+} from '@timetracking/shared';
+import { formatTime, startOfDay, zonedDate, zonedParts } from '../portal/src/lib/dates.ts';
 import { EXTENSION_DEV_DIR, launchExtension, sendFrom, startPortal, type ExtensionBrowser } from './lib/browser.ts';
 import { chromiumPath } from './lib/chromium.ts';
 import {
@@ -109,6 +131,47 @@ async function main(): Promise<void> {
     }
     ok('Configuración: capturas difuminadas activadas desde el portal.');
 
+    // Working hours that include "now": today's weekday from an hour ago (or 00:00) to 23:59, without lunch.
+    const scheduleAt = Date.now();
+    const wall = zonedParts(scheduleAt);
+    if (wall.hour * 60 + wall.minute >= 23 * 60 + 50) {
+      throw new Error('faltan menos de 10 minutos para la medianoche (hora de Chile): el horario de hoy no alcanzaría; vuelve a ejecutar más tarde.');
+    }
+    const today = zonedDate(scheduleAt);
+    const entry = zonedDate(scheduleAt - 3_600_000) === today ? formatTime(scheduleAt - 3_600_000) : '00:00';
+    const weekday = weekdayOfDateKey(today);
+    const dayName = WEEKDAY_NAMES[weekday];
+    const scheduleCard = admin.getByRole('region', { name: 'Horario', exact: true });
+    await scheduleCard.getByText('Sin horario configurado').waitFor();
+    await scheduleCard.getByRole('button', { name: 'Crear horario' }).click();
+    const dayRow = scheduleCard.getByTestId(`day-${weekday}`);
+    const workday = dayRow.locator('.week-day-name input[type="checkbox"]');
+    if (!(await workday.isChecked())) await workday.check();
+    await dayRow.getByLabel(/^Entrada/).fill(entry);
+    await dayRow.getByLabel(/^Salida/).fill('23:59');
+    const lunch = dayRow.locator('.lunch-toggle input[type="checkbox"]');
+    if (await lunch.isChecked()) await lunch.uncheck();
+    // Deterministic run: no notification while the collaborator logs in after the entry.
+    await scheduleCard.getByRole('checkbox', { name: /^Recordatorios/ }).uncheck();
+    const holidayIndex = CHILE_HOLIDAY_DATES.indexOf(today);
+    if (holidayIndex !== -1) {
+      await scheduleCard.getByRole('list', { name: 'Feriados' }).getByRole('listitem').nth(holidayIndex).getByRole('button', { name: /^Quitar feriado/ }).click();
+    }
+    await scheduleCard.getByRole('button', { name: 'Guardar y activar horario' }).click();
+    await scheduleCard.getByText('Horario creado.', { exact: false }).waitFor();
+    const schedule = readScheduleConfig(await until('config/schedule', () => firestoreDoc('config/schedule')));
+    const expectedDay = JSON.stringify({ start: entry, end: '23:59', lunchStart: null, lunchEnd: null });
+    if (
+      !schedule ||
+      JSON.stringify(schedule.week[weekday]) !== expectedDay ||
+      schedule.holidays.includes(today) ||
+      schedule.remindersEnabled !== false ||
+      schedule.updatedBy !== adminUid
+    ) {
+      throw new Error(`config/schedule: ${JSON.stringify(schedule)}`);
+    }
+    ok(`Horario creado desde el portal: ${dayName.toLowerCase()} ${entry}–23:59 sin colación (incluye ahora), ${schedule.holidays.length} feriados, tolerancia ${schedule.toleranceMinutes} min.`);
+
     await navTo(admin, 'Invitaciones');
     await admin.getByTestId('install-url-warning').waitFor();
     await admin.getByLabel('Correo de la persona').fill(COLLAB);
@@ -146,7 +209,11 @@ async function main(): Promise<void> {
     await popup.getByRole('button', { name: 'Iniciar jornada' }).click();
     await popup.getByRole('button', { name: 'Cerrar jornada' }).waitFor({ timeout: 15_000 });
     const startedAt = Date.now();
-    ok('Jornada iniciada.');
+    // session.start reads config/schedule; the popup refreshes every 2 s.
+    await popup.getByText('En horario hasta 23:59', { exact: true }).waitFor({ timeout: 15_000 });
+    const todayLine = ((await popup.getByText(/^Hoy \(/).textContent()) ?? '').trim();
+    if (todayLine !== `Hoy (${dayName.toLowerCase()}): ${entry}–23:59`) throw new Error(`horario de hoy en el popup: "${todayLine}"`);
+    ok(`Jornada iniciada; el popup dice "En horario hasta 23:59" y "${todayLine}".`);
 
     await work.bringToFront();
     const notes = work.getByLabel('Notas');
@@ -257,10 +324,69 @@ async function main(): Promise<void> {
         `sin contar la reunión) y ${meetingCell} en reunión.`,
     );
 
+    // Schedule columns: the same figures as the shared compliance functions with the saved schedule.
+    const ownSessions: Session[] = (await firestoreDocs('sessions'))
+      .filter((s) => s.uid === uid)
+      .map((s) => ({
+        uid,
+        startedAt: Number(s.startedAt),
+        endedAt: s.endedAt === null ? null : Number(s.endedAt),
+        endReason: (s.endReason ?? null) as Session['endReason'],
+        lastHeartbeatAt: Number(s.lastHeartbeatAt),
+      }));
+    const c = complianceForRange(today, today, ownSessions, schedule.week, schedule.holidays, schedule.toleranceMinutes, Date.now()).totals;
+    // Entry an hour ago, first connection (the seeded meeting) ~30 min ago: late; everything after the entry.
+    if (c.lateCount !== 1 || c.outsideScheduleSeconds !== 0 || c.inScheduleSeconds < 20 * 60) {
+      throw new Error(`cumplimiento esperado inesperado: ${JSON.stringify(c)}`);
+    }
+    const col = (h: string): number => {
+      const i = headers.indexOf(h);
+      if (i === -1) throw new Error(`la tabla del equipo no tiene la columna "${h}": ${headers.join(' | ')}`);
+      return i;
+    };
+    const cell = async (h: string): Promise<string> => ((await row.locator('td').nth(col(h)).textContent()) ?? '').trim();
+    const expected = {
+      'En horario': formatDuration(c.inScheduleSeconds),
+      'Fuera de horario': formatDuration(c.outsideScheduleSeconds),
+      Atrasos: `${c.lateCount}${formatDuration(c.lateSeconds)}`,
+      Ausencias: '0',
+    };
+    for (const [h, want] of Object.entries(expected)) {
+      const got = await cell(h);
+      if (got !== want) throw new Error(`columna "${h}": "${got}" (esperado "${want}")`);
+    }
+    // Expected and offline hours grow with the clock: the table computed them when it loaded (±2 min).
+    const minutesOf = (t: string): number => {
+      const m = /^(?:(\d+) h)? ?(?:(\d+) min)?/.exec(t);
+      return Number(m?.[1] ?? 0) * 60 + Number(m?.[2] ?? 0);
+    };
+    const expectedCell = await cell('Esperadas');
+    const offlineCell = await cell('Sin conexión en horario');
+    if (Math.abs(minutesOf(expectedCell) - Math.floor(c.expectedSoFarSeconds / 60)) > 2 || !expectedCell.includes(`de ${formatDuration(c.expectedSeconds)}`)) {
+      throw new Error(`columna "Esperadas": "${expectedCell}" (esperado ~${formatDuration(c.expectedSoFarSeconds)} de ${formatDuration(c.expectedSeconds)})`);
+    }
+    if (Math.abs(minutesOf(offlineCell) - Math.floor(c.offlineSeconds / 60)) > 2) {
+      throw new Error(`columna "Sin conexión en horario": "${offlineCell}" (esperado ~${formatDuration(c.offlineSeconds)})`);
+    }
+    ok(
+      `Equipo con horario: esperadas ${formatDuration(c.expectedSoFarSeconds)} de ${formatDuration(c.expectedSeconds)}, en horario ${expected['En horario']}, fuera de horario ${expected['Fuera de horario']}, ` +
+        `1 atraso de ${formatDuration(c.lateSeconds)}, sin conexión ${offlineCell}, 0 ausencias (igual que las funciones de shared).`,
+    );
+
     await row.getByRole('link').click();
     await admin.getByRole('heading', { name: COLLAB_NAME }).waitFor();
     await admin.getByTestId('timeline-cell').first().waitFor();
-    const stats = (await admin.getByRole('region', { name: 'Resumen del día' }).textContent()) ?? '';
+    const daySchedule = ((await admin.getByTestId('day-schedule').textContent()) ?? '').trim();
+    if (!daySchedule.includes('Horario general') || !daySchedule.includes('En curso')) throw new Error(`horario del día: "${daySchedule}"`);
+    const cards = (await admin.getByRole('region', { name: 'Cumplimiento del día' }).textContent()) ?? '';
+    for (const part of [`En horario${formatDuration(c.inScheduleSeconds)}`, `Atraso${formatDuration(c.lateSeconds)}`, 'Salida anticipada', 'Sin conexión en horario']) {
+      if (!cards.includes(part)) throw new Error(`tarjetas de cumplimiento sin "${part}": ${cards}`);
+    }
+    // Entry mark (and the exit one at 23:59) on the timeline.
+    const marks = await admin.locator('.cell .sch-mark').count();
+    if (marks < 1) throw new Error('la línea de tiempo no marca la entrada');
+    ok(`Detalle con horario: horario general del día y "En curso", tarjetas de cumplimiento (en horario ${formatDuration(c.inScheduleSeconds)}, atraso ${formatDuration(c.lateSeconds)}), ${marks} marca(s) de entrada/salida.`);
+    const stats =(await admin.getByRole('region', { name: 'Resumen del día' }).textContent()) ?? '';
     if (!stats.includes(`En reunión${meetingTotal}`)) throw new Error(`tarjeta "En reunión": ${stats}`);
     const meetingCells = admin.locator('.cell.lvl-meeting');
     if ((await meetingCells.count()) !== meetingBlocks.length) throw new Error(`bloques "En reunión": ${await meetingCells.count()}`);
@@ -281,6 +407,8 @@ async function main(): Promise<void> {
     if (!domainsCard.includes('127.0.0.1')) throw new Error(`sitios más usados: ${domainsCard}`);
     // As many thumbnails as captures (two when the work day crossed a 10-min block).
     const thumbs = admin.getByTestId('screenshot-thumb');
+    // Thumbnails load when they enter the viewport (the day's schedule makes the page longer).
+    await admin.getByRole('heading', { name: 'Capturas de pantalla' }).scrollIntoViewIfNeeded();
     await thumbs.first().waitFor({ timeout: 15_000 });
     await until(`${shots.length} miniatura(s)`, async () => ((await thumbs.count()) === shots.length ? true : null));
     await until('miniaturas cargadas', async () =>
@@ -297,7 +425,7 @@ async function main(): Promise<void> {
     ok(`Detalle: ${withData} bloque(s) con datos, 127.0.0.1 entre los sitios, ${shots.length} captura(s) visible(s) (miniatura + ampliada, "Difuminada").`);
 
     if (errors.length > 0) throw new Error(`errores en las páginas:\n${errors.join('\n')}`);
-    console.log('E2E INTEGRADO OK: admin invita → colaborador mide en la extensión → admin ve horas, actividad y captura.');
+    console.log('E2E INTEGRADO OK: admin configura horario e invita → colaborador mide en horario en la extensión → admin ve horas, cumplimiento, actividad y captura.');
   } finally {
     // Close everything even if one step fails (no Chromium / Vite left behind on Windows).
     const closers: [string, () => Promise<unknown> | undefined][] = [

@@ -83,6 +83,15 @@ describe('/privacidad', () => {
     expect(yes).toHaveTextContent('si alguna está reproduciendo sonido');
     expect(yes).toHaveTextContent('no sube ni baja tu % de actividad');
     expect(yes).toHaveTextContent('aplicaciones de escritorio (fuera de Chrome) no se detectan');
+    // Working hours (extension 0.2.0), same terms as extension/consent.html.
+    const when = screen.getByRole('region', { name: 'Cuándo se recogen datos' });
+    expect(when).toHaveTextContent('no mide nada fuera de tu horario ni durante la colación');
+    expect(when).toHaveTextContent('inicio y el cierre de la jornada se guardan siempre');
+    expect(no).toHaveTextContent('Nada fuera de tu horario ni en la colación');
+    expect(within(yes).getByText('Tu horario laboral asignado, si tu empresa lo configura:')).toBeInTheDocument();
+    expect(yes).toHaveTextContent('horario personalizado');
+    expect(yes).toHaveTextContent('notificaciones locales');
+    expect(screen.getByRole('region', { name: 'Cuánto tiempo se conservan' })).toHaveTextContent('no se guarda un historial de horarios');
   });
 
   it('the login page links to the privacy policy', async () => {

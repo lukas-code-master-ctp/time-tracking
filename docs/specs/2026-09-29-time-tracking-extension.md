@@ -4,6 +4,8 @@ Fecha: 2026-09-29 · Estado: en construcción (MVP, uso interno ~30 personas)
 
 > **Actualización:** el dominio permitido único pasó a ser una **lista de dominios** (`allowedDomains`, hoy `impulseai.cl` y `compratuparcela.cl`) y el admin inicial es `lukas@impulseai.cl`. Ver [spec multi-dominio](2026-09-29-multi-dominio.md). Las secciones afectadas lo indican.
 
+> **Actualización (horarios, 2026-09-30, extensión 0.2.0):** la admin puede configurar un **horario laboral** general con colación, feriados y excepción por persona. Fuera del horario y en la colación la extensión **pausa la medición** (sin actividad, sitios, reuniones ni capturas), pero el inicio y el cierre de la jornada se registran siempre; el portal muestra el cumplimiento. Ver [spec de horarios](2026-09-30-horarios.md). Las secciones afectadas lo indican.
+
 ## 1. Objetivo
 
 Versión simple tipo Hubstaff para uso interno:
@@ -15,6 +17,8 @@ Versión simple tipo Hubstaff para uso interno:
    - **Sitios web**: tiempo por dominio/URL en Chrome (y tiempo "fuera de Chrome").
    - **Capturas de pantalla** opcionales de la pestaña visible, con difuminado opcional.
 4. El admin ve todo en la **reportería del portal**.
+
+> **Actualización (horarios):** con horario configurado, la medición del punto 3 ocurre solo dentro del horario y fuera de la colación; la jornada (inicio/cierre) se registra siempre. Ver [spec de horarios](2026-09-30-horarios.md).
 
 ### Fuera de alcance (MVP)
 - Apps de escritorio (Word/Excel instalados, WhatsApp desktop, etc.): la extensión solo sabe que el usuario estuvo "fuera de Chrome".
@@ -40,6 +44,8 @@ Versión simple tipo Hubstaff para uso interno:
 
 Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 09:10…).
 
+> **Actualización (horarios):** fuera del horario y en la colación el acumulador está en **pausa** (`SlotAccumulator.setPaused`): el reloj avanza pero no se atribuye nada a `trackedSeconds`, actividad, reunión, fuera de Chrome ni sitios; la pausa se aplica en el instante exacto de cada límite del horario. Ver [spec de horarios](2026-09-30-horarios.md).
+
 ### 3.1 Actividad
 - **Dentro de Chrome**: content script en todas las páginas escucha `keydown`, `mousedown`, `mousemove`, `wheel`, `touchstart` (solo el hecho, nunca qué tecla ni contenido) y avisa al service worker como máximo 1 vez por segundo. Se marca ese segundo como activo.
 - **Fuera de Chrome o en páginas sin content script** (chrome://, Web Store, PDF): `chrome.idle` con umbral de 15 s. Mientras el estado es `active`, los segundos cuentan como activos; en `idle`/`locked` no.
@@ -56,6 +62,7 @@ Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 
 - Si `screenshotsEnabled` y la ventana de Chrome está enfocada en el instante sorteado → captura. Si no, no se captura.
   - **Decisión (Tarea 5):** "sin captura" **no se registra**: el modelo (§5) no tiene campo para eso y `screenshots` exige un archivo. El portal simplemente no muestra captura para ese bloque.
 - Instante: al ver un bloque por primera vez (pulso de 30 s con jornada abierta) se sortea un instante en `[ahora, fin del bloque − 30 s]` y se **persiste** (`chrome.storage.local`), así sobrevive al sueño del service worker. Hay **un solo intento por bloque**: el primer pulso en o después del instante decide (jornada abierta + `screenshotsEnabled` + ventana normal enfocada con pestaña http/https + pantalla no bloqueada). Nunca hay dos capturas del mismo bloque.
+  - **Actualización (horarios):** si el instante sorteado cae fuera del horario o en la colación, el intento se consume sin capturar (`'paused'`). Ver [spec de horarios](2026-09-30-horarios.md).
 - `chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg' })` → `createImageBitmap` + `OffscreenCanvas` en el service worker: ancho ≤ 1280 px, difuminado (`blurScreenshots`) con `ctx.filter = 'blur(≈ancho/100 px)'` (respaldo si el contexto no soporta `filter`: reducción fuerte + ampliación) antes de subir; JPEG `< 1 MB` bajando la calidad (0,7 → 0,25) y luego el tamaño.
 - Subida a `screenshots/{uid}/{fecha}/{id}.jpg` en Storage + doc metadatos, con **id determinista** `{uid}_{slotStart}`. Cola offline persistente (JPEG en base64 en `chrome.storage.local`, permiso `unlimitedStorage`), máx. 20: se descartan las más antiguas. Como las reglas de Storage no permiten sobrescribir, un reintento rechazado cuyo archivo ya existe (GET de metadatos, el dueño puede leer) cuenta como subido; luego se escribe el doc (re-escribir los mismos datos está permitido).
 
@@ -74,6 +81,7 @@ Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 
 - Primera vez: pantalla en la extensión que explica qué se mide y qué no; el colaborador debe aceptar (se guarda `consentAcceptedAt` y versión).
 - Ícono con insignia "ON" durante la jornada; popup muestra qué se está midiendo (actividad, sitios, capturas sí/no, difuminado sí/no).
 - Solo se mide con jornada iniciada.
+  - **Actualización (horarios):** y, con horario, solo dentro de él y fuera de la colación; el aviso lo explica (`CONSENT_VERSION` subió a `2026-09-30.2`) y la extensión puede enviar **recordatorios** locales (permiso `notifications`) para iniciar o cerrar la jornada. El inicio y el cierre se guardan siempre (registro de asistencia y horas extra; validar con abogado laboral). Ver [spec de horarios](2026-09-30-horarios.md).
 - El colaborador ve sus propias horas del día en el popup.
 - Nota: validar con abogado laboral e incorporar al reglamento interno. No es asesoría legal.
 
@@ -90,6 +98,8 @@ activity/{uid_slotStartMs} { uid, sessionId, slotStart, trackedSeconds, activeSe
                              outsideChromeSeconds, domains: {domain: seconds}, urls: [{url, seconds}] }
 screenshots/{id}           { uid, sessionId, takenAt, storagePath, blurred, width, height }
 ```
+
+> **Actualización (horarios):** colecciones nuevas `config/schedule` `{ week, holidays, toleranceMinutes, remindersEnabled, updatedAt, updatedBy }` (solo un admin activo la escribe o borra; la lee cualquier usuario activo) y `schedules/{uid}` `{ week, updatedAt, updatedBy }` (excepción por persona; solo un admin la escribe o borra; la leen la persona y los admins). `sessions` y `activity` no cambian de forma. Ver [spec de horarios](2026-09-30-horarios.md).
 
 > **Actualización:** `config/org.allowedDomain: string` se reemplazó por `allowedDomains: string[]` (1–10 dominios normalizados, sin duplicados; las reglas exigen los mismos 6 campos). Los docs antiguos con `allowedDomain` se leen como `[allowedDomain]`. Ver [spec multi-dominio](2026-09-29-multi-dominio.md).
 
@@ -115,6 +125,8 @@ Reglas:
 - **Configuración**: capturas sí/no, difuminado sí/no, retención (días).
 - Exportar CSV del resumen del equipo.
 
+> **Actualización (horarios):** Configuración → **Horario** (semana, colación, tolerancia, recordatorios, feriados de Chile 2026–2027), horario **personalizado** por persona en Colaboradores, columnas de **cumplimiento** en Equipo y el CSV (esperadas, en horario, fuera de horario, atrasos, sin conexión, ausencias) y, en el detalle, tarjetas de cumplimiento y la línea de tiempo con fuera de horario, colación y marcas de entrada/salida. Ver [spec de horarios](2026-09-30-horarios.md).
+
 ### Decisiones de implementación (Tarea 6)
 - **Acceso**: tras iniciar sesión el portal llama `joinOrg`; solo un perfil `admin` + `active` entra. Cualquier otro (colaborador, desactivado, sin invitación, otro dominio) ve "Sin acceso" con el motivo. Prod: `signInWithPopup` con `hd` = dominio (solo sugerencia; el dominio lo exige `joinOrg`). **Actualización:** con más de un dominio no se envía `hd`; con uno solo, sí (ver [spec multi-dominio](2026-09-29-multi-dominio.md)). Dev (`vite --mode development`): emuladores + login con correo simulado; ese código queda fuera del build prod (`scripts/check-build.ts` lo verifica).
 - **Días y rangos** en America/Santiago (Hoy, Ayer, Esta semana lun–dom, Últimos 7 días, Este mes, Personalizado). El inicio de cada día se busca como el primer instante con esa fecha (en Chile el cambio de hora es a medianoche: hay días de 23 y 25 h).
@@ -131,6 +143,7 @@ Reglas:
 - Sin consentimiento → pantalla de aviso + aceptar.
 - Sin invitación → "Pide a tu admin que te invite".
 - Normal → botón grande **Iniciar jornada / Cerrar jornada**, cronómetro de la jornada, horas de hoy, % actividad de hoy, qué se mide.
+  - **Actualización (horarios, 0.2.0):** además el estado del horario ("En horario hasta 18:30", "Colación hasta 14:00", "Fuera de horario: no se mide", "Hoy es feriado", "Día libre") y el horario de hoy. Ver [spec de horarios](2026-09-30-horarios.md).
 
 ### Decisiones de implementación (Tarea 5)
 - **Aviso**: página de la extensión `consent.html`. Se abre sola tras iniciar sesión si falta aceptar `CONSENT_VERSION`; `session.start` la exige (`consentVersion === CONSENT_VERSION`). Aceptar escribe `consentAcceptedAt` + `consentVersion` juntos en `users/{uid}`. Cambiar `CONSENT_VERSION` obliga a todos a aceptar de nuevo.

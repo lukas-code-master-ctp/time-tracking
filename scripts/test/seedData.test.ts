@@ -10,11 +10,29 @@ import {
   sanitizeUrl,
   slotStartOf,
   dateKey as dateKeyOf,
+  CHILE_HOLIDAY_DATES,
+  classifyInstant,
+  complianceForRange,
+  validatePersonSchedule,
+  validateScheduleConfig,
+  windowsForDay,
 } from '@timetracking/shared';
 import { mockScreenHtml } from '../lib/mockScreens';
-import { LEGACY_DAYS, PENDING_INVITE, PEOPLE, SITES, atLocal, buildDataset, rng } from '../lib/seedData';
+import {
+  LEGACY_DAYS,
+  PENDING_INVITE,
+  PEOPLE,
+  SEED_EXCEPTIONS,
+  SEED_SCHEDULE,
+  SITES,
+  atLocal,
+  buildDataset,
+  rng,
+  weekOf,
+} from '../lib/seedData';
 import { ADMIN_EMAIL, DOMAINS } from '../lib/emulators';
-import { zonedParts } from '../../portal/src/lib/dates';
+import { addDays, zonedParts } from '../../portal/src/lib/dates';
+import { DEFAULT_WEEK } from '../../portal/src/lib/schedule';
 
 // Tuesday 2026-09-29 15:30 in Santiago.
 const NOW = Date.UTC(2026, 8, 29, 18, 30);
@@ -178,5 +196,97 @@ describe('seed data', () => {
     expect(Object.keys(SITES).length).toBeGreaterThan(5);
     expect(PEOPLE).toHaveLength(3);
     expect(mockScreenHtml('mail')).toContain('filter:blur(');
+  });
+});
+
+describe('seed working hours (spec 2026-09-30-horarios)', () => {
+  const data = buildDataset(NOW, UIDS);
+  const keyOf = new Map(Object.entries(UIDS).map(([k, uid]) => [uid, k]));
+  const holidays = SEED_SCHEDULE.holidays;
+  const today = dateKeyOf(NOW);
+
+  it('config/schedule and the exception are valid documents with the requested values', () => {
+    expect(validateScheduleConfig({ ...SEED_SCHEDULE, updatedAt: NOW, updatedBy: 'u-admin' })).toEqual([]);
+    // The same week the portal suggests in "Crear horario".
+    expect(SEED_SCHEDULE.week).toEqual(DEFAULT_WEEK);
+    expect(SEED_SCHEDULE.week.mon).toEqual({ start: '09:00', end: '18:30', lunchStart: '13:00', lunchEnd: '14:00' });
+    expect(SEED_SCHEDULE.week.fri).toEqual({ start: '09:00', end: '14:00', lunchStart: null, lunchEnd: null });
+    expect([SEED_SCHEDULE.week.sat, SEED_SCHEDULE.week.sun]).toEqual([null, null]);
+    expect(holidays).toEqual([...CHILE_HOLIDAY_DATES]);
+    expect(SEED_SCHEDULE.toleranceMinutes).toBe(5);
+    expect(SEED_SCHEDULE.remindersEnabled).toBe(true);
+    expect(Object.keys(SEED_EXCEPTIONS)).toEqual(['carla']);
+    for (const week of Object.values(SEED_EXCEPTIONS)) {
+      expect(validatePersonSchedule({ week, updatedAt: NOW, updatedBy: 'u-admin' })).toEqual([]);
+    }
+    expect(weekOf('carla').wed).toEqual({ start: '09:00', end: '13:00', lunchStart: null, lunchEnd: null });
+    expect(weekOf('ana')).toBe(SEED_SCHEDULE.week);
+  });
+
+  it('like extension 0.2.0: nothing measured in the lunch nor outside the schedule', () => {
+    const inWorkSeconds = (uid: string, slotStart: number): number => {
+      const windows = windowsForDay(dateKeyOf(slotStart), weekOf(keyOf.get(uid)!), holidays);
+      return windows.reduce((t, w) => t + Math.max(0, Math.min(slotStart + SLOT_MS, w.end) - Math.max(slotStart, w.start)), 0) / 1000;
+    };
+    for (const a of data.activity) {
+      expect(a.trackedSeconds, `${a.uid} ${zonedParts(a.slotStart).hour}:${zonedParts(a.slotStart).minute}`).toBeLessThanOrEqual(
+        inWorkSeconds(a.uid, a.slotStart),
+      );
+    }
+    // Blocks of a session that fall in a pause (Ana through the lunch, overtime, arrivals before 09:00,
+    // Beto's forgotten close): recorded in the session, without an activity document.
+    const withDoc = new Set(data.activity.map((a) => `${a.uid}_${a.slotStart}`));
+    let pausedBlocks = 0;
+    for (const { data: s } of data.sessions) {
+      for (let slot = slotStartOf(s.startedAt); slot < (s.endedAt ?? s.lastHeartbeatAt); slot += SLOT_MS) {
+        if (inWorkSeconds(s.uid, slot) > 0) continue;
+        pausedBlocks++;
+        expect(withDoc.has(`${s.uid}_${slot}`)).toBe(false);
+      }
+    }
+    expect(pausedBlocks).toBeGreaterThan(10);
+    // Ana keeps the work day open through the lunch: that time is recorded in the session, not measured.
+    const lunchBlocks = data.activity.filter((a) => classifyInstant(a.slotStart, weekOf(keyOf.get(a.uid)!), holidays) === 'lunch');
+    expect(lunchBlocks).toEqual([]);
+    for (const s of data.shots) expect(classifyInstant(s.takenAt, weekOf(keyOf.get(s.uid)!), holidays)).toBe('work');
+  });
+
+  it('compliance: one late arrival, one early leave, one absence, time outside and in the lunch', () => {
+    const from = addDays(today, -7);
+    const yesterday = addDays(today, -1);
+    const totals = Object.fromEntries(
+      PEOPLE.map((p) => {
+        const sessions = data.sessions.filter((s) => s.data.uid === UIDS[p.key as keyof typeof UIDS]).map((s) => s.data);
+        return [p.key, complianceForRange(from, yesterday, sessions, weekOf(p.key), holidays, SEED_SCHEDULE.toleranceMinutes, NOW).totals];
+      }),
+    );
+    const { ana, beto, carla } = totals as Record<'ana' | 'beto' | 'carla', (typeof totals)[string]>;
+    expect([ana.lateCount, beto.lateCount, carla.lateCount]).toEqual([0, 1, 0]);
+    expect(beto.lateSeconds).toBeGreaterThanOrEqual(18 * 60);
+    expect([ana.earlyLeaveCount, beto.earlyLeaveCount, carla.earlyLeaveCount]).toEqual([1, 0, 0]);
+    expect([ana.absentDays, beto.absentDays, carla.absentDays]).toEqual([0, 0, 1]);
+    // Ana's overtime and Beto's forgotten close after hours.
+    expect(ana.outsideScheduleSeconds).toBeGreaterThan(40 * 60);
+    expect(beto.outsideScheduleSeconds).toBeGreaterThan(35 * 60);
+    expect(ana.lunchSeconds).toBeGreaterThan(0);
+    expect(carla.lunchSeconds).toBe(0);
+    // Carla's half day: 4 h per workday (Mon–Fri) of the exception.
+    expect(carla.expectedSeconds).toBe(carla.workdays * 4 * 3600);
+    expect(carla.workdays).toBe(5);
+    expect(ana.workdays).toBe(5);
+    for (const t of [ana, beto]) expect(t.inScheduleSeconds).toBeGreaterThan(t.expectedSeconds * 0.8);
+  });
+
+  it('no sessions on holidays (Fiestas Patrias) nor weekends', () => {
+    // Monday 2026-09-21 15:30: the 7 days before include Friday 18 and Saturday 19 (holidays).
+    const monday = Date.UTC(2026, 8, 21, 18, 30);
+    const d = buildDataset(monday, UIDS);
+    const dates = new Set(d.sessions.map((s) => dateKeyOf(s.data.startedAt)));
+    for (const day of ['2026-09-18', '2026-09-19', '2026-09-20']) expect(dates.has(day)).toBe(false);
+    expect(dates.has('2026-09-17')).toBe(true);
+    // The cases move to the last workdays: Beto's late arrival is on Thursday 17.
+    const beto = d.sessions.filter((s) => s.data.uid === 'u-beto').map((s) => s.data);
+    const c = complianceForRange('2026-09-17', '2026-09-17', beto, weekOf('beto'), holidays, 5, monday).totals;
+    expect(c.lateCount).toBe(1);
   });
 });
