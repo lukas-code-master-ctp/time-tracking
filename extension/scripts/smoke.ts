@@ -21,6 +21,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type BrowserContext, type Page, type Worker } from 'playwright';
+import { CONSENT_VERSION, DEFAULT_TIME_ZONE } from '@timetracking/shared';
 import { ROOT } from '../build/common.ts';
 import { DEV_EXTENSION_ID } from '../build/manifest.ts';
 import { findChromium, NO_CHROMIUM } from '../../scripts/lib/chromium.ts';
@@ -198,7 +199,7 @@ async function e2e(ctx: BrowserContext, popup: Page): Promise<void> {
     if (!me) fail('no se encontró users/{uid}');
     const uid = me.id as string;
     const profile = await firestoreDoc(`users/${uid}`);
-    if (profile?.consentVersion !== '2026-09-30' || typeof profile.consentAcceptedAt !== 'number') {
+    if (profile?.consentVersion !== CONSENT_VERSION || typeof profile.consentAcceptedAt !== 'number') {
       fail(`consentimiento no guardado: ${JSON.stringify(profile)}`);
     }
     console.log(`Aviso aceptado: users/${uid} con consentVersion ${String(profile.consentVersion)}.`);
@@ -322,9 +323,121 @@ Estado: ${JSON.stringify(state).slice(0, 4000)}`);
     if (!today?.includes('Horas de hoy')) fail('el popup no muestra las horas de hoy');
     if (!today?.includes('En reunión hoy')) fail('el popup no muestra el tiempo en reunión de hoy');
     console.log('E2E OK: aviso, jornada, captura difuminada en Storage + doc, activity con los 8 campos + meetingSeconds, jornada cerrada.');
+
+    await scheduleE2e(ctx, popup, page, uid);
   } finally {
     server.close();
   }
+}
+
+/** Plain JSON → Firestore REST value (enough for config/schedule). */
+function toValue(v: unknown): Record<string, unknown> {
+  if (v === null) return { nullValue: null };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (typeof v === 'string') return { stringValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toValue) } };
+  return { mapValue: { fields: Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, toValue(x)])) } };
+}
+
+/** What an admin saves from the portal: the whole `config/schedule` (emulator admin bypass). */
+async function setSchedule(day: { start: string; end: string }, uid: string): Promise<void> {
+  const d = { ...day, lunchStart: null, lunchEnd: null };
+  const doc = {
+    week: { mon: d, tue: d, wed: d, thu: d, fri: d, sat: d, sun: d },
+    holidays: [],
+    toleranceMinutes: 5,
+    remindersEnabled: false,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+  };
+  const res = await fetch(`${FIRESTORE}/v1/projects/${PROJECT}/databases/(default)/documents/config/schedule`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: (toValue(doc).mapValue as { fields: unknown }).fields }),
+  });
+  if (!res.ok) fail(`config/schedule: HTTP ${res.status} ${await res.text()}`);
+}
+
+const str = (v: unknown): string | undefined => (v as { stringValue?: string } | undefined)?.stringValue;
+const int = (v: unknown): number => Number((v as { integerValue?: string } | undefined)?.integerValue ?? 0);
+
+/**
+ * One work day with a schedule configured by the admin: starts it, moves the
+ * mouse on the page, forces the pulse and a capture, closes it and waits
+ * until the close is in Firestore. Returns the session id.
+ */
+async function scheduledDay(popup: Page, page: Page, expectLabel: RegExp, expectShot: readonly string[]): Promise<string> {
+  const before = new Set((await firestoreDocs('sessions')).map((s) => s.id as string));
+  await popup.bringToFront();
+  await popup.getByRole('button', { name: 'Iniciar jornada' }).click();
+  await popup.getByRole('button', { name: 'Cerrar jornada' }).waitFor({ timeout: 15_000 });
+  // session.start re-reads config/schedule; the popup refreshes every 2 s.
+  await popup.getByText(expectLabel).waitFor({ timeout: 15_000 });
+  await popup.getByText(/^Hoy \(/).waitFor();
+  await page.bringToFront();
+  for (let i = 0; i < 3; i++) {
+    await page.mouse.move(20 + i * 5, 20);
+    await page.waitForTimeout(1_000);
+  }
+  const pulse = await sendFrom(popup, { type: 'debug.forcePulse' });
+  if (!pulse.ok) fail(`debug.forcePulse: ${pulse.error}`);
+  const shot = await sendFrom(popup, { type: 'debug.forceScreenshot' });
+  if (!shot.ok || !expectShot.includes(String(shot.debug))) {
+    fail(`captura con horario: ${JSON.stringify(shot)} (se esperaba ${expectShot.join(' o ')})`);
+  }
+  await popup.bringToFront();
+  await popup.getByRole('button', { name: 'Cerrar jornada' }).click();
+  await popup.getByRole('button', { name: 'Iniciar jornada' }).waitFor({ timeout: 15_000 });
+  const session = await until('jornada con horario cerrada en Firestore', async () => {
+    const s = (await firestoreDocs('sessions')).find((x) => !before.has(x.id as string));
+    return s && str(s.endReason) === 'manual' ? s : null;
+  });
+  return session.id as string;
+}
+
+/**
+ * Working hours (spec 2026-09-30-horarios): a schedule that excludes "now"
+ * → the popup says "Fuera de horario", the session is recorded but nothing is
+ * measured nor captured; a schedule that includes "now" → it measures.
+ */
+async function scheduleE2e(ctx: BrowserContext, popup: Page, page: Page, uid: string): Promise<void> {
+  const sw = ctx.serviceWorkers().find((w) => w.url().startsWith('chrome-extension://'));
+  if (!sw) fail('no se encontró el service worker');
+  /** Waits for the upload queue to empty, then sums trackedSeconds of every activity doc. */
+  const totalTracked = async (): Promise<number> => {
+    await until('cola de envíos vacía', () =>
+      sw.evaluate(async () => {
+        const q = (await chrome.storage.local.get('tt.queue'))['tt.queue'] as { items?: unknown[] } | undefined;
+        return (q?.items?.length ?? 0) === 0;
+      }),
+    );
+    return (await firestoreDocs('activity')).reduce((t, a) => t + int(a.trackedSeconds), 0);
+  };
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: DEFAULT_TIME_ZONE, hour: '2-digit', hourCycle: 'h23' }).format(new Date()),
+  );
+
+  // 1. A one-hour window at the other end of the day: nothing is measured.
+  const before = await totalTracked();
+  await setSchedule(hour < 12 ? { start: '21:00', end: '22:00' } : { start: '02:00', end: '03:00' }, uid);
+  const outside = await scheduledDay(popup, page, /^Fuera de horario: no se mide$/, ['paused']);
+  const afterOutside = await totalTracked();
+  if (afterOutside !== before) fail(`fuera de horario se midieron ${afterOutside - before} s`);
+  const ownDocs = (await firestoreDocs('activity')).filter((a) => str(a.sessionId) === outside);
+  if (ownDocs.length > 0) fail(`hay activity de la jornada fuera de horario: ${JSON.stringify(ownDocs)}`);
+  console.log(`Horario que excluye ahora: popup "Fuera de horario: no se mide", jornada ${outside} registrada, 0 s medidos, sin captura.`);
+
+  // 2. The whole day: it measures again.
+  await setSchedule({ start: '00:00', end: '23:59' }, uid);
+  const inside = await scheduledDay(popup, page, /^En horario hasta 23:59$/, ['captured', 'duplicate']);
+  const afterInside = await until('trackedSeconds medidos dentro del horario', async () => {
+    const t = await totalTracked();
+    return t > afterOutside ? t : null;
+  });
+  const own = (await firestoreDocs('activity')).filter((a) => str(a.sessionId) === inside);
+  if (own.length === 0) fail('no hay activity de la jornada dentro del horario');
+  console.log(`Horario que incluye ahora: popup "En horario hasta 23:59", jornada ${inside} con ${afterInside - afterOutside} s medidos.`);
 }
 
 await main().catch((err: unknown) => fail(err instanceof Error ? (err.stack ?? err.message) : String(err)));

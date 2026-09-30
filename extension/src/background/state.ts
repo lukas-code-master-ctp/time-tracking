@@ -10,6 +10,7 @@
 import { SlotAccumulator, type UserProfile } from '@timetracking/shared';
 import { dailyFromJSON, type DailySummary } from './daily';
 import { emptyQueue, queueFromJSON, type QueueState } from './queue';
+import { reminderLogFromJSON, scheduleCacheFromJSON, type ReminderLog, type ScheduleCache } from './schedule';
 import {
   emptyShotQueue,
   shotDataKey,
@@ -68,6 +69,10 @@ export interface Meta {
   joinError: JoinErrorInfo | null;
   /** Last `config/org` read; null until read (screenshots off meanwhile). */
   org: OrgConfigCache | null;
+  /** Last `config/schedule` + `schedules/{uid}` read (schedule.ts); null = none read (no schedule). Missing before 0.2.0. */
+  schedule: ScheduleCache | null;
+  /** Start/end reminders already handled today. Missing before 0.2.0. */
+  reminders: ReminderLog | null;
 }
 
 export function defaultMeta(): Meta {
@@ -79,6 +84,8 @@ export function defaultMeta(): Meta {
     profileUid: null,
     joinError: null,
     org: null,
+    schedule: null,
+    reminders: null,
   };
 }
 
@@ -169,6 +176,8 @@ export class StateStore {
     this.queue = queueFromJSON(data[STORAGE_KEYS.queue]);
     const rawMeta = data[STORAGE_KEYS.meta];
     this.meta = { ...defaultMeta(), ...(rawMeta && typeof rawMeta === 'object' ? (rawMeta as Partial<Meta>) : {}) };
+    this.meta.schedule = scheduleCacheFromJSON(this.meta.schedule);
+    this.meta.reminders = reminderLogFromJSON(this.meta.reminders);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);

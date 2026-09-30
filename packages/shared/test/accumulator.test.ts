@@ -682,3 +682,56 @@ describe('SlotAccumulator — web meetings', () => {
     expect(() => newAcc().setMeeting(true, Number.NaN)).toThrow(TypeError);
   });
 });
+
+describe('SlotAccumulator — pause (outside working hours / lunch)', () => {
+  it('attributes nothing while paused; the work day stays open and resumes per second', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(WEB, T0);
+    acc.setMeeting(true, T0);
+    acc.markActiveSecond(T0 + 5 * S);
+    acc.tick(T0 + 20 * S);
+    acc.setPaused(true, T0 + 20 * S + 500); // second 20 still counts (started before the pause)
+    expect(acc.paused).toBe(true);
+    expect(acc.sessionId).toBe('s');
+    acc.markActiveSecond(T0 + 30 * S);
+    acc.setFocus(null, T0 + 40 * S);
+    tickRange(acc, T0 + 40 * S, T0 + 100 * S);
+    acc.setPaused(false, T0 + 100 * S);
+    acc.tick(T0 + 110 * S);
+    const { current } = acc.flush(T0 + 110 * S);
+    // 21 s before the pause (0..20) + 10 s after (100..109, outside Chrome).
+    expect(current).toMatchObject({ trackedSeconds: 31, activeSeconds: 11, meetingSeconds: 20, outsideChromeSeconds: 10 });
+    expect(current!.domains).toEqual({ 'docs.google.com': 21 });
+    checkInvariants(current!);
+  });
+
+  it('a block fully paused produces nothing', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setPaused(true, T0);
+    acc.setFocus(WEB, T0);
+    acc.markActiveSecond(T0 + 1 * S);
+    tickRange(acc, T0, T0 + 300 * S);
+    expect(acc.flush(T0 + 300 * S).current).toBeNull();
+  });
+
+  it('serializes the pause; states saved before it existed read as not paused', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setPaused(true, T0);
+    const copy = SlotAccumulator.fromJSON(JSON.parse(JSON.stringify(acc.toJSON())));
+    expect(copy.paused).toBe(true);
+    copy.tick(T0 + 30 * S);
+    expect(copy.flush(T0 + 30 * S).current).toBeNull();
+    const { paused: _p, ...legacy } = acc.toJSON();
+    const old = SlotAccumulator.fromJSON(legacy);
+    expect(old.paused).toBe(false);
+    old.tick(T0 + 30 * S);
+    expect(old.flush(T0 + 30 * S).current).toMatchObject({ trackedSeconds: 30 });
+  });
+
+  it('rejects invalid timestamps', () => {
+    expect(() => newAcc().setPaused(true, Number.NaN)).toThrow(TypeError);
+  });
+});

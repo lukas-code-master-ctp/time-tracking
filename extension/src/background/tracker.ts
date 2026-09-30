@@ -20,7 +20,7 @@
  *   Only the URL and the `audible` flag are read: never the audio or the
  *   video.
  *   Never while the screen is locked, nor before the notice that describes
- *   it (CONSENT_VERSION) was accepted.
+ *   it (MEETING_CONSENT_VERSION or later) was accepted.
  *   Re-evaluated on `tabs.onUpdated` (only the events that can change it),
  *   `onActivated`,
  *   `onRemoved`, `windows.onFocusChanged`, idle changes and every 30 s pulse
@@ -30,6 +30,12 @@
  * `chrome.storage.session` (tab ids are only valid for the browser session)
  * so they survive service-worker restarts.
  *
+ * Working hours (spec 2026-09-30-horarios): with a schedule, the accumulator
+ * is paused (`setPaused`) whenever the instant is not working time (lunch,
+ * outside the schedule, day off, holiday). Every handler and the pulse first
+ * apply the pause at each schedule boundary since the last event
+ * (`syncPause`); the work day and its heartbeat go on.
+ *
  * Every handler runs inside `store.run()` (serialized) and only measures when
  * a work day is open; the timestamp is taken when the event arrives.
  */
@@ -37,6 +43,7 @@ import {
   CONSENT_VERSION,
   IDLE_DETECTION_SECONDS,
   MEETING_AUDIO_GRACE_MS,
+  MEETING_CONSENT_VERSION,
   SlotAccumulator,
   isMeetingInProgress,
   isMeetingUrl,
@@ -46,6 +53,7 @@ import {
 } from '@timetracking/shared';
 import type { ContentMessage } from '../messages';
 import { enqueueOp } from './queue';
+import { effectiveSchedule, isMeasuringAt, pauseBoundaries } from './schedule';
 import type { StateStore, StorageAreaLike } from './state';
 
 const TABS_KEY = 'tt.measurableTabs';
@@ -103,7 +111,7 @@ export class Tracker {
   onIdleState(state: IdleState): Promise<void> {
     const at = this.now();
     return this.store.run(async () => {
-      const acc = this.measuringAcc();
+      const acc = this.measuringAcc(at);
       if (!acc) return;
       acc.setIdleState(state, at);
       if (state === 'locked') acc.setFocus(null, at);
@@ -126,7 +134,7 @@ export class Tracker {
       if (info.audible !== undefined && !tab.incognito) await this.markAudible(tabId, at);
       const navigated = info.url !== undefined || info.status !== undefined;
       if (!navigated && info.audible === undefined) return;
-      const acc = this.measuringAcc();
+      const acc = this.measuringAcc(at);
       if (!acc) return;
       const focusChanged = tab.active && navigated;
       // Cost: onUpdated fires for every tab of every window. Only events that
@@ -155,7 +163,7 @@ export class Tracker {
     return this.store.run(async () => {
       await this.forgetTab(tabId);
       await this.forgetAudible(tabId);
-      const acc = this.measuringAcc();
+      const acc = this.measuringAcc(at);
       if (!acc) return;
       acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
       await this.store.save('acc');
@@ -165,7 +173,7 @@ export class Tracker {
   onWindowFocusChanged(windowId: number): Promise<void> {
     const at = this.now();
     return this.store.run(async () => {
-      const acc = this.measuringAcc();
+      const acc = this.measuringAcc(at);
       if (!acc) return;
       const focus =
         windowId === chrome.windows.WINDOW_ID_NONE || acc.idleState === 'locked'
@@ -191,7 +199,7 @@ export class Tracker {
         await this.saveTabs();
         changed = true;
       }
-      const acc = this.measuringAcc();
+      const acc = this.measuringAcc(at);
       if (!acc) return;
       // The page just became measurable: re-evaluate the focus now.
       if (changed && sender.tab?.active) acc.setFocus(await this.computeFocus(), at);
@@ -224,6 +232,7 @@ export class Tracker {
     const acc = previous && previous.uid === uid ? previous : new SlotAccumulator({ uid });
     this.store.acc = acc;
     acc.setSession(sessionId, at);
+    this.syncPause(acc, at);
     const idle = await this.queryIdle();
     acc.setIdleState(idle, at);
     // The accumulator starts with focus null (outside Chrome): always set it.
@@ -246,6 +255,7 @@ export class Tracker {
   async pulse(at: number): Promise<FlushResult | null> {
     const acc = this.store.acc;
     if (!acc) return null;
+    this.syncPause(acc, at);
     acc.tick(at);
     if (acc.sessionId !== null) {
       const idle = await this.queryIdle();
@@ -258,9 +268,38 @@ export class Tracker {
 
   // ---------- helpers ----------
 
-  private measuringAcc(): SlotAccumulator | null {
+  /**
+   * The accumulator of the open work day, with the working-hours pause
+   * brought up to `at` (so the interval up to this event is attributed with
+   * the right pause state), or null when no work day is open.
+   */
+  private measuringAcc(at: number): SlotAccumulator | null {
     const acc = this.store.acc;
-    return this.store.session && acc && acc.sessionId !== null ? acc : null;
+    if (!this.store.session || !acc || acc.sessionId === null) return null;
+    this.syncPause(acc, at);
+    return acc;
+  }
+
+  /**
+   * Applies the pause of the working hours (spec 2026-09-30-horarios) at
+   * every schedule boundary between the accumulator's clock and `at`, then
+   * at `at`: each second is attributed with the state valid during it, even
+   * when the pulse or the alarm arrive a few seconds late. Without a schedule
+   * the measurement is never paused (0.1.x behaviour).
+   */
+  syncPause(acc: SlotAccumulator, at: number): void {
+    const schedule = effectiveSchedule(this.store.meta.schedule, acc.uid);
+    const from = acc.lastEventAt;
+    if (from !== null) {
+      for (const t of pauseBoundaries(schedule, from, at)) acc.setPaused(!isMeasuringAt(schedule, t), t);
+    }
+    acc.setPaused(!isMeasuringAt(schedule, at), at);
+  }
+
+  /** The schedule changed (new cache) or its alarm fired: apply the pause now. Call inside store.run. */
+  applySchedule(at: number): void {
+    const acc = this.store.acc;
+    if (acc) this.syncPause(acc, at);
   }
 
   private refreshFocus(at: number): Promise<void> {
@@ -268,7 +307,7 @@ export class Tracker {
   }
 
   private async refreshFocusLocked(at: number): Promise<void> {
-    const acc = this.measuringAcc();
+    const acc = this.measuringAcc(at);
     if (!acc) return;
     acc.setFocus(acc.idleState === 'locked' ? null : await this.computeFocus(), at);
     acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
@@ -353,10 +392,11 @@ export class Tracker {
     }
     if (changed) await this.saveAudible();
     // Screen locked = the person is away (as for focus). And meeting
-    // detection is only used once the notice that describes it (CONSENT_VERSION
-    // 2026-09-30) was accepted: a work day opened with 0.1.1 keeps measuring
-    // as before until the person accepts the new notice.
-    if (idle === 'locked' || this.store.meta.profile?.consentVersion !== CONSENT_VERSION) return false;
+    // detection is only used once a notice that describes it was accepted
+    // (MEETING_CONSENT_VERSION 2026-09-30 or the current one): a work day
+    // opened with 0.1.1 keeps measuring as before until the person accepts.
+    const accepted = this.store.meta.profile?.consentVersion;
+    if (idle === 'locked' || !(accepted === CONSENT_VERSION || accepted === MEETING_CONSENT_VERSION)) return false;
     return meeting;
   }
 

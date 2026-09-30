@@ -46,6 +46,13 @@ export class FakeBackend implements Remote {
   sessions = new Map<string, Session>();
   org: OrgConfig | null = { ...ORG };
   orgFetches = 0;
+  /** Raw `config/schedule` (null = missing). */
+  schedule: unknown = null;
+  /** Raw `schedules/{uid}` by uid. */
+  personSchedules = new Map<string, unknown>();
+  scheduleFetches = 0;
+  /** Errors of the next schedule reads (apart from `failures`, which other ops consume). */
+  scheduleFailures: string[] = [];
   /** Behave like firestore.rules before 2026-09-30 (no `meetingSeconds`). */
   legacyActivityRules = false;
   /** storage.rules refuse every upload (e.g. user disabled). */
@@ -97,6 +104,13 @@ export class FakeBackend implements Remote {
     // Counted apart: config reads happen on their own schedule and would make `calls` noisy.
     this.orgFetches++;
     return this.org ? { ...this.org } : null;
+  }
+  async fetchSchedule(uid: string): Promise<{ config: unknown; person: unknown }> {
+    if (this.offline) throw new TypeError('Failed to fetch');
+    const code = this.scheduleFailures.shift();
+    if (code) throw new BackendError(code);
+    this.scheduleFetches++;
+    return { config: structuredClone(this.schedule), person: structuredClone(this.personSchedules.get(uid) ?? null) };
   }
   async acceptConsent(uid: string, at: number, version: string): Promise<void> {
     this.check();

@@ -4,10 +4,25 @@
  * only delivers events to listeners added in the first turn of the script).
  *
  * The 30-second pulse (chrome.alarms) runs, in order: session pulse (blocks,
- * heartbeat, activity uploads) → `config/org` refresh when older than 5 min →
- * screenshot of the block if its random instant passed → screenshot uploads.
+ * heartbeat, activity uploads) → `config/org` + schedule refresh when older
+ * than 5 min → schedule tick → screenshot of the block if its random instant
+ * passed → screenshot uploads.
+ *
+ * Working hours (spec 2026-09-30-horarios): `config/schedule` and
+ * `schedules/{uid}` are read at the same moments as `config/org` and cached
+ * in `tt.meta.schedule`. The "schedule tick" (every pulse, every wake-up and
+ * the one-shot `SCHEDULE_ALARM` set at the next transition, reminder or
+ * midnight) applies the pause of the measurement, shows the start/end
+ * reminders (chrome.notifications, one per event and day) and re-arms the
+ * alarm.
  */
-import { CONSENT_VERSION, type OrgConfig, type UserProfile } from '@timetracking/shared';
+import {
+  CONSENT_VERSION,
+  readPersonSchedule,
+  readScheduleConfig,
+  type OrgConfig,
+  type UserProfile,
+} from '@timetracking/shared';
 import {
   isContentMessage,
   isPopupRequest,
@@ -20,6 +35,18 @@ import { todayTotals } from './daily';
 import type { ImageProcessor } from './image';
 import { enqueueOp } from './queue';
 import type { Remote } from './remote';
+import {
+  SCHEDULE_ALARM,
+  decideReminders,
+  effectiveSchedule,
+  nextScheduleWake,
+  parseReminderNotificationId,
+  reminderNotificationId,
+  reminderText,
+  scheduleView,
+  type EffectiveSchedule,
+  type Reminder,
+} from './schedule';
 import { ScreenshotManager, chromeCapturer, type Capturer } from './screenshots';
 import { PULSE_ALARM, SessionError, SessionManager } from './session';
 import type { StateStore, StorageAreaLike } from './state';
@@ -93,7 +120,12 @@ export class App {
     this.tracker.register();
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm.name === PULSE_ALARM) void this.pulse().catch(logError('pulso'));
+      if (alarm.name === SCHEDULE_ALARM) void this.onScheduleAlarm().catch(logError('horario'));
     });
+    chrome.notifications?.onButtonClicked.addListener(
+      (id) => void this.onReminderAction(id).catch(logError('recordatorio')),
+    );
+    chrome.notifications?.onClicked.addListener((id) => void this.onReminderClicked(id).catch(logError('recordatorio')));
     chrome.runtime.onMessage.addListener((msg: unknown, sender, sendResponse) => {
       if (sender.id !== chrome.runtime.id) return false;
       // Extension pages (popup, or popup/consent opened in a tab) vs content scripts.
@@ -129,14 +161,16 @@ export class App {
   /** Every service-worker start. */
   async start(): Promise<void> {
     await this.session.rehydrate().catch(logError('rehidratación'));
-    await this.refreshOrgConfig(ORG_CONFIG_WAKE_REFRESH_MS).catch(logError('config/org'));
+    await this.refreshConfig(ORG_CONFIG_WAKE_REFRESH_MS);
+    await this.scheduleTick().catch(logError('horario'));
     void this.screenshots.drain().catch(logError('capturas'));
   }
 
   /** chrome.alarms pulse (every 30 s while there is something to do). */
   async pulse(opts: { forceScreenshot?: boolean } = {}): Promise<string> {
     await this.session.pulse();
-    await this.refreshOrgConfig(opts.forceScreenshot ? 0 : ORG_CONFIG_REFRESH_MS).catch(logError('config/org'));
+    await this.refreshConfig(opts.forceScreenshot ? 0 : ORG_CONFIG_REFRESH_MS);
+    await this.scheduleTick().catch(logError('horario'));
     const shot = await this.screenshots.maybeCapture(opts.forceScreenshot ?? false);
     await this.screenshots.drain(opts.forceScreenshot ?? false);
     await this.store.run(() => this.session.ensureAlarm());
@@ -174,6 +208,167 @@ export class App {
       };
       await this.store.save('meta');
     });
+  }
+
+  /** `config/org` and the schedule, each when its cache is older than `maxAgeMs`; failures keep the cache. */
+  async refreshConfig(maxAgeMs: number): Promise<void> {
+    await Promise.all([
+      this.refreshOrgConfig(maxAgeMs).catch(logError('config/org')),
+      this.refreshSchedule(maxAgeMs).catch(logError('config/schedule')),
+    ]);
+  }
+
+  /**
+   * Reads `config/schedule` + `schedules/{uid}` when the cache is older than
+   * `maxAgeMs` (0 = always), for a joined user. Invalid documents count as
+   * missing (no schedule unless the other one defines the week). On failure
+   * (offline…) the previous cache stays, so the pause keeps working offline.
+   * A new schedule applies to the measurement right away.
+   */
+  async refreshSchedule(maxAgeMs: number): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const due = await this.store.run(() => {
+      const { profile, profileUid, schedule } = this.store.meta;
+      if (!user || !profile || profileUid !== user.uid) return false;
+      return !schedule || schedule.uid !== user.uid || this.now() - schedule.fetchedAt >= maxAgeMs;
+    });
+    if (!user || !due) return;
+    let raw: { config: unknown; person: unknown };
+    try {
+      raw = await this.backend.fetchSchedule(user.uid);
+    } catch (err) {
+      console.warn(`[timetracking] no se pudo leer el horario (${errorCode(err)})`);
+      return;
+    }
+    const config = readScheduleConfig(raw.config);
+    const person = readPersonSchedule(raw.person);
+    if (raw.config != null && !config) console.warn('[timetracking] config/schedule no es válido: se ignora');
+    if (raw.person != null && !person) console.warn('[timetracking] schedules/{uid} no es válido: se ignora');
+    await this.store.run(async () => {
+      if (this.store.meta.profileUid !== user.uid) return; // signed out meanwhile
+      const at = this.now();
+      this.store.meta.schedule = { uid: user.uid, config, person, fetchedAt: at };
+      this.tracker.applySchedule(at);
+      await this.store.save(...(this.store.acc ? (['acc', 'meta'] as const) : (['meta'] as const)));
+    });
+  }
+
+  /** Effective schedule of the signed-in, joined, active user (inside store.run). */
+  private scheduleOf(uid: string | null | undefined): EffectiveSchedule | null {
+    const { profile, profileUid, schedule } = this.store.meta;
+    if (!uid || !profile || profileUid !== uid || profile.status !== 'active') return null;
+    return effectiveSchedule(schedule, uid);
+  }
+
+  /**
+   * Applies the pause at the current instant, shows the reminders due now
+   * (only with `remindersEnabled`, a joined user and a working day that is
+   * not a holiday; one per event and day) and re-arms `SCHEDULE_ALARM`.
+   */
+  async scheduleTick(): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const notify = await this.store.run(async () => {
+      const at = this.now();
+      if (this.store.acc) {
+        this.tracker.applySchedule(at);
+        await this.store.save('acc');
+      }
+      const schedule = this.scheduleOf(user?.uid);
+      const decision = decideReminders(schedule, at, this.store.session !== null, this.store.meta.reminders);
+      if (decision.changed) {
+        this.store.meta.reminders = decision.log;
+        await this.store.save('meta');
+      }
+      await this.ensureScheduleAlarm(schedule, at);
+      return decision.notify;
+    });
+    for (const r of notify) await this.showReminder(r);
+  }
+
+  /** One-shot alarm at a schedule transition, a reminder or midnight. */
+  async onScheduleAlarm(): Promise<void> {
+    await this.refreshConfig(ORG_CONFIG_REFRESH_MS);
+    await this.scheduleTick();
+  }
+
+  /** `SCHEDULE_ALARM` at the next instant something changes (none without a schedule). */
+  private async ensureScheduleAlarm(schedule: EffectiveSchedule | null, at: number): Promise<void> {
+    const when = nextScheduleWake(schedule, at);
+    try {
+      if (when === null) {
+        await chrome.alarms.clear(SCHEDULE_ALARM);
+        return;
+      }
+      const existing = await chrome.alarms.get(SCHEDULE_ALARM);
+      if (existing?.scheduledTime !== when) await chrome.alarms.create(SCHEDULE_ALARM, { when });
+    } catch (err) {
+      console.warn('[timetracking] no se pudo programar la alarma del horario', err);
+    }
+  }
+
+  private async showReminder(r: Reminder): Promise<void> {
+    const { message, button } = reminderText(r);
+    try {
+      await chrome.notifications.create(reminderNotificationId(r), {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+        title: 'Registro de jornada',
+        message,
+        buttons: [{ title: button }],
+        priority: 2,
+        requireInteraction: true,
+      });
+    } catch (err) {
+      console.warn('[timetracking] no se pudo mostrar el recordatorio', err);
+    }
+  }
+
+  /**
+   * Button of a reminder: "Iniciar jornada" starts the work day (the notice
+   * must be accepted: otherwise it opens the notice) and "Cerrar jornada"
+   * closes it. Any other problem opens the popup, which explains it.
+   */
+  async onReminderAction(notificationId: string): Promise<void> {
+    const reminder = parseReminderNotificationId(notificationId);
+    if (!reminder) return;
+    await chrome.notifications.clear(notificationId).catch(() => undefined);
+    try {
+      if (reminder.kind === 'start') {
+        await this.session.start();
+        void this.refreshConfig(0)
+          .then(() => this.scheduleTick())
+          .catch(logError('horario'));
+      } else {
+        await this.session.stop();
+      }
+    } catch (err) {
+      const reason = err instanceof SessionError ? err.reason : '';
+      // Already done from the popup meanwhile: nothing to do.
+      if (reason === 'already-open' || reason === 'not-open') return;
+      if (reason === 'consent-required') {
+        await chrome.tabs.create({ url: chrome.runtime.getURL('consent.html') });
+        return;
+      }
+      await this.openPopup();
+    }
+  }
+
+  /** Click on the body of a reminder: the popup. */
+  async onReminderClicked(notificationId: string): Promise<void> {
+    if (!parseReminderNotificationId(notificationId)) return;
+    await chrome.notifications.clear(notificationId).catch(() => undefined);
+    await this.openPopup();
+  }
+
+  /** The action popup (Chrome 127+); otherwise the same page in a tab. */
+  private async openPopup(): Promise<void> {
+    try {
+      await chrome.action.openPopup();
+    } catch {
+      await chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
+    }
   }
 
   /**
@@ -226,7 +421,9 @@ export class App {
           break;
         case 'session.start':
           await this.session.start();
-          void this.refreshOrgConfig(0).catch(logError('config/org'));
+          void this.refreshConfig(0)
+            .then(() => this.scheduleTick())
+            .catch(logError('horario'));
           break;
         case 'session.stop':
           await this.session.stop();
@@ -278,7 +475,10 @@ export class App {
       this.store.meta.joinError = joinError;
       await this.store.save('meta');
     });
-    if (profile) await this.refreshOrgConfig(ORG_CONFIG_WAKE_REFRESH_MS).catch(logError('config/org'));
+    if (profile) {
+      await this.refreshConfig(ORG_CONFIG_WAKE_REFRESH_MS);
+      await this.scheduleTick().catch(logError('horario'));
+    }
   }
 
   /**
@@ -337,7 +537,10 @@ export class App {
       this.store.meta.profileUid = null;
       this.store.meta.joinError = null;
       this.store.meta.org = null;
+      this.store.meta.schedule = null;
+      this.store.meta.reminders = null;
       await this.store.save('acc', 'meta');
+      await this.ensureScheduleAlarm(null, this.now());
     });
     await Promise.all([this.sync.kick(true), this.screenshots.drain(true)]).catch(() => undefined);
     await this.auth.signOut();
@@ -363,6 +566,7 @@ export class App {
         session: session ? { id: session.id, startedAt: session.startedAt } : null,
         today: todayTotals(daily, user?.uid ?? null, this.now()),
         capture: org ? { screenshots: org.screenshotsEnabled, blur: org.blurScreenshots } : null,
+        schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,

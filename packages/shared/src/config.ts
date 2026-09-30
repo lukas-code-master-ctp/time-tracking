@@ -28,8 +28,13 @@ export const EMULATOR_PORTS = {
 /**
  * Version of the transparency notice the collaborator accepts (spec section 4).
  * 2026-09-30: adds web meeting detection ("En reunión"); everyone accepts again once.
+ * 2026-09-30.2: working hours (extension 0.2.0): nothing is measured outside
+ * the schedule nor in the lunch, and start/end reminders.
  */
-export const CONSENT_VERSION = '2026-09-30';
+export const CONSENT_VERSION = '2026-09-30.2';
+
+/** First notice version that describes web meeting detection (tracker.ts). */
+export const MEETING_CONSENT_VERSION = '2026-09-30';
 
 /** chrome.idle detection threshold in seconds. */
 export const IDLE_DETECTION_SECONDS = 15;

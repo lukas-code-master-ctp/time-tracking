@@ -40,6 +40,7 @@ import {
   FIREBASE_DEMO_PROJECT_ID,
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
+  SCHEDULE_CONFIG_DOC_ID,
   type ActivitySlot,
   type OrgConfig,
   type ScreenshotMeta,
@@ -113,6 +114,20 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     async fetchOrgConfig() {
       const snap = await getDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID));
       return snap.exists() ? (snap.data() as OrgConfig) : null;
+    },
+    async fetchSchedule(uid: string) {
+      const [config, person] = await Promise.all([
+        getDoc(doc(db, COLLECTIONS.config, SCHEDULE_CONFIG_DOC_ID)),
+        // Rules not deployed yet (0.2.0 before them): no exception, as if missing.
+        getDoc(doc(db, COLLECTIONS.schedules, uid)).catch((err: unknown) => {
+          if ((err as { code?: unknown } | null)?.code === 'permission-denied') return null;
+          throw err;
+        }),
+      ]);
+      return {
+        config: config.exists() ? config.data() : null,
+        person: person?.exists() ? person.data() : null,
+      };
     },
     async acceptConsent(uid: string, at: number, version: string) {
       // Both fields together, always (the rules require both the first time).

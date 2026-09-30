@@ -188,3 +188,24 @@ form.stack label {
   color: var(--muted);
   text-align: left;
 }
+
+/* Working hours (spec 2026-09-30-horarios) */
+.schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+}
+
+.schedule .state {
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.schedule.paused .state {
+  color: var(--warn-text);
+}
+
+.schedule.paused {
+  background: var(--warn-soft);
+}

@@ -5,7 +5,8 @@
  * - signed out → "Iniciar sesión con Google" (dev build: email of the emulator)
  * - joinOrg rejected (no invitation, other domain, disabled…) → message + retry / other account
  * - notice not accepted → link to the consent page (opened automatically after signing in)
- * - ready → start/stop the work day, live timer, today's hours, activity
+ * - ready → start/stop the work day, live timer, working hours (state now
+ *   and today's schedule, only when configured), today's hours, activity
  *   (excluding meeting time) and time in web meetings, what is being
  *   measured, pending uploads, sign out.
  */
@@ -232,6 +233,16 @@ function renderReady(s: StatusView): void {
   }
   root.append(card);
 
+  // Working hours: only when the organization configured a schedule.
+  if (s.schedule) {
+    root.append(
+      el('section', { className: `card schedule${s.schedule.measuring ? '' : ' paused'}` }, [
+        el('div', { className: 'state', textContent: s.schedule.label }),
+        el('div', { className: 'small muted', textContent: s.schedule.today }),
+      ]),
+    );
+  }
+
   // Today
   root.append(
     el('section', { className: 'stats' }, [
@@ -274,7 +285,13 @@ function renderReady(s: StatusView): void {
           : null,
       ]),
       el('p', { className: 'small muted foot' }, [
-        on ? 'Se mide solo mientras tu jornada está iniciada. ' : 'Ahora no se está midiendo nada. ',
+        on
+          ? s.schedule && !s.schedule.measuring
+            ? 'Tu jornada sigue iniciada, pero ahora no se mide nada. '
+            : s.schedule
+              ? 'Se mide solo con tu jornada iniciada y dentro de tu horario. '
+              : 'Se mide solo mientras tu jornada está iniciada. '
+          : 'Ahora no se está midiendo nada. ',
         (() => {
           const l = el('button', { type: 'button', className: 'link', textContent: 'Ver aviso' });
           l.addEventListener('click', openConsent);

@@ -9,6 +9,7 @@
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
 import type { Role, UserStatus } from '@timetracking/shared';
+import type { ScheduleView } from './background/schedule';
 
 // ---------- content script ----------
 
@@ -85,6 +86,8 @@ export interface StatusView {
   today: { trackedSeconds: number; activeSeconds: number; meetingSeconds: number };
   /** What is measured, from the cached `config/org` (null = not read yet). */
   capture: { screenshots: boolean; blur: boolean } | null;
+  /** Working hours now and today (spec 2026-09-30-horarios); null = no schedule (nothing new is shown). */
+  schedule: ScheduleView | null;
   /** Operations waiting to be uploaded. */
   pendingOps: number;
   /** Screenshots waiting to be uploaded. */

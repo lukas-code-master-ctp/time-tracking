@@ -77,6 +77,15 @@ export function createChromeMock() {
     badgeColor: '' as unknown,
     alarms: new Map<string, chrome.alarms.AlarmCreateInfo>(),
     injected: [] as number[],
+    /** Shown notifications by id (chrome.notifications). */
+    notifications: new Map<string, chrome.notifications.NotificationCreateOptions>(),
+    /** Every notification created, in order. */
+    notificationLog: [] as { id: string; options: chrome.notifications.NotificationCreateOptions }[],
+    /** Pages opened with chrome.tabs.create. */
+    openedTabs: [] as string[],
+    popupOpened: 0,
+    /** chrome.action.openPopup fails (no focused window…). */
+    openPopupFails: false,
     /** tab ids where executeScript fails (chrome://, Web Store). */
     notScriptable: new Set<number>(),
   };
@@ -104,6 +113,8 @@ export function createChromeMock() {
     >(),
     installed: new MockEvent<(d: unknown) => void>(),
     startup: new MockEvent<() => void>(),
+    notificationButton: new MockEvent<(id: string, buttonIndex: number) => void>(),
+    notificationClicked: new MockEvent<(id: string) => void>(),
   };
 
   const local = new MockStorageArea();
@@ -117,7 +128,9 @@ export function createChromeMock() {
       },
       get: async (name: string) => {
         const a = world.alarms.get(name);
-        return a ? ({ name, scheduledTime: 0, periodInMinutes: a.periodInMinutes } as chrome.alarms.Alarm) : undefined;
+        return a
+          ? ({ name, scheduledTime: a.when ?? 0, periodInMinutes: a.periodInMinutes } as chrome.alarms.Alarm)
+          : undefined;
       },
       clear: async (name: string) => world.alarms.delete(name),
       onAlarm: events.alarm,
@@ -134,6 +147,10 @@ export function createChromeMock() {
       onUpdated: events.tabUpdated,
       onRemoved: events.tabRemoved,
       query: async () => world.windows.flatMap((w) => toWindow(w).tabs ?? []),
+      create: async ({ url }: { url: string }) => {
+        world.openedTabs.push(url);
+        return { id: 999, url } as chrome.tabs.Tab;
+      },
     },
     windows: {
       WINDOW_ID_NONE: -1,
@@ -159,6 +176,20 @@ export function createChromeMock() {
         world.badgeColor = color;
       },
       setBadgeTextColor: async () => undefined,
+      openPopup: async () => {
+        if (world.openPopupFails) throw new Error('Could not find an active browser window.');
+        world.popupOpened++;
+      },
+    },
+    notifications: {
+      create: async (id: string, options: chrome.notifications.NotificationCreateOptions) => {
+        world.notifications.set(id, options);
+        world.notificationLog.push({ id, options });
+        return id;
+      },
+      clear: async (id: string) => world.notifications.delete(id),
+      onButtonClicked: events.notificationButton,
+      onClicked: events.notificationClicked,
     },
     runtime: {
       id: 'test-extension-id',

@@ -9,7 +9,8 @@
  *   attempt per block.
  * - Conditions at that instant: open work day, `screenshotsEnabled` in the
  *   cached `config/org`, a focused (non-incognito) Chrome window whose active
- *   tab is http/https, screen not locked. Otherwise nothing is captured and
+ *   tab is http/https, screen not locked, and working time when there is a
+ *   schedule (never outside the schedule nor in the lunch). Otherwise nothing is captured and
  *   nothing is recorded (the data model has no "no screenshot" field; see the
  *   spec's decisions).
  * - Capture: `chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg' })`,
@@ -37,6 +38,7 @@ import {
 import type { ImageProcessor } from './image';
 import { backoffMs } from './queue';
 import type { Remote } from './remote';
+import { effectiveSchedule, isMeasuringAt } from './schedule';
 import type { StateStore } from './state';
 import { errorCode } from './sync';
 
@@ -237,6 +239,8 @@ export function chromeCapturer(): Capturer {
 export type CaptureOutcome =
   | 'no-session'
   | 'not-due'
+  /** Outside the working hours or in the lunch (spec 2026-09-30-horarios). */
+  | 'paused'
   | 'disabled'
   | 'no-target'
   | 'failed'
@@ -286,6 +290,8 @@ export class ScreenshotManager {
       if (!session) return 'no-session' as const;
       const prev = this.store.shotPlan;
       const slotStart = slotStartOf(at);
+      const measuring = isMeasuringAt(effectiveSchedule(this.store.meta.schedule, session.uid), at);
+      if (force && !measuring) return 'paused' as const;
       if (force && prev?.slotStart === slotStart && prev.taken) return 'duplicate' as const;
       const plan = force ? { slotStart, at, done: false } : planFor(prev, at, this.random);
       if (plan !== prev) {
@@ -296,6 +302,8 @@ export class ScreenshotManager {
       // One attempt per block, whatever happens next.
       plan.done = true;
       await this.store.save('shotPlan');
+      // Outside working hours / lunch nothing is measured, screenshots included.
+      if (!measuring) return 'paused' as const;
       const org = this.store.meta.org;
       if (!org || org.uid !== session.uid || !org.screenshotsEnabled) return 'disabled' as const;
       return { session, slotStart: plan.slotStart, blur: org.blurScreenshots };

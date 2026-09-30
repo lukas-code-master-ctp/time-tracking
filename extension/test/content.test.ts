@@ -102,7 +102,7 @@ describe('manifest', () => {
   it('dev: MV3 module worker, permissions, content script, fixed key', () => {
     const m = buildManifest({ appEnv: 'dev', version: '1.2.3' });
     expect(m.background).toEqual({ service_worker: 'background.js', type: 'module' });
-    expect(m.permissions).toEqual(['storage', 'unlimitedStorage', 'alarms', 'idle', 'tabs', 'identity', 'scripting']);
+    expect(m.permissions).toEqual(['storage', 'unlimitedStorage', 'alarms', 'idle', 'tabs', 'identity', 'scripting', 'notifications']);
     expect(m.icons).toEqual(ICONS);
     expect(m.action?.default_icon).toEqual(ICONS);
     expect(m.action?.default_popup).toBe('popup.html');

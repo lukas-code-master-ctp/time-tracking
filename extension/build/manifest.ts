@@ -55,7 +55,8 @@ export function buildManifest(opts: ManifestOptions): chrome.runtime.ManifestV3 
     icons: ICONS,
     action: { default_popup: POPUP_FILE, default_title: 'Registro de jornada', default_icon: ICONS },
     // unlimitedStorage: the offline screenshot queue (up to 20 JPEGs) exceeds the 10 MB default.
-    permissions: ['storage', 'unlimitedStorage', 'alarms', 'idle', 'tabs', 'identity', 'scripting'],
+    // notifications: start/end reminders of the working hours (0.2.0).
+    permissions: ['storage', 'unlimitedStorage', 'alarms', 'idle', 'tabs', 'identity', 'scripting', 'notifications'],
     host_permissions: ['<all_urls>'],
     incognito: 'not_allowed',
     content_scripts: [

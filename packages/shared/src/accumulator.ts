@@ -41,6 +41,12 @@
  * - domains / urls: tracked seconds with a focused http/https URL, keyed by
  *   domain and by sanitized URL (no query/hash). Top 20 URLs per block.
  *
+ * Pause (spec 2026-09-30-horarios, "no medir fuera de horario"): while
+ * `setPaused(true)` is in effect (outside the working hours or in the lunch)
+ * the work day stays open but nothing is attributed: no tracked, active,
+ * meeting or outside-Chrome seconds, no domains/URLs. The clock still
+ * advances, so the pause is attributed per second like any other state.
+ *
  * Out-of-order events (timestamp older than the last event) never move the
  * clock backwards: state changes then apply from `lastEventAt` onwards, and
  * activity marks are still recorded for their own second (if the block has
@@ -114,6 +120,8 @@ export interface SlotAccumulatorJSON {
   focus: FocusState | null;
   /** Web meeting in progress. Missing in older states (= false). */
   meeting?: boolean;
+  /** Measurement paused (outside working hours / lunch). Missing in older states (= false). */
+  paused?: boolean;
   closedUntil: number;
   slots: SlotStateJSON[];
 }
@@ -155,6 +163,7 @@ export class SlotAccumulator {
   private idle: IdleState = 'active';
   private focus: FocusState | null = null;
   private meeting = false;
+  private _paused = false;
   /** Blocks starting before this instant were already emitted as closed. */
   private closedUntil = 0;
   private readonly slots = new Map<number, SlotState>();
@@ -183,6 +192,11 @@ export class SlotAccumulator {
   /** Whether a web meeting is currently in progress (last `setMeeting`). */
   get inMeeting(): boolean {
     return this.meeting;
+  }
+
+  /** Whether measurement is paused (outside working hours / lunch). */
+  get paused(): boolean {
+    return this._paused;
   }
 
   /** Opens (sessionId) or closes (null) the work day at `ms`. */
@@ -215,6 +229,16 @@ export class SlotAccumulator {
     assertTime(ms, 'setMeeting');
     this.advance(ms);
     this.meeting = inMeeting === true;
+  }
+
+  /**
+   * Pauses (true) or resumes (false) the measurement at `ms` without closing
+   * the work day: seconds from `ms` on are not attributed while paused.
+   */
+  setPaused(paused: boolean, ms: number): void {
+    assertTime(ms, 'setPaused');
+    this.advance(ms);
+    this._paused = paused === true;
   }
 
   /** The content script saw keyboard/mouse input during the second of `ms`. */
@@ -279,6 +303,7 @@ export class SlotAccumulator {
       idle: this.idle,
       focus: this.focus ? { ...this.focus } : null,
       meeting: this.meeting,
+      paused: this._paused,
       closedUntil: this.closedUntil,
       slots,
     };
@@ -306,6 +331,7 @@ export class SlotAccumulator {
           }
         : null;
     acc.meeting = j.meeting === true;
+    acc._paused = j.paused === true;
     acc.closedUntil = typeof j.closedUntil === 'number' && Number.isFinite(j.closedUntil) ? j.closedUntil : 0;
     const validOffset = (n: unknown): n is number =>
       typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < SLOT_SECONDS;
@@ -370,6 +396,7 @@ export class SlotAccumulator {
     const sessionId = this._sessionId;
     if (sessionId === null) return; // work day closed: nothing is tracked
     if (ms - last > this.maxGapMs) return; // gap without pulses: "no data"
+    if (this._paused) return; // outside working hours / lunch: nothing is measured
 
     const focus = this.focus;
     const idleDerivedActive = (focus === null || !focus.measurable) && this.idle === 'active';
