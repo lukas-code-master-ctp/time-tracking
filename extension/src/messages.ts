@@ -82,7 +82,7 @@ export interface StatusView {
   /** Open work day, if any. */
   session: { id: string; startedAt: number } | null;
   /** Today's totals (America/Santiago) from the blocks measured on this device. */
-  today: { trackedSeconds: number; activeSeconds: number };
+  today: { trackedSeconds: number; activeSeconds: number; meetingSeconds: number };
   /** What is measured, from the cached `config/org` (null = not read yet). */
   capture: { screenshots: boolean; blur: boolean } | null;
   /** Operations waiting to be uploaded. */

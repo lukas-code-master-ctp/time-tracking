@@ -15,13 +15,15 @@ export interface DailySummary {
   uid: string;
   /** `YYYY-MM-DD`. */
   date: string;
-  /** slotStart → seconds of that block. */
-  slots: Record<string, { tracked: number; active: number }>;
+  /** slotStart → seconds of that block (`meeting` missing in older summaries = 0). */
+  slots: Record<string, { tracked: number; active: number; meeting?: number }>;
 }
 
 export interface TodayTotals {
   trackedSeconds: number;
   activeSeconds: number;
+  /** In a web meeting without keyboard/mouse (never overlaps activeSeconds). */
+  meetingSeconds: number;
 }
 
 const clampInt = (n: unknown, max: number): number =>
@@ -43,7 +45,8 @@ export function recordSlots(
     }
     const tracked = clampInt(slot.trackedSeconds, 600);
     const active = Math.min(clampInt(slot.activeSeconds, 600), tracked);
-    out.slots[String(slot.slotStart)] = { tracked, active };
+    const meeting = Math.min(clampInt(slot.meetingSeconds, 600), tracked - active);
+    out.slots[String(slot.slotStart)] = { tracked, active, meeting };
   }
   return out;
 }
@@ -56,15 +59,17 @@ export function todayTotals(
   timeZone: string = DEFAULT_TIME_ZONE,
 ): TodayTotals {
   if (!summary || !uid || summary.uid !== uid || summary.date !== dateKey(now, timeZone)) {
-    return { trackedSeconds: 0, activeSeconds: 0 };
+    return { trackedSeconds: 0, activeSeconds: 0, meetingSeconds: 0 };
   }
   let trackedSeconds = 0;
   let activeSeconds = 0;
+  let meetingSeconds = 0;
   for (const s of Object.values(summary.slots)) {
     trackedSeconds += s.tracked;
     activeSeconds += s.active;
+    meetingSeconds += s.meeting ?? 0;
   }
-  return { trackedSeconds, activeSeconds };
+  return { trackedSeconds, activeSeconds, meetingSeconds };
 }
 
 export function dailyFromJSON(raw: unknown): DailySummary | null {
@@ -75,7 +80,9 @@ export function dailyFromJSON(raw: unknown): DailySummary | null {
   for (const [k, v] of Object.entries(r.slots)) {
     if (!/^\d+$/.test(k) || !v || typeof v !== 'object') continue;
     const tracked = clampInt((v as { tracked?: unknown }).tracked, 600);
-    slots[k] = { tracked, active: Math.min(clampInt((v as { active?: unknown }).active, 600), tracked) };
+    const active = Math.min(clampInt((v as { active?: unknown }).active, 600), tracked);
+    const meeting = Math.min(clampInt((v as { meeting?: unknown }).meeting, 600), tracked - active);
+    slots[k] = { tracked, active, meeting };
   }
   return { uid: r.uid, date: r.date, slots };
 }

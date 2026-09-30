@@ -25,8 +25,11 @@ export const EMULATOR_PORTS = {
   ui: 4000,
 } as const;
 
-/** Version of the transparency notice the collaborator accepts (spec section 4). */
-export const CONSENT_VERSION = '2026-09-29';
+/**
+ * Version of the transparency notice the collaborator accepts (spec section 4).
+ * 2026-09-30: adds web meeting detection ("En reunión"); everyone accepts again once.
+ */
+export const CONSENT_VERSION = '2026-09-30';
 
 /** chrome.idle detection threshold in seconds. */
 export const IDLE_DETECTION_SECONDS = 15;

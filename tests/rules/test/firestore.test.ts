@@ -533,6 +533,35 @@ describe('activity', () => {
     await assertFails(db('nodoc').doc(`activity/${activityDocId('nodoc', SLOT)}`).set(activity('nodoc')));
   });
 
+  it('meetingSeconds is optional: absent (extension 0.1.1) or a valid integer', async () => {
+    const ref = db('alice').doc(`activity/${aliceId}`);
+    // Absent: the 8 fields of extension 0.1.1 keep being accepted.
+    await assertSucceeds(ref.set(activity('alice')));
+    await assertSucceeds(ref.set(activity('alice', { meetingSeconds: 0 })));
+    await assertSucceeds(ref.set(activity('alice', { trackedSeconds: 600, activeSeconds: 420, meetingSeconds: 180 })));
+    await assertSucceeds(ref.set(activity('alice', { trackedSeconds: 600, activeSeconds: 0, meetingSeconds: 600 })));
+    // Merge onto a doc without the field.
+    await assertSucceeds(ref.set({ meetingSeconds: 100 }, { merge: true }));
+  });
+
+  it('meetingSeconds: rejects negative, non integer, wrong type, broken sum and extra fields', async () => {
+    const ref = db('alice').doc(`activity/${aliceId}`);
+    await assertFails(ref.set(activity('alice', { meetingSeconds: -1 })));
+    await assertFails(ref.set(activity('alice', { meetingSeconds: 1.5 })));
+    await assertFails(ref.set({ ...activity('alice'), meetingSeconds: '10' } as unknown as ActivitySlot));
+    await assertFails(ref.set({ ...activity('alice'), meetingSeconds: null } as unknown as ActivitySlot));
+    // 420 active + 181 meeting > 600 tracked.
+    await assertFails(ref.set(activity('alice', { trackedSeconds: 600, activeSeconds: 420, meetingSeconds: 181 })));
+    await assertFails(ref.set(activity('alice', { trackedSeconds: 0, activeSeconds: 0, outsideChromeSeconds: 0, meetingSeconds: 1 })));
+    await assertFails(ref.set({ ...activity('alice', { meetingSeconds: 10 }), meetingCount: 1 } as unknown as ActivitySlot));
+    await assertFails(ref.set({ ...activity('alice', { meetingSeconds: 10 }), meetingPlatform: 'meet' } as unknown as ActivitySlot));
+    // Merge that breaks the sum on the resulting doc (420 active + 200 > 600).
+    await seed(env, { [`activity/${aliceId}`]: activity('alice', { meetingSeconds: 100 }) });
+    await assertFails(ref.set({ meetingSeconds: 200 }, { merge: true }));
+    await assertFails(ref.set({ activeSeconds: 550 }, { merge: true }));
+    await assertSucceeds(ref.set({ activeSeconds: 500 }, { merge: true }));
+  });
+
   it('partial merge on an existing doc is validated against the resulting doc', async () => {
     await seed(env, { [`activity/${aliceId}`]: activity('alice', { trackedSeconds: 300, activeSeconds: 100, outsideChromeSeconds: 0 }) });
     const ref = db('alice').doc(`activity/${aliceId}`);

@@ -30,6 +30,8 @@ function checkInvariants(slot: ActivitySlot): void {
   expect(slot.activeSeconds).toBeGreaterThanOrEqual(0);
   expect(slot.activeSeconds).toBeLessThanOrEqual(slot.trackedSeconds);
   expect(slot.outsideChromeSeconds).toBeLessThanOrEqual(slot.trackedSeconds);
+  expect(slot.meetingSeconds).toBeGreaterThanOrEqual(0);
+  expect(slot.activeSeconds + (slot.meetingSeconds ?? 0)).toBeLessThanOrEqual(slot.trackedSeconds);
   expect(sum(Object.values(slot.domains)) + slot.outsideChromeSeconds).toBeLessThanOrEqual(slot.trackedSeconds);
   expect(sum(slot.urls.map((u) => u.seconds))).toBeLessThanOrEqual(slot.trackedSeconds);
   expect(slot.urls.length).toBeLessThanOrEqual(20);
@@ -68,6 +70,7 @@ describe('SlotAccumulator — basics', () => {
       trackedSeconds: 300,
       activeSeconds: 0,
       outsideChromeSeconds: 0,
+      meetingSeconds: 0,
       domains: { 'docs.google.com': 300 },
       urls: [{ url: 'https://docs.google.com/document/d/abc', seconds: 300 }],
     });
@@ -520,7 +523,8 @@ describe('SlotAccumulator — randomized invariants', () => {
         else if (r < 0.55) acc.setFocus(focuses[Math.floor(rand() * focuses.length)] ?? null, t);
         else if (r < 0.65) acc.setIdleState(idles[Math.floor(rand() * idles.length)] ?? 'active', t);
         else if (r < 0.7) acc.setSession(rand() < 0.5 ? null : `s${run}`, t);
-        else if (r < 0.9) acc.tick(t);
+        else if (r < 0.8) acc.tick(t);
+        else if (r < 0.9) acc.setMeeting(rand() < 0.5, t);
         else slots.push(...acc.flush(t).closed);
       }
       const last = acc.flush(t + SLOT_MS);
@@ -529,5 +533,152 @@ describe('SlotAccumulator — randomized invariants', () => {
       const starts = slots.map((s) => s.slotStart);
       expect(new Set(starts).size).toBe(starts.length);
     }
+  });
+});
+
+describe('SlotAccumulator — web meetings', () => {
+  it('seconds without input during a meeting are meeting seconds, not active', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus({ url: 'https://meet.google.com/abc-defg-hij', measurable: true }, T0);
+    acc.setMeeting(true, T0);
+    tickRange(acc, T0, T0 + 300 * S);
+    const { current } = acc.flush(T0 + 300 * S);
+    expect(current).toMatchObject({ trackedSeconds: 300, activeSeconds: 0, meetingSeconds: 300 });
+    expect(acc.inMeeting).toBe(true);
+    checkInvariants(current!);
+  });
+
+  it('a second with keyboard/mouse is active, never a meeting second', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(WEB, T0); // writing in Docs, meeting in a background tab
+    acc.setMeeting(true, T0);
+    for (let i = 0; i < 10; i++) acc.markActiveSecond(T0 + i * S + 500);
+    acc.tick(T0 + 60 * S);
+    // A late mark (content scripts report up to 10 s late) for a second already attributed.
+    acc.markActiveSecond(T0 + 30 * S);
+    const { current } = acc.flush(T0 + 60 * S);
+    expect(current).toMatchObject({ trackedSeconds: 60, activeSeconds: 11, meetingSeconds: 49 });
+    checkInvariants(current!);
+  });
+
+  it('idle-derived activity (outside Chrome / not measurable, idle active) wins over the meeting', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setMeeting(true, T0);
+    acc.setFocus(null, T0); // in another app, meeting audio in a Chrome tab
+    acc.tick(T0 + 20 * S);
+    acc.setIdleState('idle', T0 + 20 * S);
+    acc.tick(T0 + 50 * S);
+    const { current } = acc.flush(T0 + 50 * S);
+    expect(current).toMatchObject({ trackedSeconds: 50, activeSeconds: 20, meetingSeconds: 30, outsideChromeSeconds: 50 });
+    checkInvariants(current!);
+  });
+
+  it('attributes each interval to the meeting state valid during it', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(WEB, T0);
+    acc.tick(T0 + 10 * S);
+    acc.setMeeting(true, T0 + 10 * S);
+    acc.tick(T0 + 40 * S);
+    acc.setMeeting(false, T0 + 45 * S);
+    acc.tick(T0 + 70 * S);
+    const { current } = acc.flush(T0 + 70 * S);
+    expect(current).toMatchObject({ trackedSeconds: 70, activeSeconds: 0, meetingSeconds: 35 });
+    expect(acc.inMeeting).toBe(false);
+  });
+
+  it('splits meeting seconds across a block boundary', () => {
+    const acc = newAcc();
+    const start = T0 + 580 * S;
+    acc.setSession('s', start);
+    acc.setFocus(WEB, start);
+    acc.setMeeting(true, start);
+    acc.tick(start + 30 * S);
+    const { closed, current } = acc.flush(start + 30 * S);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatchObject({ slotStart: T0, trackedSeconds: 20, meetingSeconds: 20 });
+    expect(current).toMatchObject({ slotStart: T0 + SLOT_MS, trackedSeconds: 10, meetingSeconds: 10 });
+  });
+
+  it('does not count meeting time inside gaps > 90 s nor with the work day closed', () => {
+    const acc = newAcc();
+    acc.setSession('s', T0);
+    acc.setFocus(WEB, T0);
+    acc.setMeeting(true, T0);
+    acc.tick(T0 + 30 * S);
+    acc.tick(T0 + 200 * S); // 170 s gap: no data
+    acc.tick(T0 + 230 * S);
+    acc.setSession(null, T0 + 230 * S);
+    acc.tick(T0 + 260 * S); // closed work day
+    const { current } = acc.flush(T0 + 260 * S);
+    expect(current).toMatchObject({ trackedSeconds: 60, meetingSeconds: 60 });
+  });
+
+  it('a meeting with the work day closed is kept as state and counts once it opens', () => {
+    const acc = newAcc();
+    acc.setMeeting(true, T0);
+    acc.setFocus(WEB, T0);
+    acc.tick(T0 + 20 * S);
+    acc.setSession('s', T0 + 20 * S);
+    acc.tick(T0 + 40 * S);
+    expect(acc.flush(T0 + 40 * S).current).toMatchObject({ trackedSeconds: 20, meetingSeconds: 20 });
+  });
+
+  it('serializes meeting state and seconds (round trip gives identical results)', () => {
+    const run = (split: boolean): ActivitySlot | null => {
+      let acc = newAcc();
+      acc.setSession('s', T0);
+      acc.setFocus(WEB, T0);
+      acc.setMeeting(true, T0);
+      acc.tick(T0 + 20 * S);
+      if (split) acc = SlotAccumulator.fromJSON(JSON.parse(JSON.stringify(acc.toJSON())));
+      expect(acc.inMeeting).toBe(true);
+      acc.markActiveSecond(T0 + 25 * S);
+      acc.tick(T0 + 40 * S);
+      return acc.flush(T0 + 40 * S).current;
+    };
+    expect(run(true)).toEqual(run(false));
+    expect(run(false)).toMatchObject({ trackedSeconds: 40, activeSeconds: 1, meetingSeconds: 39 });
+  });
+
+  it('reads states saved before meetings existed (no meeting fields) as no meeting', () => {
+    const acc = SlotAccumulator.fromJSON({
+      v: 1,
+      uid: UID,
+      sessionId: 's',
+      lastEventAt: T0 + 10 * S,
+      idle: 'active',
+      focus: { url: 'https://docs.google.com/d', domain: 'docs.google.com', measurable: true },
+      closedUntil: 0,
+      slots: [{ slotStart: T0, sessionId: 's', tracked: [0, 1, 2], active: [1], outside: 0, domains: {}, urls: {} }],
+    });
+    expect(acc.inMeeting).toBe(false);
+    acc.tick(T0 + 20 * S);
+    expect(acc.flush(T0 + 20 * S).current).toMatchObject({ trackedSeconds: 13, activeSeconds: 1, meetingSeconds: 0 });
+    expect(acc.toJSON().meeting).toBe(false);
+  });
+
+  it('sanitizes corrupted meeting offsets', () => {
+    const acc = SlotAccumulator.fromJSON({
+      v: 1,
+      uid: UID,
+      sessionId: 's',
+      lastEventAt: T0 + 10 * S,
+      idle: 'active',
+      focus: null,
+      meeting: 'yes',
+      closedUntil: 0,
+      slots: [{ slotStart: T0, sessionId: 's', tracked: [0, 1, 2], active: [0], meeting: [0, 1, 5, 700, -1, 'x'], outside: 0, domains: {}, urls: {} }],
+    });
+    expect(acc.inMeeting).toBe(false);
+    // 0 is active, 5 is not tracked: only second 1 is a meeting second.
+    expect(acc.flush(T0 + 10 * S).current).toMatchObject({ trackedSeconds: 3, activeSeconds: 1, meetingSeconds: 1 });
+  });
+
+  it('rejects invalid timestamps', () => {
+    expect(() => newAcc().setMeeting(true, Number.NaN)).toThrow(TypeError);
   });
 });

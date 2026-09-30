@@ -198,7 +198,7 @@ async function e2e(ctx: BrowserContext, popup: Page): Promise<void> {
     if (!me) fail('no se encontró users/{uid}');
     const uid = me.id as string;
     const profile = await firestoreDoc(`users/${uid}`);
-    if (profile?.consentVersion !== '2026-09-29' || typeof profile.consentAcceptedAt !== 'number') {
+    if (profile?.consentVersion !== '2026-09-30' || typeof profile.consentAcceptedAt !== 'number') {
       fail(`consentimiento no guardado: ${JSON.stringify(profile)}`);
     }
     console.log(`Aviso aceptado: users/${uid} con consentVersion ${String(profile.consentVersion)}.`);
@@ -310,13 +310,18 @@ Estado: ${JSON.stringify(state).slice(0, 4000)}`);
     const act = activity[0];
     if (!act) fail('no hay documentos activity en Firestore');
     const actKeys = Object.keys(act).filter((k) => k !== 'id').sort();
-    const expected = ['activeSeconds', 'domains', 'outsideChromeSeconds', 'sessionId', 'slotStart', 'trackedSeconds', 'uid', 'urls'];
+    const expected = ['activeSeconds', 'domains', 'meetingSeconds', 'outsideChromeSeconds', 'sessionId', 'slotStart', 'trackedSeconds', 'uid', 'urls'];
     if (JSON.stringify(actKeys) !== JSON.stringify(expected)) fail(`campos de activity: ${actKeys.join(',')}`);
+    // No meeting room was open in the test: 0 meeting seconds (sent as an integer).
+    if ((act.meetingSeconds as { integerValue?: string } | undefined)?.integerValue !== '0') {
+      fail(`meetingSeconds inesperado: ${JSON.stringify(act.meetingSeconds)}`);
+    }
     const urls = JSON.stringify(act.urls);
     if (urls.includes('token=') || urls.includes('#x')) fail('se guardó query/hash en urls');
     const today = await popup.textContent('#app');
     if (!today?.includes('Horas de hoy')) fail('el popup no muestra las horas de hoy');
-    console.log('E2E OK: aviso, jornada, captura difuminada en Storage + doc, activity con los 8 campos, jornada cerrada.');
+    if (!today?.includes('En reunión hoy')) fail('el popup no muestra el tiempo en reunión de hoy');
+    console.log('E2E OK: aviso, jornada, captura difuminada en Storage + doc, activity con los 8 campos + meetingSeconds, jornada cerrada.');
   } finally {
     server.close();
   }

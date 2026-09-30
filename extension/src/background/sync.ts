@@ -98,8 +98,16 @@ const nonNegInt = (n: unknown): number =>
 
 /**
  * The `activity` document exactly as firestore.rules expect it: the 8 fields
- * of the model, integer counters, activeSeconds/outsideChromeSeconds <=
- * trackedSeconds <= 600, at most 20 URLs, no empty/reserved map keys.
+ * of the model plus `meetingSeconds`, integer counters,
+ * activeSeconds/outsideChromeSeconds <= trackedSeconds <= 600,
+ * activeSeconds + meetingSeconds <= trackedSeconds, at most 20 URLs, no
+ * empty/reserved map keys.
+ *
+ * Decision: `meetingSeconds` is always sent (0 when there was no meeting).
+ * Uploads are `set(..., { merge: true })`, so omitting it when 0 could leave a
+ * stale value from an earlier snapshot of the same block; sending it always
+ * keeps every snapshot self-contained. The rules also accept documents
+ * without it (extension 0.1.1).
  */
 export function toActivityDoc(slot: ActivitySlot): ActivitySlot {
   const trackedSeconds = Math.min(nonNegInt(slot.trackedSeconds), SLOT_SECONDS);
@@ -112,13 +120,15 @@ export function toActivityDoc(slot: ActivitySlot): ActivitySlot {
     .filter((u) => u && typeof u.url === 'string' && u.url !== '')
     .slice(0, MAX_URLS_PER_SLOT)
     .map((u) => ({ url: u.url, seconds: Math.min(nonNegInt(u.seconds), SLOT_SECONDS) }));
+  const activeSeconds = Math.min(nonNegInt(slot.activeSeconds), trackedSeconds);
   return {
     uid: slot.uid,
     sessionId: slot.sessionId,
     slotStart: nonNegInt(slot.slotStart),
     trackedSeconds,
-    activeSeconds: Math.min(nonNegInt(slot.activeSeconds), trackedSeconds),
+    activeSeconds,
     outsideChromeSeconds: Math.min(nonNegInt(slot.outsideChromeSeconds), trackedSeconds),
+    meetingSeconds: Math.min(nonNegInt(slot.meetingSeconds), trackedSeconds - activeSeconds),
     domains,
     urls,
   };

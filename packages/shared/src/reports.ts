@@ -24,7 +24,12 @@ export interface MemberSummary {
   /** Measured seconds (sum of `trackedSeconds`). */
   trackedSeconds: number;
   activeSeconds: number;
-  /** 0..100 rounded, or null when nothing was measured. */
+  /** Seconds in a web meeting without keyboard/mouse (sum of `meetingSeconds`). */
+  meetingSeconds: number;
+  /**
+   * activeSeconds / (trackedSeconds - meetingSeconds), 0..100 rounded, or
+   * null when nothing outside meetings was measured.
+   */
   activityPercent: number | null;
   outsideChromeSeconds: number;
   /**
@@ -63,17 +68,37 @@ export interface TeamSummary {
     membersInSession: number;
     trackedSeconds: number;
     activeSeconds: number;
+    meetingSeconds: number;
     activityPercent: number | null;
     outsideChromeSeconds: number;
     sessionSeconds: number;
   };
 }
 
-/** activeSeconds / trackedSeconds as a rounded percentage (0..100), or null. */
-export function activityPercent(activeSeconds: number, trackedSeconds: number): number | null {
-  if (!(trackedSeconds > 0)) return null;
-  const pct = Math.round((Math.max(0, activeSeconds) / trackedSeconds) * 100);
+/**
+ * activeSeconds / (trackedSeconds - meetingSeconds) as a rounded percentage
+ * (0..100). Meeting time neither raises nor lowers the percentage. Returns
+ * null when the denominator is 0: nothing measured, or everything measured
+ * was a meeting (shown as "—" and left out of averages).
+ */
+export function activityPercent(activeSeconds: number, trackedSeconds: number, meetingSeconds = 0): number | null {
+  const base = trackedSeconds - Math.max(0, Number.isFinite(meetingSeconds) ? meetingSeconds : 0);
+  if (!(base > 0)) return null;
+  const pct = Math.round((Math.max(0, activeSeconds) / base) * 100);
   return Math.min(100, Math.max(0, pct));
+}
+
+/**
+ * `meetingSeconds` of a block, normalized: 0 when missing (documents written
+ * by extension 0.1.1 or older) or invalid, integer, and clamped so that
+ * active + meeting never exceeds tracked.
+ */
+export function meetingSecondsOf(slot: Pick<ActivitySlot, 'trackedSeconds' | 'activeSeconds' | 'meetingSeconds'>): number {
+  const tracked = Math.max(0, Number.isFinite(slot.trackedSeconds) ? slot.trackedSeconds : 0);
+  const active = Math.min(Math.max(0, Number.isFinite(slot.activeSeconds) ? slot.activeSeconds : 0), tracked);
+  const raw = slot.meetingSeconds;
+  const meeting = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0;
+  return Math.min(meeting, Math.max(0, tracked - active));
 }
 
 function inRange(ms: number, from: number | undefined, to: number | undefined): boolean {
@@ -113,6 +138,7 @@ export function summarizeMember(
   const topN = options.topN ?? 10;
   let trackedSeconds = 0;
   let activeSeconds = 0;
+  let meetingSeconds = 0;
   let outsideChromeSeconds = 0;
   let slotCount = 0;
   let lastActivityAt: number | null = null;
@@ -125,6 +151,7 @@ export function summarizeMember(
     const tracked = Math.max(0, slot.trackedSeconds);
     trackedSeconds += tracked;
     activeSeconds += Math.min(Math.max(0, slot.activeSeconds), tracked);
+    meetingSeconds += meetingSecondsOf(slot);
     outsideChromeSeconds += Math.min(Math.max(0, slot.outsideChromeSeconds), tracked);
     for (const [d, s] of Object.entries(slot.domains ?? {})) domains.set(d, (domains.get(d) ?? 0) + s);
     for (const u of slot.urls ?? []) urls.set(u.url, (urls.get(u.url) ?? 0) + u.seconds);
@@ -154,7 +181,8 @@ export function summarizeMember(
   return {
     trackedSeconds,
     activeSeconds,
-    activityPercent: activityPercent(activeSeconds, trackedSeconds),
+    meetingSeconds,
+    activityPercent: activityPercent(activeSeconds, trackedSeconds, meetingSeconds),
     outsideChromeSeconds,
     sessionSeconds,
     sessionCount,
@@ -205,6 +233,7 @@ export function summarizeTeam(
   const sum = (f: (r: TeamRow) => number): number => rows.reduce((acc, r) => acc + f(r), 0);
   const trackedSeconds = sum((r) => r.trackedSeconds);
   const activeSeconds = sum((r) => r.activeSeconds);
+  const meetingSeconds = sum((r) => r.meetingSeconds);
   return {
     rows,
     totals: {
@@ -212,7 +241,8 @@ export function summarizeTeam(
       membersInSession: rows.filter((r) => r.inSession).length,
       trackedSeconds,
       activeSeconds,
-      activityPercent: activityPercent(activeSeconds, trackedSeconds),
+      meetingSeconds,
+      activityPercent: activityPercent(activeSeconds, trackedSeconds, meetingSeconds),
       outsideChromeSeconds: sum((r) => r.outsideChromeSeconds),
       sessionSeconds: sum((r) => r.sessionSeconds),
     },
@@ -337,6 +367,7 @@ export function teamSummaryToCsv(
     { key: 'sessionHours', header: 'Horas en jornada' },
     { key: 'trackedHours', header: 'Horas medidas' },
     { key: 'activityPercent', header: 'Actividad (%)' },
+    { key: 'meetingHours', header: 'Horas en reunión' },
     { key: 'outsideChromeHours', header: 'Horas fuera de Chrome' },
     { key: 'sessionCount', header: 'Jornadas' },
     { key: 'topDomain', header: 'Dominio principal' },
@@ -348,7 +379,9 @@ export function teamSummaryToCsv(
     state: r.status === 'disabled' ? 'Desactivado' : r.inSession ? 'En jornada' : 'Fuera de jornada',
     sessionHours: secondsToHours(r.sessionSeconds),
     trackedHours: secondsToHours(r.trackedSeconds),
+    // null (no data, or only meetings) → empty cell.
     activityPercent: r.activityPercent,
+    meetingHours: secondsToHours(r.meetingSeconds),
     outsideChromeHours: secondsToHours(r.outsideChromeSeconds),
     sessionCount: r.sessionCount,
     topDomain: r.topDomains[0]?.domain ?? '',

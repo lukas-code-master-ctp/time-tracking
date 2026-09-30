@@ -12,16 +12,28 @@
  *   accumulator falls back to `chrome.idle` for activity.
  * - Activity: `{ type: 'activity', t }` from the content script →
  *   `markActiveSecond`.
+ * - Web meeting (spec 2026-09-30, "En reunión") → `setMeeting`: some tab of
+ *   a normal (not incognito) window is a meeting room (`isMeetingUrl`) and
+ *   either it is the active tab of the focused window, or it is playing
+ *   audio (`tab.audible`), or it did so at most 2 min ago. Teams always needs
+ *   recent audio (its URLs do not tell a meeting from the chat). Only the
+ *   URL and the `audible` flag are read: never the audio or the video.
+ *   Re-evaluated on `tabs.onUpdated` (audible/url/status), `onActivated`,
+ *   `onRemoved`, `windows.onFocusChanged`, idle changes and every 30 s pulse
+ *   (which also covers the end of the 2-minute grace period).
  *
- * The set of measurable tabs lives in `chrome.storage.session` (tab ids are
- * only valid for the browser session) so it survives service-worker restarts.
+ * The set of measurable tabs and the "last audible" instant per tab live in
+ * `chrome.storage.session` (tab ids are only valid for the browser session)
+ * so they survive service-worker restarts.
  *
  * Every handler runs inside `store.run()` (serialized) and only measures when
  * a work day is open; the timestamp is taken when the event arrives.
  */
 import {
   IDLE_DETECTION_SECONDS,
+  MEETING_AUDIO_GRACE_MS,
   SlotAccumulator,
+  isMeetingInProgress,
   type FlushResult,
   type FocusInput,
   type IdleState,
@@ -31,6 +43,8 @@ import { enqueueOp } from './queue';
 import type { StateStore, StorageAreaLike } from './state';
 
 const TABS_KEY = 'tt.measurableTabs';
+/** tabId → last instant (ms) the tab was seen playing audio. */
+const AUDIBLE_KEY = 'tt.audibleTabs';
 /** Activity timestamps from content scripts are trusted within this window. */
 const MAX_ACTIVITY_SKEW_MS = 10_000;
 
@@ -58,6 +72,8 @@ export class Tracker {
   private readonly sessionArea: StorageAreaLike | null;
   /** tabId → origin that the content script reported from. */
   private tabs: Map<number, string> | null = null;
+  /** tabId → last instant the tab was audible. */
+  private audible: Map<number, number> | null = null;
 
   constructor(deps: TrackerDeps) {
     this.store = deps.store;
@@ -86,6 +102,7 @@ export class Tracker {
       acc.setIdleState(state, at);
       if (state === 'locked') acc.setFocus(null, at);
       else acc.setFocus(await this.computeFocus(), at);
+      acc.setMeeting(await this.computeMeeting(at, state), at);
       await this.store.save('acc');
     });
   }
@@ -99,13 +116,30 @@ export class Tracker {
     return this.store.run(async () => {
       // A new document is loading: its content script has not said hello yet.
       if (info.status === 'loading') await this.forgetTab(tabId);
-      if (!tab.active || (info.url === undefined && info.status === undefined)) return;
-      await this.refreshFocusLocked(at);
+      // Started or stopped playing audio: either way it was audible until now.
+      if (info.audible !== undefined && !tab.incognito) await this.markAudible(tabId, at);
+      const navigated = info.url !== undefined || info.status !== undefined;
+      if (!navigated && info.audible === undefined) return;
+      const acc = this.measuringAcc();
+      if (!acc) return;
+      if (tab.active && navigated) {
+        acc.setFocus(acc.idleState === 'locked' ? null : await this.computeFocus(), at);
+      }
+      acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
+      await this.store.save('acc');
     });
   }
 
   onTabRemoved(tabId: number): Promise<void> {
-    return this.store.run(() => this.forgetTab(tabId));
+    const at = this.now();
+    return this.store.run(async () => {
+      await this.forgetTab(tabId);
+      await this.forgetAudible(tabId);
+      const acc = this.measuringAcc();
+      if (!acc) return;
+      acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
+      await this.store.save('acc');
+    });
   }
 
   onWindowFocusChanged(windowId: number): Promise<void> {
@@ -118,6 +152,7 @@ export class Tracker {
           ? null
           : await this.computeFocus(windowId);
       acc.setFocus(focus, at);
+      acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
       await this.store.save('acc');
     });
   }
@@ -173,6 +208,7 @@ export class Tracker {
     acc.setIdleState(idle, at);
     // The accumulator starts with focus null (outside Chrome): always set it.
     acc.setFocus(idle === 'locked' ? null : await this.computeFocus(), at);
+    acc.setMeeting(await this.computeMeeting(at, idle), at);
     return acc;
   }
 
@@ -184,7 +220,8 @@ export class Tracker {
   /**
    * Alarm pulse: `tick` first (a gap > 90 s since the last event is discarded
    * as "no data"), then re-reads idle state and focus as a safety net for
-   * events missed while the worker slept, then `flush`.
+   * events missed while the worker slept, then the meeting state (which also
+   * ends a background meeting 2 min after its last audio), then `flush`.
    */
   async pulse(at: number): Promise<FlushResult | null> {
     const acc = this.store.acc;
@@ -194,6 +231,7 @@ export class Tracker {
       const idle = await this.queryIdle();
       acc.setIdleState(idle, at);
       acc.setFocus(idle === 'locked' ? null : await this.computeFocus(), at);
+      acc.setMeeting(await this.computeMeeting(at, idle), at);
     }
     return acc.flush(at);
   }
@@ -213,6 +251,7 @@ export class Tracker {
     const acc = this.measuringAcc();
     if (!acc) return;
     acc.setFocus(acc.idleState === 'locked' ? null : await this.computeFocus(), at);
+    acc.setMeeting(await this.computeMeeting(at, acc.idleState), at);
     await this.store.save('acc');
   }
 
@@ -250,6 +289,89 @@ export class Tracker {
       // No window at all (all closed) or the window vanished meanwhile.
       return null;
     }
+  }
+
+  /**
+   * Whether a web meeting is in progress at `at` in some tab of a normal,
+   * non-incognito window (see the header). Also records which tabs are
+   * audible right now and forgets closed tabs / expired audio marks.
+   */
+  async computeMeeting(at: number, idle: IdleState): Promise<boolean> {
+    let windows: chrome.windows.Window[];
+    try {
+      windows = await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+    } catch {
+      return false;
+    }
+    const audible = await this.loadAudible();
+    let changed = false;
+    let meeting = false;
+    const seen = new Set<number>();
+    for (const win of windows) {
+      if (win.incognito) continue; // the extension is not allowed there
+      for (const tab of win.tabs ?? []) {
+        if (tab.id === undefined || tab.incognito) continue;
+        seen.add(tab.id);
+        const isAudible = tab.audible === true;
+        if (isAudible && audible.get(tab.id) !== at) {
+          audible.set(tab.id, at);
+          changed = true;
+        }
+        const inFront = win.focused === true && tab.active === true && idle !== 'locked';
+        const url = tab.url || tab.pendingUrl;
+        if (isMeetingInProgress({ url, inFront, audible: isAudible, lastAudibleAt: audible.get(tab.id) ?? null }, at)) {
+          meeting = true;
+        }
+      }
+    }
+    for (const [id, last] of audible) {
+      if (!seen.has(id) || at - last > MEETING_AUDIO_GRACE_MS) {
+        audible.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) await this.saveAudible();
+    return meeting;
+  }
+
+  private async loadAudible(): Promise<Map<number, number>> {
+    if (this.audible) return this.audible;
+    const map = new Map<number, number>();
+    if (this.sessionArea) {
+      try {
+        const raw = (await this.sessionArea.get(AUDIBLE_KEY))[AUDIBLE_KEY];
+        if (raw && typeof raw === 'object') {
+          for (const [id, t] of Object.entries(raw as Record<string, unknown>)) {
+            if (typeof t === 'number' && Number.isFinite(t)) map.set(Number(id), t);
+          }
+        }
+      } catch {
+        // storage.session unavailable: keep it in memory only
+      }
+    }
+    this.audible = map;
+    return map;
+  }
+
+  private async saveAudible(): Promise<void> {
+    if (!this.sessionArea || !this.audible) return;
+    try {
+      await this.sessionArea.set({ [AUDIBLE_KEY]: Object.fromEntries(this.audible) });
+    } catch {
+      // ignore: worst case a background meeting stops counting until its next audio
+    }
+  }
+
+  private async markAudible(tabId: number, at: number): Promise<void> {
+    const audible = await this.loadAudible();
+    if (audible.get(tabId) === at) return;
+    audible.set(tabId, at);
+    await this.saveAudible();
+  }
+
+  private async forgetAudible(tabId: number): Promise<void> {
+    const audible = await this.loadAudible();
+    if (audible.delete(tabId)) await this.saveAudible();
   }
 
   private async loadTabs(): Promise<Map<number, string>> {

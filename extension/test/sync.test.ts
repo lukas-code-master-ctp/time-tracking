@@ -24,7 +24,7 @@ function slot(partial: Partial<ActivitySlot> = {}): ActivitySlot {
 }
 
 describe('documents sent to Firestore', () => {
-  it('activity has exactly the 8 fields, integer and bounded counters', () => {
+  it('activity has exactly the 8 fields + meetingSeconds, integer and bounded counters', () => {
     const doc = toActivityDoc({
       ...slot({
         trackedSeconds: 700.4,
@@ -36,14 +36,25 @@ describe('documents sent to Firestore', () => {
       extra: 'nope',
     } as ActivitySlot);
     expect(Object.keys(doc).sort()).toEqual(
-      ['activeSeconds', 'domains', 'outsideChromeSeconds', 'sessionId', 'slotStart', 'trackedSeconds', 'uid', 'urls'].sort(),
+      ['activeSeconds', 'domains', 'meetingSeconds', 'outsideChromeSeconds', 'sessionId', 'slotStart', 'trackedSeconds', 'uid', 'urls'].sort(),
     );
+    expect(doc.meetingSeconds).toBe(0); // missing → 0, and active already fills the block
     expect(doc.trackedSeconds).toBe(600);
     expect(doc.activeSeconds).toBe(600);
     expect(doc.outsideChromeSeconds).toBe(0);
     expect(doc.domains).toEqual({ 'docs.google.com': 13 });
     expect(doc.urls).toHaveLength(20);
     expect(doc.urls.every((u) => Number.isInteger(u.seconds))).toBe(true);
+  });
+
+  it('meetingSeconds is always sent as an integer within tracked - active', () => {
+    expect(toActivityDoc(slot()).meetingSeconds).toBe(0); // block of extension 0.1.1 (no field)
+    expect(toActivityDoc(slot({ trackedSeconds: 600, activeSeconds: 100, meetingSeconds: 250.6 })).meetingSeconds).toBe(251);
+    expect(toActivityDoc(slot({ trackedSeconds: 600, activeSeconds: 500, meetingSeconds: 300 })).meetingSeconds).toBe(100);
+    expect(toActivityDoc(slot({ meetingSeconds: -4 })).meetingSeconds).toBe(0);
+    expect(toActivityDoc(slot({ meetingSeconds: Number.NaN })).meetingSeconds).toBe(0);
+    const doc = toActivityDoc(slot({ trackedSeconds: 600, activeSeconds: 0, meetingSeconds: 900 }));
+    expect(doc.meetingSeconds! + doc.activeSeconds).toBeLessThanOrEqual(doc.trackedSeconds);
   });
 
   it('session is created with exactly the 5 fields, open', () => {

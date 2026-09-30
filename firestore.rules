@@ -209,9 +209,17 @@ service cloud.firestore {
 
     // ---------- activity/{uid_slotStartMs} ----------
 
+    // meetingSeconds (spec 2026-09-30, "En reunión") is optional: extension
+    // 0.1.1 and older documents do not carry it.
+    function validMeetingSeconds(d) {
+      return !d.keys().hasAny(['meetingSeconds'])
+        || (d.meetingSeconds is int && d.meetingSeconds >= 0
+            && d.meetingSeconds + d.activeSeconds <= d.trackedSeconds);
+    }
+
     function validActivity(d, docId) {
       return d.keys().hasOnly(['uid', 'sessionId', 'slotStart', 'trackedSeconds', 'activeSeconds',
-                                'outsideChromeSeconds', 'domains', 'urls'])
+                                'outsideChromeSeconds', 'domains', 'urls', 'meetingSeconds'])
         && d.keys().hasAll(['uid', 'sessionId', 'slotStart', 'trackedSeconds', 'activeSeconds',
                             'outsideChromeSeconds', 'domains', 'urls'])
         && d.uid == request.auth.uid
@@ -226,7 +234,8 @@ service cloud.firestore {
         && d.outsideChromeSeconds is number
         && d.outsideChromeSeconds >= 0 && d.outsideChromeSeconds <= d.trackedSeconds
         && d.domains is map
-        && d.urls is list && d.urls.size() <= 20;
+        && d.urls is list && d.urls.size() <= 20
+        && validMeetingSeconds(d);
     }
 
     match /activity/{docId} {

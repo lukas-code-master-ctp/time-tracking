@@ -29,6 +29,14 @@
  *   Active seconds are kept as a set, so a second is counted once even when
  *   both sources report it. Only tracked seconds can be active, therefore
  *   activeSeconds <= trackedSeconds <= 600 always holds.
+ * - meetingSeconds: a tracked second that is NOT active (by either rule
+ *   above) and during which a web meeting was in progress (`setMeeting`,
+ *   decided by the extension from the tabs). Meeting seconds are kept as a
+ *   set and active seconds are subtracted when the block is built, so a
+ *   second marked active later (content-script marks arrive up to 10 s late)
+ *   stops being a meeting second: activeSeconds + meetingSeconds <=
+ *   trackedSeconds always holds. Like every other counter it respects the
+ *   90 s gap rule, block boundaries and the closed work day.
  * - outsideChromeSeconds: tracked seconds with focus === null.
  * - domains / urls: tracked seconds with a focused http/https URL, keyed by
  *   domain and by sanitized URL (no query/hash). Top 20 URLs per block.
@@ -75,6 +83,7 @@ interface SlotState {
   sessionId: string;
   tracked: Set<number>;
   active: Set<number>;
+  meeting: Set<number>;
   outside: number;
   domains: Map<string, number>;
   urls: Map<string, number>;
@@ -87,6 +96,8 @@ export interface SlotStateJSON {
   tracked: number[];
   /** Active (marked) second offsets within the block (0..599), ascending. */
   active: number[];
+  /** Meeting second offsets (0..599), ascending. Missing in older states (= none). */
+  meeting?: number[];
   outside: number;
   domains: Record<string, number>;
   urls: Record<string, number>;
@@ -101,6 +112,8 @@ export interface SlotAccumulatorJSON {
   lastEventAt: number | null;
   idle: IdleState;
   focus: FocusState | null;
+  /** Web meeting in progress. Missing in older states (= false). */
+  meeting?: boolean;
   closedUntil: number;
   slots: SlotStateJSON[];
 }
@@ -141,6 +154,7 @@ export class SlotAccumulator {
   private _lastEventAt: number | null = null;
   private idle: IdleState = 'active';
   private focus: FocusState | null = null;
+  private meeting = false;
   /** Blocks starting before this instant were already emitted as closed. */
   private closedUntil = 0;
   private readonly slots = new Map<number, SlotState>();
@@ -166,6 +180,11 @@ export class SlotAccumulator {
     return this.idle;
   }
 
+  /** Whether a web meeting is currently in progress (last `setMeeting`). */
+  get inMeeting(): boolean {
+    return this.meeting;
+  }
+
   /** Opens (sessionId) or closes (null) the work day at `ms`. */
   setSession(sessionId: string | null, ms: number): void {
     assertTime(ms, 'setSession');
@@ -186,6 +205,16 @@ export class SlotAccumulator {
     assertTime(ms, 'setFocus');
     this.advance(ms);
     this.focus = toFocusState(focus);
+  }
+
+  /**
+   * A web meeting started (true) or ended (false) at `ms`. Seconds from `ms`
+   * on without keyboard/mouse activity count as meeting seconds.
+   */
+  setMeeting(inMeeting: boolean, ms: number): void {
+    assertTime(ms, 'setMeeting');
+    this.advance(ms);
+    this.meeting = inMeeting === true;
   }
 
   /** The content script saw keyboard/mouse input during the second of `ms`. */
@@ -235,6 +264,7 @@ export class SlotAccumulator {
         sessionId: s.sessionId,
         tracked: [...s.tracked].sort((a, b) => a - b),
         active: [...s.active].sort((a, b) => a - b),
+        meeting: [...s.meeting].sort((a, b) => a - b),
         outside: s.outside,
         domains: sortedRecord(s.domains),
         urls: sortedRecord(s.urls),
@@ -248,6 +278,7 @@ export class SlotAccumulator {
       lastEventAt: this._lastEventAt,
       idle: this.idle,
       focus: this.focus ? { ...this.focus } : null,
+      meeting: this.meeting,
       closedUntil: this.closedUntil,
       slots,
     };
@@ -274,6 +305,7 @@ export class SlotAccumulator {
             measurable: f.measurable === true && typeof f.url === 'string',
           }
         : null;
+    acc.meeting = j.meeting === true;
     acc.closedUntil = typeof j.closedUntil === 'number' && Number.isFinite(j.closedUntil) ? j.closedUntil : 0;
     const validOffset = (n: unknown): n is number =>
       typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < SLOT_SECONDS;
@@ -294,6 +326,7 @@ export class SlotAccumulator {
         sessionId: typeof s.sessionId === 'string' ? s.sessionId : '',
         tracked,
         active: new Set((Array.isArray(s.active) ? s.active : []).filter(validOffset)),
+        meeting: new Set((Array.isArray(s.meeting) ? s.meeting : []).filter(validOffset)),
         outside: Math.min(typeof s.outside === 'number' && s.outside > 0 ? s.outside : 0, tracked.size),
         domains: toMap(s.domains),
         urls: toMap(s.urls),
@@ -315,6 +348,7 @@ export class SlotAccumulator {
         sessionId: this._sessionId ?? '',
         tracked: new Set(),
         active: new Set(),
+        meeting: new Set(),
         outside: 0,
         domains: new Map(),
         urls: new Map(),
@@ -339,6 +373,7 @@ export class SlotAccumulator {
 
     const focus = this.focus;
     const idleDerivedActive = (focus === null || !focus.measurable) && this.idle === 'active';
+    const meeting = this.meeting && !idleDerivedActive;
     const firstSecond = Math.ceil(last / 1000);
     const endSecond = Math.ceil(ms / 1000); // exclusive
     for (let second = firstSecond; second < endSecond; second++) {
@@ -349,6 +384,7 @@ export class SlotAccumulator {
       slot.tracked.add(offset);
       slot.sessionId = sessionId;
       if (idleDerivedActive) slot.active.add(offset);
+      else if (meeting) slot.meeting.add(offset);
       if (focus === null) {
         slot.outside++;
       } else if (focus.url !== null) {
@@ -362,6 +398,9 @@ export class SlotAccumulator {
     let activeSeconds = 0;
     for (const offset of slot.active) if (slot.tracked.has(offset)) activeSeconds++;
     const trackedSeconds = Math.min(slot.tracked.size, SLOT_SECONDS);
+    const active = Math.min(activeSeconds, trackedSeconds);
+    let meetingSeconds = 0;
+    for (const offset of slot.meeting) if (slot.tracked.has(offset) && !slot.active.has(offset)) meetingSeconds++;
     const urls: UrlTime[] = [...slot.urls.entries()]
       .map(([url, seconds]) => ({ url, seconds }))
       .sort((a, b) => b.seconds - a.seconds || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0))
@@ -371,8 +410,9 @@ export class SlotAccumulator {
       sessionId: slot.sessionId,
       slotStart: slot.slotStart,
       trackedSeconds,
-      activeSeconds: Math.min(activeSeconds, trackedSeconds),
+      activeSeconds: active,
       outsideChromeSeconds: Math.min(slot.outside, trackedSeconds),
+      meetingSeconds: Math.min(meetingSeconds, trackedSeconds - active),
       domains: sortedRecord(slot.domains),
       urls,
     };

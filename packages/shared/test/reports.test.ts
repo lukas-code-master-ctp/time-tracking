@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   activityPercent,
   escapeCsvField,
+  meetingSecondsOf,
   formatDateTime,
   formatDuration,
   isSessionLive,
@@ -107,6 +108,7 @@ describe('summarizeMember', () => {
     expect(s).toEqual({
       trackedSeconds: 900,
       activeSeconds: 600,
+      meetingSeconds: 0,
       activityPercent: 67,
       outsideChromeSeconds: 100,
       sessionSeconds: 900,
@@ -193,6 +195,7 @@ describe('summarizeTeam', () => {
       membersInSession: 1,
       trackedSeconds: 1200,
       activeSeconds: 900,
+      meetingSeconds: 0,
       activityPercent: 75,
       outsideChromeSeconds: 0,
       sessionSeconds: 540 + 600,
@@ -265,9 +268,9 @@ describe('CSV', () => {
     const csv = teamSummaryToCsv(team);
     const [header, row] = csv.split('\r\n');
     expect(header).toBe(
-      'Nombre,Correo,Estado,Horas en jornada,Horas medidas,Actividad (%),Horas fuera de Chrome,Jornadas,Dominio principal,Última actividad',
+      'Nombre,Correo,Estado,Horas en jornada,Horas medidas,Actividad (%),Horas en reunión,Horas fuera de Chrome,Jornadas,Dominio principal,Última actividad',
     );
-    expect(row).toBe('"Ana ""La jefa""",ana@compratuparcela.cl,Fuera de jornada,1.5,0.17,50,0,1,docs.google.com,2026-09-29 10:30');
+    expect(row).toBe('"Ana ""La jefa""",ana@compratuparcela.cl,Fuera de jornada,1.5,0.17,50,0,0,1,docs.google.com,2026-09-29 10:30');
   });
 });
 
@@ -289,5 +292,74 @@ describe('formatting', () => {
   it('formatDateTime in Santiago', () => {
     expect(formatDateTime(T0)).toBe('2026-09-29 09:00');
     expect(formatDateTime(T0, 'UTC')).toBe('2026-09-29 12:00');
+  });
+});
+
+describe('web meetings in reports', () => {
+  it('activityPercent excludes meeting time from the denominator', () => {
+    expect(activityPercent(300, 600, 300)).toBe(100);
+    expect(activityPercent(150, 600, 300)).toBe(50);
+    expect(activityPercent(0, 600, 600)).toBeNull();
+    expect(activityPercent(0, 600, 900)).toBeNull();
+    expect(activityPercent(1, 3, -5)).toBe(33); // negative meeting ignored
+    expect(activityPercent(1, 3, Number.NaN)).toBe(33);
+  });
+
+  it('meetingSecondsOf reads missing values as 0 and clamps to tracked - active', () => {
+    expect(meetingSecondsOf({ trackedSeconds: 600, activeSeconds: 100 })).toBe(0);
+    expect(meetingSecondsOf({ trackedSeconds: 600, activeSeconds: 100, meetingSeconds: 200 })).toBe(200);
+    expect(meetingSecondsOf({ trackedSeconds: 600, activeSeconds: 500, meetingSeconds: 200 })).toBe(100);
+    expect(meetingSecondsOf({ trackedSeconds: 600, activeSeconds: 0, meetingSeconds: -3 })).toBe(0);
+    expect(meetingSecondsOf({ trackedSeconds: 600, activeSeconds: 0, meetingSeconds: 12.4 })).toBe(12);
+    expect(meetingSecondsOf({ trackedSeconds: 600, activeSeconds: 0, meetingSeconds: Number.NaN })).toBe(0);
+    expect(meetingSecondsOf({ trackedSeconds: 100, activeSeconds: 900, meetingSeconds: 50 })).toBe(0);
+  });
+
+  it('summarizeMember: meeting neither raises nor lowers the %, a 100 % meeting block is left out', () => {
+    const slots = [
+      slot('a', T0, { trackedSeconds: 600, activeSeconds: 300, meetingSeconds: 0 }),
+      slot('a', T0 + SLOT_MS, { trackedSeconds: 600, activeSeconds: 0, meetingSeconds: 600 }),
+      slot('a', T0 + 2 * SLOT_MS, { trackedSeconds: 600, activeSeconds: 100, meetingSeconds: 400 }),
+    ];
+    const s = summarizeMember(slots, []);
+    expect(s).toMatchObject({ trackedSeconds: 1800, activeSeconds: 400, meetingSeconds: 1000 });
+    // 400 / (1800 - 1000) = 50 % (without the meeting blocks: 300/600 and 100/200).
+    expect(s.activityPercent).toBe(50);
+    expect(summarizeMember([slots[1]!], []).activityPercent).toBeNull();
+  });
+
+  it('old documents without meetingSeconds are read as 0', () => {
+    const old = slot('a', T0, { trackedSeconds: 600, activeSeconds: 300 });
+    delete (old as Partial<ActivitySlot>).meetingSeconds;
+    expect(summarizeMember([old], [])).toMatchObject({ meetingSeconds: 0, activityPercent: 50 });
+  });
+
+  it('summarizeTeam totals meeting time and excludes it from the average', () => {
+    const team = summarizeTeam(
+      [member('a', 'Ana'), member('b', 'Beto')],
+      [
+        slot('a', T0, { activeSeconds: 0, meetingSeconds: 600 }),
+        slot('b', T0, { activeSeconds: 300, meetingSeconds: 0 }),
+      ],
+      [],
+    );
+    expect(team.rows[0]).toMatchObject({ meetingSeconds: 600, activityPercent: null });
+    expect(team.rows[1]).toMatchObject({ meetingSeconds: 0, activityPercent: 50 });
+    expect(team.totals).toMatchObject({ trackedSeconds: 1200, meetingSeconds: 600, activityPercent: 50 });
+  });
+
+  it('CSV: meeting hours column and empty % when everything was a meeting', () => {
+    const team = summarizeTeam(
+      [member('a', 'Ana')],
+      [slot('a', T0, { activeSeconds: 0, meetingSeconds: 600 }), slot('a', T0 + SLOT_MS, { activeSeconds: 0, meetingSeconds: 1200 })],
+      [],
+    );
+    const [header, row] = teamSummaryToCsv(team, { separator: ';', decimalSeparator: ',' }).split('\r\n');
+    const cols = header!.split(';');
+    const cells = row!.split(';');
+    expect(cells[cols.indexOf('Actividad (%)')]).toBe('');
+    // Second block clamped to 600 (meeting cannot exceed tracked - active).
+    expect(cells[cols.indexOf('Horas en reunión')]).toBe('0,33');
+    expect(cells[cols.indexOf('Horas medidas')]).toBe('0,33');
   });
 });

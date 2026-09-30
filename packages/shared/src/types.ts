@@ -83,6 +83,13 @@ export interface ActivitySlot {
   /** Tracked seconds while no Chrome window had focus. */
   outsideChromeSeconds: number;
   /**
+   * Tracked seconds without keyboard/mouse activity while a web meeting was
+   * in progress in Chrome (spec 2026-09-30). Never overlaps `activeSeconds`:
+   * `activeSeconds + meetingSeconds <= trackedSeconds`. Missing in documents
+   * written by extension 0.1.1 or older: read it as 0 (`meetingSecondsOf`).
+   */
+  meetingSeconds?: number;
+  /**
    * Seconds per domain (hostname without leading "www."). Keys contain dots:
    * write the whole map with set()/merge, never with dotted update() paths.
    */

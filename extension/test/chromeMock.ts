@@ -29,12 +29,16 @@ export interface MockTab {
   windowId?: number;
   incognito?: boolean;
   discarded?: boolean;
+  /** Playing audio right now (chrome.tabs.Tab.audible). */
+  audible?: boolean;
 }
 
 export interface MockWindow {
   id: number;
   focused: boolean;
   incognito?: boolean;
+  /** Window type (default 'normal'). */
+  type?: 'normal' | 'popup' | 'app' | 'devtools';
   tabs: MockTab[];
 }
 
@@ -84,6 +88,7 @@ export function createChromeMock() {
       focused: w.focused,
       incognito: w.incognito ?? false,
       alwaysOnTop: false,
+      type: w.type ?? 'normal',
       tabs: w.tabs.map((t) => ({ ...t, windowId: w.id, incognito: w.incognito ?? false })),
     }) as unknown as chrome.windows.Window;
 
@@ -137,6 +142,8 @@ export function createChromeMock() {
         if (!w) throw new Error(`No window with id: ${id}`);
         return toWindow(w);
       },
+      getAll: async (opts: { populate?: boolean; windowTypes?: string[] } = {}) =>
+        world.windows.filter((w) => !opts.windowTypes || opts.windowTypes.includes(w.type ?? 'normal')).map(toWindow),
       getLastFocused: async () => {
         const w = world.windows.find((x) => x.focused) ?? world.windows[0];
         if (!w) throw new Error('No last-focused window');

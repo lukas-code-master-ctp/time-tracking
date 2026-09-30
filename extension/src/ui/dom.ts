@@ -39,6 +39,8 @@ export function hoursMinutes(seconds: number): string {
   return h > 0 ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`;
 }
 
-export function percent(active: number, tracked: number): string {
-  return tracked > 0 ? `${Math.round((active / tracked) * 100)} %` : '—';
+/** Activity %: meeting time is left out of the denominator ("—" when nothing else was measured). */
+export function percent(active: number, tracked: number, meeting = 0): string {
+  const base = tracked - Math.max(0, meeting);
+  return base > 0 ? `${Math.min(100, Math.round((Math.max(0, active) / base) * 100))} %` : '—';
 }

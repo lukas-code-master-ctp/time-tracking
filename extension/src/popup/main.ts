@@ -5,8 +5,9 @@
  * - signed out → "Iniciar sesión con Google" (dev build: email of the emulator)
  * - joinOrg rejected (no invitation, other domain, disabled…) → message + retry / other account
  * - notice not accepted → link to the consent page (opened automatically after signing in)
- * - ready → start/stop the work day, live timer, today's hours and activity,
- *   what is being measured, pending uploads, sign out.
+ * - ready → start/stop the work day, live timer, today's hours, activity
+ *   (excluding meeting time) and time in web meetings, what is being
+ *   measured, pending uploads, sign out.
  */
 import '../ui/base.css';
 import './popup.css';
@@ -240,7 +241,18 @@ function renderReady(s: StatusView): void {
       ]),
       el('div', { className: 'card stat' }, [
         el('div', { className: 'small muted', textContent: 'Actividad de hoy' }),
-        el('div', { className: 'value', textContent: percent(s.today.activeSeconds, s.today.trackedSeconds) }),
+        el('div', {
+          className: 'value',
+          textContent: percent(s.today.activeSeconds, s.today.trackedSeconds, s.today.meetingSeconds),
+        }),
+      ]),
+      el('div', { className: 'card stat wide' }, [
+        el('div', { className: 'small muted', textContent: 'En reunión hoy' }),
+        el('div', { className: 'value', textContent: hoursMinutes(s.today.meetingSeconds) }),
+        el('div', {
+          className: 'small muted',
+          textContent: 'Tiempo en reuniones web sin usar teclado ni mouse. No baja tu actividad.',
+        }),
       ]),
     ]),
   );
@@ -255,6 +267,7 @@ function renderReady(s: StatusView): void {
       el('ul', {}, [
         el('li', {}, [el('span', { textContent: 'Actividad (teclado/mouse)' }), yes()]),
         el('li', {}, [el('span', { textContent: 'Sitios web y tiempo fuera de Chrome' }), yes()]),
+        el('li', {}, [el('span', { textContent: 'Reuniones web (Meet, Zoom, Teams…)' }), yes()]),
         el('li', {}, [el('span', { textContent: 'Capturas de la pestaña visible' }), cap?.screenshots ? yes() : no()]),
         cap?.screenshots
           ? el('li', {}, [el('span', { textContent: 'Capturas difuminadas' }), cap.blur ? yes() : no()])

@@ -231,18 +231,28 @@ describe('today summary (local, for the popup)', () => {
   it('newest snapshot of a block wins; sums the day; resets on a new day or another user', () => {
     let d = recordSlots(null, [slot(SLOT0, 60, 30)]);
     d = recordSlots(d, [slot(SLOT0, 120, 90), slot(SLOT0 + SLOT_MS, 600, 700)]);
-    expect(todayTotals(d, 'u1', SLOT0 + SLOT_MS)).toEqual({ trackedSeconds: 720, activeSeconds: 690 });
-    expect(todayTotals(d, 'u2', SLOT0)).toEqual({ trackedSeconds: 0, activeSeconds: 0 });
+    expect(todayTotals(d, 'u1', SLOT0 + SLOT_MS)).toEqual({ trackedSeconds: 720, activeSeconds: 690, meetingSeconds: 0 });
+    expect(todayTotals(d, 'u2', SLOT0)).toEqual({ trackedSeconds: 0, activeSeconds: 0, meetingSeconds: 0 });
     const tomorrow = SLOT0 + 24 * 3600_000;
-    expect(todayTotals(d, 'u1', tomorrow)).toEqual({ trackedSeconds: 0, activeSeconds: 0 });
+    expect(todayTotals(d, 'u1', tomorrow)).toEqual({ trackedSeconds: 0, activeSeconds: 0, meetingSeconds: 0 });
     const d2 = recordSlots(d, [slot(tomorrow, 10, 5)]);
     expect(d2?.date).toBe(dateKey(tomorrow));
-    expect(todayTotals(d2, 'u1', tomorrow)).toEqual({ trackedSeconds: 10, activeSeconds: 5 });
+    expect(todayTotals(d2, 'u1', tomorrow)).toEqual({ trackedSeconds: 10, activeSeconds: 5, meetingSeconds: 0 });
     // A late snapshot of yesterday does not reset today.
     expect(todayTotals(recordSlots(d2, [slot(SLOT0, 1, 1)]), 'u1', tomorrow).trackedSeconds).toBe(10);
     expect(recordSlots(d2, [slot(tomorrow, 5, 5, 'u2')])?.uid).toBe('u2');
     expect(dailyFromJSON(JSON.parse(JSON.stringify(d2)))).toEqual(d2);
     expect(dailyFromJSON({ uid: 1 })).toBeNull();
+  });
+
+  it('adds up meeting seconds (never more than tracked - active) and reads old summaries as 0', () => {
+    const d = recordSlots(null, [
+      { ...slot(SLOT0, 600, 100), meetingSeconds: 400 },
+      { ...slot(SLOT0 + SLOT_MS, 300, 250), meetingSeconds: 200 },
+    ]);
+    expect(todayTotals(d, 'u1', SLOT0)).toEqual({ trackedSeconds: 900, activeSeconds: 350, meetingSeconds: 450 });
+    const old = { uid: 'u1', date: dateKey(SLOT0), slots: { [String(SLOT0)]: { tracked: 60, active: 30 } } };
+    expect(todayTotals(dailyFromJSON(old), 'u1', SLOT0)).toEqual({ trackedSeconds: 60, activeSeconds: 30, meetingSeconds: 0 });
   });
 
   it('is fed by the pulse and the close of the work day, and shown in the status', async () => {
