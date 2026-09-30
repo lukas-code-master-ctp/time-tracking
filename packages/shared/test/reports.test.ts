@@ -272,6 +272,23 @@ describe('CSV', () => {
     );
     expect(row).toBe('"Ana ""La jefa""",ana@compratuparcela.cl,Fuera de jornada,1.5,0.17,50,0,0,1,docs.google.com,2026-09-29 10:30');
   });
+
+  it('teamSummaryToCsv appends extra columns without overwriting the base ones', () => {
+    const team = summarizeTeam([member('a', 'Ana')], [], []);
+    const csv = teamSummaryToCsv(team, {
+      extra: {
+        columns: [
+          { key: 'expected', header: 'Horas esperadas' },
+          { key: 'email', header: 'Otro correo' },
+        ],
+        values: (r) => ({ expected: r.uid === 'a' ? 8.5 : 0, email: 'pisado' }),
+      },
+    });
+    const [header, row] = csv.split('\r\n');
+    expect(header!.endsWith(',Última actividad,Horas esperadas')).toBe(true);
+    expect(row!.endsWith(',8.5')).toBe(true);
+    expect(row).not.toContain('pisado');
+  });
 });
 
 describe('formatting', () => {

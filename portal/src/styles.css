@@ -27,6 +27,13 @@
   /* "En reunión" blocks. Ink on it: 8.28:1 (light), 5.75:1 (dark). */
   --lvl-meeting: #b4a7f5;
   --lvl-ink: #16181d;
+  /* Schedule shading (graphics: ≥ 3:1 on the surface, see test/contrast.test.ts).
+     Outside the schedule: gray stripes; lunch: teal stripes the other way. */
+  --sch-off: #7a8290;
+  --sch-lunch: #0e7f99;
+  /* Scheduled entry/exit mark, with a halo so it shows on every block color. */
+  --sch-mark: #16181d;
+  --sch-mark-halo: #ffffff;
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
@@ -61,6 +68,10 @@
     --lvl-high: #2f9460;
     --lvl-meeting: #8b7fe0;
     --lvl-ink: #0b0d10;
+    --sch-off: #858d9c;
+    --sch-lunch: #3fb3cc;
+    --sch-mark: #eef0f3;
+    --sch-mark-halo: #0b0d10;
     --shadow: none;
   }
 }
@@ -91,6 +102,10 @@
   --lvl-high: #2f9460;
   --lvl-meeting: #8b7fe0;
   --lvl-ink: #0b0d10;
+  --sch-off: #858d9c;
+  --sch-lunch: #3fb3cc;
+  --sch-mark: #eef0f3;
+  --sch-mark-halo: #0b0d10;
   --shadow: none;
 }
 
@@ -1078,8 +1093,73 @@ a.person:hover .person-name {
   background: var(--lvl-ink);
 }
 
+/* ---------- schedule in the timeline ---------- */
+
+/* Empty block outside the schedule / in the lunch: the whole block striped. */
+.cell.lvl-none.sch-off,
+.swatch.lvl-none.sch-off {
+  border: 1px solid var(--sch-off);
+  background-image: repeating-linear-gradient(135deg, var(--sch-off) 0 2px, transparent 2px 6px);
+}
+
+.cell.lvl-none.sch-lunch,
+.swatch.lvl-none.sch-lunch {
+  border: 1px solid var(--sch-lunch);
+  background-image: repeating-linear-gradient(45deg, var(--sch-lunch) 0 2px, transparent 2px 5px);
+}
+
+/* Block with data outside the schedule / in the lunch (e.g. extension 0.1.x):
+   its activity color plus a band at the bottom with the same stripes as the
+   empty blocks and the legend, on the card color (so their ≥ 3:1 holds). */
+.cell.sch-off:not(.lvl-none),
+.cell.sch-lunch:not(.lvl-none) {
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 100% 6px;
+}
+
+.cell.sch-off:not(.lvl-none) {
+  background-image: repeating-linear-gradient(135deg, var(--sch-off) 0 2px, transparent 2px 5px),
+    linear-gradient(var(--surface), var(--surface));
+}
+
+.cell.sch-lunch:not(.lvl-none) {
+  background-image: repeating-linear-gradient(45deg, var(--sch-lunch) 0 2px, transparent 2px 5px),
+    linear-gradient(var(--surface), var(--surface));
+}
+
+.sch-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sch-mark);
+  box-shadow: 0 0 0 1px var(--sch-mark-halo);
+  pointer-events: none;
+}
+
+.swatch.sch-marks {
+  border: 1px dashed var(--border-strong);
+}
+
+.swatch.sch-marks .sch-mark {
+  left: 5px;
+  top: -2px;
+  bottom: -2px;
+}
+
+.day-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
 .timeline-detail {
-  min-height: 70px;
+  /* Tall enough for a usual block detail: hovering changes the page height less. */
+  min-height: 104px;
   padding: 12px 14px;
   border-radius: 10px;
   background: var(--surface-2);
@@ -1578,5 +1658,289 @@ legend {
 
   .privacy-doc .card {
     padding: 16px;
+  }
+}
+
+/* ---------- working hours (Configuración, Colaboradores, detail) ---------- */
+
+.chip.accent-chip {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.push-end {
+  margin-left: auto;
+}
+
+.schedule-meta {
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+
+.schedule-empty {
+  display: grid;
+  gap: 10px;
+  max-width: 70ch;
+}
+
+.schedule-form {
+  max-width: 760px;
+}
+
+.week-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.week-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.week-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.week-day {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 8px 14px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.week-day.off {
+  background: transparent;
+}
+
+.week-day-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.week-day-name input,
+.lunch-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.week-day-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.week-day-free {
+  justify-self: start;
+}
+
+.time-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.time-pair label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+input[type='time'] {
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+input[type='time'][aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.lunch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.week-day-error {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+}
+
+@media (max-width: 560px) {
+  .week-day {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.holiday-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px;
+}
+
+.holiday-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.holiday-item.past {
+  background: transparent;
+}
+
+.holiday-text {
+  display: grid;
+  min-width: 0;
+}
+
+.holiday-text .small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.holiday-date {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.list-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+}
+
+.list-panel {
+  flex-basis: 100%;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.person-schedule {
+  display: grid;
+  gap: 12px;
+}
+
+.week-summary {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* Cards inside a card (compliance of the day): flat. */
+.card .stats .stat {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.compliance-stats {
+  margin: 12px 0 10px;
+}
+
+/* Equipo with the schedule columns: the collaborator stays visible while the
+   table scrolls sideways (not on phones, where it would take half the width). */
+@media (min-width: 600px) {
+  .team-table.with-schedule th:first-child,
+  .team-table.with-schedule td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
+
+  .team-table.with-schedule thead th:first-child,
+  .team-table.with-schedule tfoot th:first-child,
+  .team-table.with-schedule tbody tr.clickable:hover td:first-child {
+    background: var(--surface-2);
+  }
+}
+
+.team-table th.sch-group,
+.team-table td.sch-group {
+  border-left: 1px solid var(--border-strong);
+}
+
+@media (max-width: 560px) {
+  /* Phones: entry and exit side by side, label above the input. */
+  .week-day-fields {
+    display: grid;
+    gap: 8px;
+  }
+
+  .time-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .time-pair label {
+    display: grid;
+    gap: 2px;
+  }
+
+  .time-pair input[type='time'] {
+    width: 100%;
+  }
+
+  .list-panel {
+    padding: 10px;
+  }
+
+  .week-day {
+    padding: 10px;
+  }
+}
+
+.table-hint {
+  margin: -8px 0 -10px;
+}
+
+/* Wide screens show every column: no hint needed. */
+@media (min-width: 1800px) {
+  .table-hint {
+    display: none;
   }
 }

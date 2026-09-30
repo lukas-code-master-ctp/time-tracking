@@ -16,25 +16,36 @@ function percentText(b: TimelineBlock): string {
 /** CSS classes of a cell: meeting color for mostly-meeting blocks, activity level otherwise. */
 export function cellClass(b: TimelineBlock): string {
   const color = b.mostlyMeeting ? 'lvl-meeting' : `lvl-${b.level}`;
-  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}`;
+  const sch = b.schedule === 'off' ? ' sch-off' : b.schedule === 'lunch' ? ' sch-lunch' : '';
+  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}${sch}`;
+}
+
+/** ", fuera de horario" / ", en colación" and the scheduled entry/exit, for the accessible label. */
+function scheduleText(b: TimelineBlock): string {
+  const parts: string[] = [];
+  if (b.schedule === 'off') parts.push('fuera de horario');
+  if (b.schedule === 'lunch') parts.push('en colación');
+  for (const m of b.marks) parts.push(`${m.kind === 'start' ? 'entrada' : 'salida'} programada a las ${m.time}`);
+  return parts.length > 0 ? `, ${parts.join(', ')}` : '';
 }
 
 function describe(b: TimelineBlock): string {
   if (b.trackedSeconds === 0) {
-    return `${b.rangeLabel}: sin datos${b.screenshots.length > 0 ? ', con captura' : ''}`;
+    return `${b.rangeLabel}: sin datos${b.screenshots.length > 0 ? ', con captura' : ''}${scheduleText(b)}`;
   }
   const parts = [`${b.rangeLabel}: ${percentText(b)}`, `medido ${formatDuration(b.trackedSeconds)}`];
   if (b.meetingSeconds > 0) parts.push(`en reunión ${formatDuration(b.meetingSeconds)}`);
   if (b.outsideChromeSeconds > 0) parts.push(`fuera de Chrome ${formatDuration(b.outsideChromeSeconds)}`);
   if (b.topDomains.length > 0) parts.push(`sitios: ${b.topDomains.map((d) => d.domain).join(', ')}`);
   if (b.screenshots.length > 0) parts.push('con captura');
-  return parts.join(', ');
+  return parts.join(', ') + scheduleText(b);
 }
 
 export function Timeline({ timeline, onOpenScreenshot }: Props) {
   const [active, setActive] = useState<TimelineBlock | null>(null);
   const [pinned, setPinned] = useState<number | null>(null);
   const shown = active ?? timeline.rows.flatMap((r) => r.blocks).find((b) => b.slotStart === pinned) ?? null;
+  const withSchedule = timeline.rows.some((r) => r.blocks.some((b) => b.schedule !== null));
 
   return (
     <div className="timeline">
@@ -56,6 +67,14 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
                   onBlur={() => setActive(null)}
                   onClick={() => setPinned((p) => (p === b.slotStart ? null : b.slotStart))}
                 >
+                  {b.marks.map((m) => (
+                    <span
+                      key={m.kind}
+                      className={`sch-mark sch-mark-${m.kind}`}
+                      aria-hidden="true"
+                      style={{ left: `clamp(0px, calc(${(m.at * 100).toFixed(2)}% - 1.5px), calc(100% - 3px))` }}
+                    />
+                  ))}
                   {b.percent !== null ? (
                     <span className="cell-pct">{b.percent}</span>
                   ) : b.trackedSeconds > 0 ? (
@@ -101,6 +120,24 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
           <span className="swatch lvl-none has-shot" aria-hidden="true" />
           Con captura
         </li>
+        {withSchedule ? (
+          <>
+            <li>
+              <span className="swatch lvl-none sch-off" aria-hidden="true" />
+              Fuera de horario
+            </li>
+            <li>
+              <span className="swatch lvl-none sch-lunch" aria-hidden="true" />
+              Colación
+            </li>
+            <li>
+              <span className="swatch lvl-none sch-marks" aria-hidden="true">
+                <span className="sch-mark" />
+              </span>
+              Entrada o salida programada
+            </li>
+          </>
+        ) : null}
       </ul>
     </div>
   );
@@ -121,6 +158,13 @@ function BlockDetail({ block, onOpenScreenshot }: { block: TimelineBlock; onOpen
           <span className={`chip lvl-chip lvl-${block.level}`}>{block.percent} % de actividad</span>
         )}
         {block.mostlyMeeting ? <span className="chip lvl-chip lvl-meeting">En reunión</span> : null}
+        {block.schedule === 'off' ? <span className="chip">Fuera de horario</span> : null}
+        {block.schedule === 'lunch' ? <span className="chip">Colación</span> : null}
+        {block.marks.map((m) => (
+          <span key={m.kind} className="chip">
+            {m.kind === 'start' ? 'Entrada' : 'Salida'} programada {m.time}
+          </span>
+        ))}
       </p>
       {block.trackedSeconds > 0 ? (
         <dl className="block-facts">

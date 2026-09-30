@@ -9,6 +9,7 @@ import {
   meetingSecondsOf,
   slotsBetween,
   type ActivitySlot,
+  type DayPlan,
   type ScreenshotMeta,
   type WithId,
 } from '@timetracking/shared';
@@ -57,6 +58,23 @@ export interface TimelineBlock {
   level: ActivityLevel;
   topDomains: { domain: string; seconds: number }[];
   screenshots: WithId<ScreenshotMeta>[];
+  /**
+   * Where the block falls in the day's schedule (the state covering most of
+   * its 10 minutes; ties favor 'work', then 'lunch'). null = no schedule.
+   */
+  schedule: BlockScheduleState | null;
+  /** Scheduled entry / exit inside this block. */
+  marks: ScheduleMark[];
+}
+
+export type BlockScheduleState = 'work' | 'lunch' | 'off';
+
+export interface ScheduleMark {
+  kind: 'start' | 'end';
+  /** Position inside the block, 0 (its start) … 1 (its end). */
+  at: number;
+  /** "09:00" */
+  time: string;
 }
 
 export interface TimelineRow {
@@ -80,6 +98,26 @@ export interface TimelineOptions {
    * block with data (or screenshot); `full` shows the whole day.
    */
   span?: 'compact' | 'full';
+  /**
+   * The person's schedule for the day (`planForDay`): each block gets its
+   * state and the entry/exit marks, and the compact view always includes
+   * the scheduled hours. null/undefined = no schedule.
+   */
+  plan?: DayPlan | null;
+}
+
+function overlap(a: number, b: number, from: number, to: number): number {
+  return Math.max(0, Math.min(b, to) - Math.max(a, from));
+}
+
+/** State covering most of `[start, start + SLOT_MS)`. */
+export function blockScheduleState(start: number, plan: DayPlan): BlockScheduleState {
+  const end = start + SLOT_MS;
+  const work = plan.work.reduce((t, w) => t + overlap(start, end, w.start, w.end), 0);
+  const lunch = plan.lunch ? overlap(start, end, plan.lunch.start, plan.lunch.end) : 0;
+  const off = SLOT_MS - work - lunch;
+  if (work >= lunch && work >= off) return 'work';
+  return lunch >= off ? 'lunch' : 'off';
 }
 
 /**
@@ -95,6 +133,7 @@ export function buildTimeline(
 ): Timeline {
   const timeZone = options.timeZone ?? DEFAULT_TIME_ZONE;
   const topN = options.topDomains ?? 3;
+  const plan = options.plan ?? null;
 
   const bySlot = new Map<number, ActivitySlot>();
   for (const s of slots) {
@@ -135,6 +174,8 @@ export function buildTimeline(
         .sort((a, b) => b.seconds - a.seconds || a.domain.localeCompare(b.domain))
         .slice(0, topN),
       screenshots: (shotsBySlot.get(slotStart) ?? []).sort((a, b) => a.takenAt - b.takenAt),
+      schedule: plan ? blockScheduleState(slotStart, plan) : null,
+      marks: plan?.span ? marksIn(slotStart, plan.span, timeZone) : [],
     };
   });
 
@@ -154,7 +195,9 @@ export function buildTimeline(
     current.blocks.push(block);
   }
 
-  const hasContent = (r: TimelineRow): boolean => r.blocks.some((b) => b.trackedSeconds > 0 || b.screenshots.length > 0);
+  // Content = data, a screenshot, or the scheduled hours (entry → exit).
+  const hasContent = (r: TimelineRow): boolean =>
+    r.blocks.some((b) => b.trackedSeconds > 0 || b.screenshots.length > 0 || b.marks.length > 0 || (b.schedule !== null && b.schedule !== 'off'));
   let visible = rows;
   if ((options.span ?? 'compact') === 'compact') {
     const first = rows.findIndex(hasContent);
@@ -167,4 +210,17 @@ export function buildTimeline(
     }
   }
   return { rows: visible, blocksWithData: blocks.filter((b) => b.trackedSeconds > 0).length };
+}
+
+/** Entry (at `span.start`) and exit (at the end of the block holding `span.end - 1 ms`) marks of a block. */
+function marksIn(slotStart: number, span: { start: number; end: number }, timeZone: string): ScheduleMark[] {
+  const out: ScheduleMark[] = [];
+  const end = slotStart + SLOT_MS;
+  if (span.start >= slotStart && span.start < end) {
+    out.push({ kind: 'start', at: (span.start - slotStart) / SLOT_MS, time: formatTime(span.start, timeZone) });
+  }
+  if (span.end > slotStart && span.end <= end) {
+    out.push({ kind: 'end', at: (span.end - slotStart) / SLOT_MS, time: formatTime(span.end, timeZone) });
+  }
+  return out;
 }

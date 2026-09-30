@@ -284,9 +284,15 @@ describe('config/schedule', () => {
     await assertFails(db('alice').doc(doc).update({ toleranceMinutes: 0, updatedBy: 'alice' }));
   });
 
-  it('nobody deletes it', async () => {
-    await seed(env, { [doc]: scheduleConfig() });
-    await assertFails(db('admin').doc(doc).delete());
+  it('only an active admin deletes it ("Eliminar horario"); config/org is still never deleted', async () => {
+    await seed(env, { [doc]: scheduleConfig(), 'config/org': orgConfig() });
+    await assertFails(db('alice').doc(doc).delete());
+    await assertFails(db('eve').doc(doc).delete());
+    await assertFails(db('nodoc').doc(doc).delete());
+    await assertFails(db(null).doc(doc).delete());
+    await assertSucceeds(db('admin').doc(doc).delete());
+    await assertFails(db('admin').doc('config/org').delete());
+    await assertFails(db('admin').doc('config/other').delete());
   });
 
   it('accepts every day off, the lunch on the borders and the Chilean holidays list', async () => {

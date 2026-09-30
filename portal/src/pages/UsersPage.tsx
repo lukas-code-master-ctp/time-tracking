@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { type Role, type UserProfile, type UserStatus, type WithId } from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
+import { PersonScheduleEditor } from '../components/ScheduleEditor';
 import { initials } from '../components/TeamTable';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { formatRelativeDateTime } from '../lib/dates';
 import { errorMessage } from '../lib/messages';
+import { SOURCE_LABEL, buildPersonSchedule } from '../lib/schedule';
 import { useLoad } from '../lib/useLoad';
 
 type Change = { user: WithId<UserProfile>; role: Role; status: UserStatus };
@@ -38,7 +40,11 @@ function describeChange(c: Change): { title: string; message: string; confirm: s
 export function UsersPage() {
   const data = useData();
   const { uid: me } = useAdmin();
-  const load = useLoad(() => data.listUsers(), [data]);
+  const load = useLoad(async () => {
+    const [users, persons, general] = await Promise.all([data.listUsers(), data.listPersonSchedules(), data.getScheduleConfig()]);
+    return { users, persons: new Map(persons.map(({ id, ...p }) => [id, p])), general };
+  }, [data]);
+  const [openSchedule, setOpenSchedule] = useState<string | null>(null);
   const [change, setChange] = useState<Change | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +66,7 @@ export function UsersPage() {
     }
   };
 
-  const users = [...(load.data ?? [])].sort(
+  const users = [...(load.data?.users ?? [])].sort(
     (a, b) =>
       (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1) ||
       (a.displayName || a.email).localeCompare(b.displayName || b.email, 'es'),
@@ -69,7 +75,7 @@ export function UsersPage() {
 
   return (
     <>
-      <PageHeader title="Colaboradores" subtitle="Personas registradas. Cambia su rol o desactiva su cuenta." />
+      <PageHeader title="Colaboradores" subtitle="Personas registradas. Cambia su rol, su horario o desactiva su cuenta." />
       {notice ? (
         <p className="banner ok" role="status">
           {notice}
@@ -89,6 +95,10 @@ export function UsersPage() {
             {users.map((u) => {
               const self = u.id === me;
               const name = u.displayName || u.email;
+              const personal = load.data!.persons.get(u.id) ?? null;
+              const source = personal ? 'personal' : load.data!.general ? 'general' : 'none';
+              const open = openSchedule === u.id;
+              const panelId = `schedule-${u.id}`;
               return (
                 <li key={u.id} className={`list-item${u.status === 'disabled' ? ' dimmed' : ''}`}>
                   <div className="person">
@@ -142,6 +152,39 @@ export function UsersPage() {
                       {u.status === 'active' ? 'Desactivar' : 'Activar'}
                     </button>
                   </div>
+                  <div className="list-schedule">
+                    <span className={`chip${source === 'personal' ? ' accent-chip' : ''}`}>Horario: {SOURCE_LABEL[source]}</span>
+                    <button
+                      type="button"
+                      className="btn small-btn"
+                      aria-expanded={open}
+                      aria-controls={open ? panelId : undefined}
+                      aria-label={`${open ? 'Cerrar' : 'Editar'} horario de ${name}`}
+                      onClick={() => {
+                        setNotice(null);
+                        setOpenSchedule(open ? null : u.id);
+                      }}
+                    >
+                      {open ? 'Cerrar horario' : 'Editar horario'}
+                    </button>
+                  </div>
+                  {open ? (
+                    <div id={panelId} className="list-panel" role="region" aria-label={`Horario de ${name}`}>
+                      <PersonScheduleEditor
+                        name={name}
+                        general={load.data!.general}
+                        current={personal}
+                        onSave={async (week) => {
+                          await data.savePersonSchedule(u.id, buildPersonSchedule(week, me, Date.now()));
+                          load.reload();
+                        }}
+                        onReset={async () => {
+                          await data.deletePersonSchedule(u.id);
+                          load.reload();
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

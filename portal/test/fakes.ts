@@ -4,6 +4,8 @@ import type {
   ActivitySlot,
   Invitation,
   OrgConfig,
+  PersonSchedule,
+  ScheduleConfig,
   ScreenshotMeta,
   Session,
   UserProfile,
@@ -13,6 +15,10 @@ import type { AuthApi, AuthUser, Backend, DataSource } from '../src/data/types';
 
 export interface FakeDb {
   config: OrgConfig | null;
+  /** `config/schedule` (null = no schedule). */
+  schedule: ScheduleConfig | null;
+  /** `schedules/{uid}` by uid. */
+  schedules: Record<string, PersonSchedule>;
   users: WithId<UserProfile>[];
   invitations: WithId<Invitation>[];
   activity: ActivitySlot[];
@@ -21,7 +27,7 @@ export interface FakeDb {
 }
 
 export function emptyDb(): FakeDb {
-  return { config: null, users: [], invitations: [], activity: [], sessions: [], screenshots: [] };
+  return { config: null, schedule: null, schedules: {}, users: [], invitations: [], activity: [], sessions: [], screenshots: [] };
 }
 
 export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: ReturnType<typeof vi.fn> & DataSource[K] } {
@@ -29,6 +35,22 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     getOrgConfig: async () => db.config,
     saveOrgConfig: async (c) => {
       db.config = c;
+    },
+    getScheduleConfig: async () => db.schedule,
+    saveScheduleConfig: async (c) => {
+      db.schedule = c;
+    },
+    deleteScheduleConfig: async () => {
+      db.schedule = null;
+    },
+    listPersonSchedules: async () => Object.entries(db.schedules).map(([id, s]) => ({ ...s, id })),
+    getPersonSchedule: async (uid) => db.schedules[uid] ?? null,
+    savePersonSchedule: async (uid, s) => {
+      db.schedules = { ...db.schedules, [uid]: s };
+    },
+    deletePersonSchedule: async (uid) => {
+      const { [uid]: _gone, ...rest } = db.schedules;
+      db.schedules = rest;
     },
     listUsers: async () => [...db.users],
     getUser: async (uid) => db.users.find((u) => u.id === uid) ?? null,

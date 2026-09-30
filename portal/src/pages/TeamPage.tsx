@@ -7,6 +7,7 @@ import { Empty, ErrorState, Loading, PageHeader, Stat, ActivityMeter } from '../
 import { useData } from '../data/context';
 import { describeRange, isRangePreset, presetRange, rangeIncludes, startOfDay, zonedDate, type DateRange } from '../lib/dates';
 import { downloadText } from '../lib/download';
+import { complianceCsvExtra, teamCompliance, type ScheduleContext } from '../lib/schedule';
 import { buildTeam, mergeActivity } from '../lib/team';
 import { useLoad } from '../lib/useLoad';
 
@@ -29,6 +30,8 @@ export function TeamPage() {
   // from `since` (see mergeActivity). `full` forces a whole read ("Actualizar").
   const cache = useRef<{ from: number; to: number; since: number; slots: ActivitySlot[] } | null>(null);
   const full = useRef(true);
+  // General schedule and exceptions: read once, and again only with "Actualizar".
+  const schedules = useRef<ScheduleContext | null>(null);
 
   const load = useLoad(async () => {
     const startedAt = Date.now();
@@ -36,13 +39,20 @@ export function TeamPage() {
       !full.current && cache.current && cache.current.from === range.from && cache.current.to === range.to
         ? cache.current
         : null;
+    const readSchedules = full.current || !schedules.current;
     full.current = false;
     const since = prev ? Math.max(range.from, prev.since) : range.from;
-    const [users, fresh, sessions] = await Promise.all([
+    const [users, fresh, sessions, ctx] = await Promise.all([
       data.listUsers(),
       data.listActivity(prev ? { from: since, to: range.to } : range),
       data.listSessions(range),
+      readSchedules
+        ? Promise.all([data.getScheduleConfig(), data.listPersonSchedules()]).then(
+            ([config, persons]): ScheduleContext => ({ config, persons: new Map(persons.map(({ id, ...p }) => [id, p])) }),
+          )
+        : Promise.resolve(schedules.current!),
     ]);
+    schedules.current = ctx;
     const slots = prev ? mergeActivity(prev.slots, fresh, since) : fresh;
     cache.current = {
       from: range.from,
@@ -51,7 +61,16 @@ export function TeamPage() {
       slots,
     };
     const now = Date.now();
-    return { team: buildTeam(users, slots, sessions, range, now), now };
+    const team = buildTeam(users, slots, sessions, range, now);
+    const compliance = teamCompliance(
+      team.rows.map((r) => r.uid),
+      sessions,
+      ctx,
+      range.fromDate,
+      range.toDate,
+      now,
+    );
+    return { team, compliance, now };
   }, [data, range.from, range.to]);
 
   const live = rangeIncludes(range, Date.now());
@@ -89,7 +108,13 @@ export function TeamPage() {
 
   const exportCsv = (): void => {
     if (!load.data) return;
-    const csv = teamSummaryToCsv(load.data.team, { separator: ';', decimalSeparator: ',', bom: true });
+    const { compliance } = load.data;
+    const csv = teamSummaryToCsv(load.data.team, {
+      separator: ';',
+      decimalSeparator: ',',
+      bom: true,
+      ...(compliance ? { extra: complianceCsvExtra(compliance) } : {}),
+    });
     downloadText(`equipo_${range.fromDate}_${range.toDate}.csv`, csv, 'text/csv;charset=utf-8');
   };
 
@@ -129,6 +154,28 @@ export function TeamPage() {
         </section>
       ) : null}
 
+      {team && load.data?.compliance && load.data.compliance.scheduled > 0 ? (
+        <section className="stats" aria-label="Horario del periodo">
+          <Stat
+            label="Horas esperadas"
+            value={formatDuration(load.data.compliance.totals.expectedSoFarSeconds)}
+            hint={`en horario ${formatDuration(load.data.compliance.totals.inScheduleSeconds)}`}
+          />
+          <Stat label="Fuera de horario" value={formatDuration(load.data.compliance.totals.outsideScheduleSeconds)} />
+          <Stat
+            label="Atrasos"
+            value={String(load.data.compliance.totals.lateCount)}
+            hint={load.data.compliance.totals.lateCount > 0 ? `${formatDuration(load.data.compliance.totals.lateSeconds)} en total` : undefined}
+          />
+          <Stat label="Sin conexión en horario" value={formatDuration(load.data.compliance.totals.offlineSeconds)} />
+          <Stat label="Ausencias" value={`${load.data.compliance.totals.absentDays} ${load.data.compliance.totals.absentDays === 1 ? 'día' : 'días'}`} />
+        </section>
+      ) : null}
+
+      {team && load.data?.compliance ? (
+        <p className="muted small table-hint">Desliza la tabla hacia la derecha para ver las columnas de horario por persona.</p>
+      ) : null}
+
       <section className="card flush" aria-label="Colaboradores">
         {load.error && !team ? (
           <ErrorState error={load.error} onRetry={reloadAll} />
@@ -143,7 +190,7 @@ export function TeamPage() {
                 No se pudo actualizar. Se muestran los últimos datos cargados.
               </p>
             ) : null}
-            <TeamTable team={team} now={load.data!.now} detailDate={detailDate} />
+            <TeamTable team={team} now={load.data!.now} detailDate={detailDate} compliance={load.data!.compliance} />
           </>
         )}
       </section>
@@ -152,6 +199,15 @@ export function TeamPage() {
         actividad. “En reunión” es el tiempo en reuniones web (Meet, Zoom, Teams…) sin usar teclado ni mouse: no sube ni baja
         el % de actividad. “En jornada” indica el estado actual, sin importar el periodo elegido.
       </p>
+      {load.data?.compliance ? (
+        <p className="muted small footnote">
+          Horario: “Esperadas” son las horas de horario hasta ahora, sin la colación ni los feriados ni los días libres (“de …”, las de todo el periodo); “En
+          horario”, el tiempo de jornada dentro de ellas; “Fuera de horario”, el tiempo de jornada fuera del horario y de la
+          colación. “Atrasos”: cuántos días la llegada superó la tolerancia, y cuánto sumaron. “Sin conexión en horario” es lo esperado hasta
+          ahora sin jornada abierta, y una ausencia es un día laboral ya terminado sin jornada. Se calcula con el horario
+          vigente.
+        </p>
+      ) : null}
     </>
   );
 }

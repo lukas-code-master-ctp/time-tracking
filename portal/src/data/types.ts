@@ -6,7 +6,9 @@ import type {
   ActivitySlot,
   Invitation,
   OrgConfig,
+  PersonSchedule,
   Role,
+  ScheduleConfig,
   ScreenshotMeta,
   Session,
   UserProfile,
@@ -25,6 +27,21 @@ export interface DataSource {
   getOrgConfig(): Promise<OrgConfig | null>;
   /** Writes the whole `config/org` (the 6 fields). */
   saveOrgConfig(config: OrgConfig): Promise<void>;
+
+  /** `config/schedule` when it exists and is valid (`readScheduleConfig`), otherwise null. */
+  getScheduleConfig(): Promise<ScheduleConfig | null>;
+  /** Writes the whole `config/schedule` (the 6 fields). */
+  saveScheduleConfig(config: ScheduleConfig): Promise<void>;
+  /** Deletes `config/schedule` (back to "no schedule"). */
+  deleteScheduleConfig(): Promise<void>;
+  /** Every valid `schedules/{uid}` (id = uid); invalid documents are left out. */
+  listPersonSchedules(): Promise<WithId<PersonSchedule>[]>;
+  /** `schedules/{uid}` when it exists and is valid, otherwise null. */
+  getPersonSchedule(uid: string): Promise<PersonSchedule | null>;
+  /** Writes the whole `schedules/{uid}` (the 3 fields). */
+  savePersonSchedule(uid: string, schedule: PersonSchedule): Promise<void>;
+  /** Deletes `schedules/{uid}` ("Volver al general"). */
+  deletePersonSchedule(uid: string): Promise<void>;
 
   listUsers(): Promise<WithId<UserProfile>[]>;
   getUser(uid: string): Promise<WithId<UserProfile> | null>;

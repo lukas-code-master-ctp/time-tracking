@@ -21,6 +21,7 @@ import {
 import {
   collection,
   connectFirestoreEmulator,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -42,11 +43,15 @@ import {
   EMULATOR_PORTS,
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
+  SCHEDULE_CONFIG_DOC_ID,
   emailKey,
   readAllowedDomains,
+  readPersonSchedule,
+  readScheduleConfig,
   type ActivitySlot,
   type Invitation,
   type OrgConfig,
+  type PersonSchedule,
   type ScreenshotMeta,
   type Session,
   type UserProfile,
@@ -116,6 +121,35 @@ export function createFirebaseBackend(): Backend {
     },
     async saveOrgConfig(config) {
       await setDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID), config);
+    },
+    async getScheduleConfig() {
+      const snap = await getDoc(doc(db, COLLECTIONS.config, SCHEDULE_CONFIG_DOC_ID));
+      return snap.exists() ? readScheduleConfig(snap.data()) : null;
+    },
+    async saveScheduleConfig(config) {
+      await setDoc(doc(db, COLLECTIONS.config, SCHEDULE_CONFIG_DOC_ID), config);
+    },
+    async deleteScheduleConfig() {
+      await deleteDoc(doc(db, COLLECTIONS.config, SCHEDULE_CONFIG_DOC_ID));
+    },
+    async listPersonSchedules() {
+      const snap = await getDocs(collection(db, COLLECTIONS.schedules));
+      const out: WithId<PersonSchedule>[] = [];
+      for (const d of snap.docs) {
+        const s = readPersonSchedule(d.data());
+        if (s) out.push({ ...s, id: d.id });
+      }
+      return out;
+    },
+    async getPersonSchedule(uid) {
+      const snap = await getDoc(doc(db, COLLECTIONS.schedules, uid));
+      return snap.exists() ? readPersonSchedule(snap.data()) : null;
+    },
+    async savePersonSchedule(uid, schedule) {
+      await setDoc(doc(db, COLLECTIONS.schedules, uid), schedule);
+    },
+    async deletePersonSchedule(uid) {
+      await deleteDoc(doc(db, COLLECTIONS.schedules, uid));
     },
     async listUsers() {
       const snap = await getDocs(collection(db, COLLECTIONS.users));

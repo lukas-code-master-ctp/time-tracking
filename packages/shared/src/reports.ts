@@ -355,10 +355,17 @@ export function toCsv(rows: readonly CsvRow[], columns?: readonly CsvColumn[], o
   return (options.bom ? '﻿' : '') + lines.join('\r\n') + '\r\n';
 }
 
+/** Extra columns appended to {@link teamSummaryToCsv} (e.g. the portal's schedule compliance). */
+export interface TeamCsvExtra {
+  columns: readonly CsvColumn[];
+  /** Values of the extra columns for one row (keys = `columns[].key`). */
+  values(row: TeamRow): CsvRow;
+}
+
 /** Team summary CSV with Spanish headers (user-visible export). */
 export function teamSummaryToCsv(
   team: TeamSummary,
-  options: CsvOptions & { timeZone?: string } = {},
+  options: CsvOptions & { timeZone?: string; extra?: TeamCsvExtra } = {},
 ): string {
   const columns: CsvColumn[] = [
     { key: 'displayName', header: 'Nombre' },
@@ -386,6 +393,9 @@ export function teamSummaryToCsv(
     sessionCount: r.sessionCount,
     topDomain: r.topDomains[0]?.domain ?? '',
     lastActivity: r.lastActivityAt === null ? '' : formatDateTime(r.lastActivityAt, options.timeZone),
+    // Extra values never overwrite the base columns.
+    ...Object.fromEntries(Object.entries(options.extra?.values(r) ?? {}).filter(([k]) => !columns.some((c) => c.key === k))),
   }));
-  return toCsv(rows, columns, options);
+  const extra = (options.extra?.columns ?? []).filter((c) => !columns.some((b) => b.key === c.key));
+  return toCsv(rows, [...columns, ...extra], options);
 }

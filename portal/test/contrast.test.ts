@@ -53,6 +53,27 @@ describe('timeline colors contrast', () => {
     }
   });
 
+  it.each(Object.entries(THEMES))('%s: schedule shading ≥ 3:1 (graphics, WCAG 1.4.11) on the card', (_name, t) => {
+    for (const token of ['--sch-off', '--sch-lunch']) {
+      expect(t[token], token).toMatch(/^#/);
+      expect(contrast(t[token]!, t['--surface']!), token).toBeGreaterThanOrEqual(3);
+      expect(contrast(t[token]!, t['--surface-2']!), `${token} en surface-2`).toBeGreaterThanOrEqual(3);
+    }
+    // Outside the schedule and the lunch are told apart by hue too, not only by the stripe direction.
+    expect(t['--sch-off']).not.toBe(t['--sch-lunch']);
+    // The striped band on blocks with data uses the ink, already ≥ 4.5:1 on every level.
+  });
+
+  it.each(Object.entries(THEMES))('%s: entry/exit mark ≥ 3:1 on the card and on every block color (mark or its halo)', (_name, t) => {
+    const mark = t['--sch-mark']!;
+    const halo = t['--sch-mark-halo']!;
+    expect(contrast(mark, halo)).toBeGreaterThanOrEqual(3);
+    for (const bg of ['--surface', '--surface-2', '--lvl-none', '--lvl-low', '--lvl-mid', '--lvl-high', '--lvl-meeting']) {
+      expect(Math.max(contrast(mark, t[bg]!), contrast(halo, t[bg]!)), bg).toBeGreaterThanOrEqual(3);
+    }
+    expect(contrast(mark, t['--surface']!)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('the meeting color is its own (not one of the activity levels) and the same in both dark blocks', () => {
     for (const t of Object.values(THEMES)) {
       expect([t['--lvl-low'], t['--lvl-mid'], t['--lvl-high'], t['--lvl-none']]).not.toContain(t['--lvl-meeting']);

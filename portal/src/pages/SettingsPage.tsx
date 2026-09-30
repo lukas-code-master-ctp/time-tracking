@@ -1,9 +1,11 @@
 import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { MAX_ALLOWED_DOMAINS, allowedDomainsOr, emailDomain, type OrgConfig } from '@timetracking/shared';
+import { MAX_ALLOWED_DOMAINS, allowedDomainsOr, emailDomain, type OrgConfig, type ScheduleConfig } from '@timetracking/shared';
+import { ConfirmDialog } from '../components/Modal';
+import { ScheduleConfigForm } from '../components/ScheduleEditor';
 import { ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { ALLOWED_DOMAINS } from '../env';
-import { formatRelativeDateTime } from '../lib/dates';
+import { formatRelativeDateTime, zonedDate } from '../lib/dates';
 import { errorMessage } from '../lib/messages';
 import {
   MAX_RETENTION_DAYS,
@@ -16,6 +18,7 @@ import {
   type FieldErrors,
   type OrgConfigForm,
 } from '../lib/payloads';
+import { DEFAULT_WEEK, buildScheduleConfig, defaultScheduleForm, describeWeek, scheduleToForm, type ScheduleForm } from '../lib/schedule';
 import { useLoad } from '../lib/useLoad';
 
 interface FormProps {
@@ -247,6 +250,7 @@ export function SettingsPage() {
   const data = useData();
   const { uid, profile } = useAdmin();
   const load = useLoad(() => data.getOrgConfig(), [data]);
+  const schedule = useLoad(() => data.getScheduleConfig(), [data]);
 
   return (
     <>
@@ -274,6 +278,151 @@ export function SettingsPage() {
           />
         )}
       </section>
+      <section className="card" aria-labelledby="h-schedule">
+        <h2 id="h-schedule">Horario</h2>
+        {schedule.error && schedule.data === undefined ? (
+          <ErrorState error={schedule.error} onRetry={schedule.reload} />
+        ) : schedule.data === undefined ? (
+          <Loading label="Cargando el horario…" />
+        ) : (
+          <ScheduleSection
+            config={schedule.data}
+            uid={uid}
+            now={Date.now()}
+            onSave={async (form) => {
+              await data.saveScheduleConfig(buildScheduleConfig(form, uid, Date.now()));
+              schedule.reload();
+            }}
+            onDelete={async () => {
+              await data.deleteScheduleConfig();
+              schedule.reload();
+            }}
+          />
+        )}
+      </section>
+    </>
+  );
+}
+
+interface ScheduleSectionProps {
+  /** Saved general schedule (null = none). */
+  config: ScheduleConfig | null;
+  uid: string;
+  now: number;
+  onSave(form: ScheduleForm): Promise<void>;
+  onDelete(): Promise<void>;
+}
+
+/**
+ * "Configuración → Horario". Without a schedule it explains what that means
+ * and offers to create one with suggested values, which the admin reviews
+ * before saving (nothing is written until then).
+ */
+export function ScheduleSection({ config, uid, now, onSave, onDelete }: ScheduleSectionProps) {
+  const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const today = zonedDate(now);
+
+  const remove = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onDelete();
+      setConfirmDelete(false);
+      setCreating(false);
+      setNotice('Horario eliminado. La extensión vuelve a medir siempre que la jornada esté abierta.');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {notice ? (
+        <p className="banner ok" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {config ? (
+        <>
+          <p className="muted small schedule-meta">
+            Última modificación {formatRelativeDateTime(config.updatedAt, now)}
+            {config.updatedBy === uid ? ' (por ti)' : ''}.
+          </p>
+          <ScheduleConfigForm
+            initial={scheduleToForm(config)}
+            isNew={false}
+            today={today}
+            onSave={async (form) => {
+              setNotice(null);
+              await onSave(form);
+            }}
+            onDelete={() => {
+              setNotice(null);
+              setError(null);
+              setConfirmDelete(true);
+            }}
+          />
+        </>
+      ) : creating ? (
+        <ScheduleConfigForm
+          initial={defaultScheduleForm()}
+          isNew
+          today={today}
+          onSave={async (form) => {
+            setNotice(null);
+            await onSave(form);
+            setCreating(false);
+            setNotice('Horario creado. La extensión lo aplica en unos minutos.');
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      ) : (
+        <div className="schedule-empty" data-testid="schedule-empty">
+          <p className="state-title">Sin horario configurado</p>
+          <p className="muted">
+            Hoy la extensión mide siempre que la jornada esté abierta, a cualquier hora. No hay reportes de cumplimiento
+            (atrasos, ausencias, tiempo fuera de horario) ni recordatorios.
+          </p>
+          <p className="muted">
+            Al crear un horario te sugerimos: {describeWeek(DEFAULT_WEEK).join(' · ')}; feriados
+            de Chile 2026–2027, 5 minutos de tolerancia y recordatorios activados. Podrás revisarlo antes de guardar.
+          </p>
+          <div>
+            <button type="button" className="btn primary" onClick={() => {
+                setNotice(null);
+                setCreating(true);
+              }}>
+              Crear horario
+            </button>
+          </div>
+        </div>
+      )}
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Eliminar horario"
+          message={
+            <>
+              <p>
+                La organización quedará <strong>sin horario</strong>: la extensión volverá a medir siempre que la jornada esté
+                abierta, sin recordatorios, y Equipo dejará de mostrar el cumplimiento (también de días pasados).
+              </p>
+              <p>Los horarios personalizados de Colaboradores se mantienen, pero sin feriados ni recordatorios.</p>
+            </>
+          }
+          confirmLabel="Eliminar horario"
+          danger
+          busy={busy}
+          error={error}
+          onConfirm={() => void remove()}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
     </>
   );
 }

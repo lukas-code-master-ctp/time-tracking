@@ -4,8 +4,9 @@
  *   npm run e2e:portal      (root: builds functions, then runs this inside
  *   firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking)
  *
- * 1. Seeds with the Admin SDK: config/org, 2 collaborators, today's sessions
- *    and activity (Ana with web-meeting blocks: `meetingSeconds`), 1
+ * 1. Seeds with the Admin SDK: config/org, config/schedule (relative to now)
+ *    and Beto's exception (schedules/colab-beto), 2 collaborators, today's
+ *    sessions and activity (Ana with web-meeting blocks: `meetingSeconds`), 1
  *    screenshot (file in Storage + doc).
  * 2. Starts the portal's Vite dev server (development mode → emulators).
  * 3. In Chromium (Playwright): dev login as the bootstrap admin
@@ -13,7 +14,10 @@
  *    with hours > 0 and "En reunión" (same value as the CSV), collaborator
  *    detail with the "En reunión" card, meeting blocks, timeline and screenshot
  *    (thumbnail + lightbox), invitation, role change, settings; each write is
- *    checked in Firestore. No horizontal scroll at 375 px.
+ *    checked in Firestore. Working hours: schedule columns in Equipo and the
+ *    CSV, cards, shading and marks in the detail, a personalized schedule and
+ *    "Volver al general" in Colaboradores, and deleting / creating / editing
+ *    the general schedule in Configuración. No horizontal scroll at 375 px.
  *    Public privacy policy at /privacidad (no session) and its link from the login.
  * 4. Screenshots (desktop and 375 px, light and dark) in PORTAL_SHOTS_DIR
  *    (default: <tmp>/timetracking-portal-shots).
@@ -27,23 +31,29 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { chromium, type Browser, type Page } from 'playwright';
 import { createServer, type ViteDevServer } from 'vite';
 import {
+  CHILE_HOLIDAY_DATES,
   COLLECTIONS,
   EMULATOR_PORTS,
   FIREBASE_DEMO_PROJECT_ID,
   SLOT_MS,
   activityDocId,
+  complianceForRange,
   formatDuration,
   meetingSecondsOf,
   secondsToHours,
   screenshotStoragePath,
   slotStartOf,
   type ActivitySlot,
+  type DaySchedule,
   type OrgConfig,
+  type PersonSchedule,
+  type ScheduleConfig,
   type ScreenshotMeta,
   type Session,
   type UserProfile,
+  type WeekSchedule,
 } from '@timetracking/shared';
-import { startOfDay, zonedDate } from '../src/lib/dates.ts';
+import { addDays, formatTime, startOfDay, zonedDate } from '../src/lib/dates.ts';
 import { findChromium, NO_CHROMIUM } from '../../scripts/lib/chromium.ts';
 import { clearEmulators, uploadJpeg } from '../../scripts/lib/emulators.ts';
 
@@ -91,6 +101,12 @@ interface Seed {
   shotId: string;
   /** Ana's seconds in a meeting today (sum of `meetingSeconds`). */
   anaMeetingSeconds: number;
+  /** `config/schedule` and Beto's exception (`schedules/colab-beto`). */
+  schedule: ScheduleConfig;
+  betoSchedule: PersonSchedule;
+  anaSession: Session;
+  betoSession: Session;
+  today: string;
 }
 
 /**
@@ -149,6 +165,9 @@ async function seed(browser: Browser): Promise<Seed> {
   // Today in Santiago starts at most ~21 h before; keep the data inside today.
   const dayStart = dayStartMs(now);
   if (now - dayStart < 30 * 60_000) fail('faltan menos de 30 minutos desde la medianoche (hora de Chile): vuelve a ejecutar más tarde.');
+  if (startOfDay(addDays(zonedDate(now), 1)) - now < 30 * 60_000) {
+    fail('faltan menos de 30 minutos para la medianoche (hora de Chile): vuelve a ejecutar más tarde.');
+  }
   const start = Math.max(dayStart, now - 3 * 3_600_000);
 
   const config: OrgConfig = {
@@ -178,15 +197,46 @@ async function seed(browser: Browser): Promise<Seed> {
 
   // Ana: open session (live), Beto: closed session.
   const anaSession: Session = { uid: ana, startedAt: start, endedAt: null, endReason: null, lastHeartbeatAt: now - 60_000 };
-  const betoEnd = Math.min(start + 100 * 60_000, now - 60_000);
-  const betoSession: Session = { uid: beto, startedAt: start, endedAt: betoEnd, endReason: 'manual', lastHeartbeatAt: betoEnd };
+  // Beto arrives 20 min after Ana (late against his personalized schedule, below).
+  const betoStart = start + 20 * 60_000;
+  const betoEnd = Math.min(betoStart + 100 * 60_000, now - 60_000);
+  const betoSession: Session = { uid: beto, startedAt: betoStart, endedAt: betoEnd, endReason: 'manual', lastHeartbeatAt: betoEnd };
   await db.doc(`sessions/s-ana`).set(anaSession);
   await db.doc(`sessions/s-beto`).set(betoSession);
   const anaSlots = withMeetings(slotsFor(ana, 's-ana', start, now - 60_000, [92, 85, 74, 61, 88, 45, 97, 30, 80]));
   if (anaSlots.length < 5) fail('muy pocos bloques de hoy para sembrar reuniones: vuelve a ejecutar más tarde.');
   const anaMeetingSeconds = anaSlots.reduce((n, s) => n + meetingSecondsOf(s), 0);
   // Beto: blocks as extension 0.1.1 wrote them (no meetingSeconds, read as 0).
-  const slots = [...anaSlots, ...slotsFor(beto, 's-beto', start, betoEnd, [35, 55, 20, 65])];
+  const slots = [...anaSlots, ...slotsFor(beto, 's-beto', betoStart, betoEnd, [35, 55, 20, 65])];
+
+  // Working hours, relative to now so any time of day works (every day of the
+  // week the same): general = now − 2 h → now + 2 h with a 20-min lunch (Ana
+  // is connected an hour before the entry: outside the schedule); Beto's
+  // exception starts when Ana's session did, so he is 20 min late.
+  const today = zonedDate(now);
+  const clock = (ms: number): string => (zonedDate(ms) === today ? formatTime(ms) : ms < now ? '00:00' : '23:59');
+  const plus = (time: string, minutes: number): string => {
+    const t = Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) + minutes;
+    return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  };
+  const entry = clock(now - 120 * 60_000);
+  const everyDay = (d: DaySchedule): WeekSchedule => ({ mon: d, tue: d, wed: d, thu: d, fri: d, sat: d, sun: d });
+  const schedule: ScheduleConfig = {
+    week: everyDay({ start: entry, end: clock(now + 120 * 60_000), lunchStart: plus(entry, 30), lunchEnd: plus(entry, 50) }),
+    // Today is never a holiday here, so the check does not depend on the date.
+    holidays: CHILE_HOLIDAY_DATES.filter((d) => d !== today),
+    toleranceMinutes: 5,
+    remindersEnabled: true,
+    updatedAt: now - 86_400_000,
+    updatedBy: 'system',
+  };
+  await db.doc(`${COLLECTIONS.config}/schedule`).set(schedule);
+  const betoSchedule: PersonSchedule = {
+    week: everyDay({ start: formatTime(start), end: clock(now + 60 * 60_000), lunchStart: null, lunchEnd: null }),
+    updatedAt: now - 86_400_000,
+    updatedBy: 'system',
+  };
+  await db.doc(`${COLLECTIONS.schedules}/${beto}`).set(betoSchedule);
   const batch = db.batch();
   for (const s of slots) batch.set(db.doc(`${COLLECTIONS.activity}/${activityDocId(s.uid, s.slotStart)}`), s);
   await batch.commit();
@@ -207,10 +257,11 @@ async function seed(browser: Browser): Promise<Seed> {
   const meta: ScreenshotMeta = { uid: ana, sessionId: 's-ana', takenAt, storagePath, blurred: true, width: 1280, height: 720 };
   await db.doc(`${COLLECTIONS.screenshots}/${shotId}`).set(meta);
   ok(
-    `Semilla: config/org, 2 colaboradores, 2 jornadas, ${slots.length} bloques de actividad ` +
+    `Semilla: config/org, config/schedule (${entry}–${schedule.week.mon!.end}, colación ${schedule.week.mon!.lunchStart}–${schedule.week.mon!.lunchEnd}), ` +
+      `horario personalizado de Beto, 2 colaboradores, 2 jornadas, ${slots.length} bloques de actividad ` +
       `(Ana ${formatDuration(anaMeetingSeconds)} en reunión), 1 captura (${storagePath}).`,
   );
-  return { ana, beto, shotId, anaMeetingSeconds };
+  return { ana, beto, shotId, anaMeetingSeconds, schedule, betoSchedule, anaSession, betoSession, today };
 }
 
 /** Start of today in America/Santiago, with the portal's own helper (same code as the UI). */
@@ -364,6 +415,42 @@ async function main(): Promise<void> {
     if (!(Math.abs(Number(csvAna.replace(',', '.')) * 60 - tableMinutes) <= 1)) fail(`CSV (${csvAna} h) y tabla (${anaMeeting}) no coinciden`);
     ok(`CSV exportado (${download.suggestedFilename()}): "Horas en reunión" de Ana ${csvAna} h = ${anaMeeting} de la tabla.`);
 
+    // Schedule columns (general for Ana, exception for Beto): same figures as the shared functions and the CSV.
+    const expectFor = (session: Session, week: WeekSchedule) =>
+      complianceForRange(seeded.today, seeded.today, [session], week, seeded.schedule.holidays, seeded.schedule.toleranceMinutes, Date.now()).totals;
+    const anaC = expectFor(seeded.anaSession, seeded.schedule.week);
+    const betoC = expectFor(seeded.betoSession, seeded.betoSchedule.week);
+    const col = (h: string): number => {
+      const i = headers.indexOf(h);
+      if (i === -1) fail(`la tabla no tiene la columna "${h}": ${headers.join(' | ')}`);
+      return i;
+    };
+    const cellText = async (row: typeof anaRow, h: string): Promise<string> => ((await row.locator('td').nth(col(h)).textContent()) ?? '').trim();
+    const anaIn = await cellText(anaRow, 'En horario');
+    const anaOut = await cellText(anaRow, 'Fuera de horario');
+    const betoLate = await cellText(betoRow, 'Atrasos');
+    const betoExpected = await cellText(betoRow, 'Esperadas');
+    for (const h of ['Esperadas', 'Sin conexión en horario', 'Ausencias']) col(h);
+    if (anaIn !== formatDuration(anaC.inScheduleSeconds) || anaOut !== formatDuration(anaC.outsideScheduleSeconds)) {
+      fail(`Ana: en horario "${anaIn}", fuera "${anaOut}" (esperado ${formatDuration(anaC.inScheduleSeconds)} / ${formatDuration(anaC.outsideScheduleSeconds)})`);
+    }
+    if (betoC.lateCount !== 1 || betoLate !== `1${formatDuration(betoC.lateSeconds)}`) fail(`Beto: atrasos "${betoLate}"`);
+    if (!betoExpected.includes('personalizado')) fail(`Beto: esperadas "${betoExpected}"`);
+    const csvHorario = csvHead.split(';');
+    const csvCell = (name: string, h: string): string => csvLines.find((l) => l.startsWith(`${name};`))?.split(';')[csvHorario.indexOf(h)] ?? '';
+    const dec = (s: number): string => String(secondsToHours(s)).replace('.', ',');
+    if (
+      csvCell('Ana Rojas', 'Horario') !== 'General' ||
+      csvCell('Ana Rojas', 'Horas en horario') !== dec(anaC.inScheduleSeconds) ||
+      csvCell('Beto Díaz', 'Horario') !== 'Personalizado' ||
+      csvCell('Beto Díaz', 'Atrasos') !== '1'
+    ) {
+      fail(`CSV de horario: ${csvHead} / ${csvLines.join(' / ')}`);
+    }
+    ok(
+      `Columnas de horario: Ana en horario ${anaIn}, fuera de horario ${anaOut}; Beto (personalizado) 1 atraso de ${formatDuration(betoC.lateSeconds)}; CSV coherente.`,
+    );
+
     // 3. Collaborator detail: timeline + screenshot + lightbox.
     await anaRow.getByRole('link').click();
     await page.getByRole('heading', { name: 'Ana Rojas' }).waitFor();
@@ -376,6 +463,8 @@ async function main(): Promise<void> {
     const detail = (await page.getByTestId('timeline-detail').textContent()) ?? '';
     if (!detail.includes('% de actividad') || !detail.includes('docs.google.com')) fail(`detalle del bloque: ${detail}`);
     const thumb = page.getByTestId('screenshot-thumb');
+    // Thumbnails load when they enter the viewport (the day's schedule makes the page longer).
+    await page.getByRole('heading', { name: 'Capturas de pantalla' }).scrollIntoViewIfNeeded();
     await thumb.waitFor({ timeout: 15_000 });
     await until('miniatura cargada', () => thumb.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0));
     ok(`Detalle: ${await cells.count()} bloques (${withData} con datos), detalle al pasar el cursor, miniatura cargada desde Storage.`);
@@ -389,12 +478,31 @@ async function main(): Promise<void> {
     if ((await page.locator('.cell.has-meeting:not(.lvl-meeting)').count()) !== 1) fail('falta el marcador del bloque con poca reunión');
     const legend = (await page.getByRole('list', { name: 'Leyenda' }).textContent()) ?? '';
     if (!legend.includes('En reunión')) fail(`leyenda: ${legend}`);
-    // Pinned (click) so the detail stays open in the screenshots.
+    // Pinned (click) so the detail stays open in the screenshots. From the top of the page: scrolled to the
+    // very bottom (the thumbnail step), the detail changing size on hover moves the page under the pointer.
+    await page.evaluate(() => window.scrollTo(0, 0));
     await meetingCells.nth(1).click();
     await page.mouse.move(0, 0);
     const meetingDetail = (await page.getByTestId('timeline-detail').textContent()) ?? '';
     if (!meetingDetail.includes('Actividad: —') || !/En reunión\d+ min/.test(meetingDetail)) fail(`detalle del bloque en reunión: ${meetingDetail}`);
     ok(`"En reunión": tarjeta ${formatDuration(seeded.anaMeetingSeconds)}, 2 bloques con su color (${meetingTexts.join(', ')}), marcador, detalle y leyenda.`);
+
+    // Schedule of the day: cards, timeline shading and marks, time outside per session.
+    const daySchedule = (await page.getByTestId('day-schedule').textContent()) ?? '';
+    if (!daySchedule.includes('Horario general') || !daySchedule.includes('En curso')) fail(`horario del día: ${daySchedule}`);
+    const cardsText = (await page.getByRole('region', { name: 'Cumplimiento del día' }).textContent()) ?? '';
+    for (const part of [`En horario${formatDuration(anaC.inScheduleSeconds)}`, 'Esperado', 'Atraso', 'Salida anticipadaEn curso', 'Sin conexión en horario']) {
+      if (!cardsText.includes(part)) fail(`tarjetas de cumplimiento sin "${part}": ${cardsText}`);
+    }
+    const lunchCells = await page.locator('.cell.sch-lunch').count();
+    const offCells = await page.locator('.cell.sch-off').count();
+    const marks = await page.locator('.cell .sch-mark').count();
+    if (lunchCells === 0 || marks !== 2) fail(`línea de tiempo con horario: ${lunchCells} bloques de colación, ${marks} marcas`);
+    const jornadas = page.getByRole('region', { name: 'Jornadas del día' });
+    if (!(await jornadas.getByRole('columnheader', { name: 'Fuera de horario' }).count())) fail('las jornadas no muestran "Fuera de horario"');
+    const sessionOutside = ((await jornadas.locator('tbody td').nth(4).textContent()) ?? '').trim();
+    if (!sessionOutside.startsWith(formatDuration(anaC.outsideScheduleSeconds))) fail(`jornada fuera de horario: "${sessionOutside}"`);
+    ok(`Detalle con horario: tarjetas (en horario ${formatDuration(anaC.inScheduleSeconds)}, en curso), ${lunchCells} bloques de colación, ${offCells} fuera de horario, entrada y salida marcadas, jornada con ${sessionOutside.split('colación')[0]} fuera de horario.`);
     await shootAll(page, '03-colaborador');
     await meetingCells.nth(1).click(); // unpin
 
@@ -444,6 +552,34 @@ async function main(): Promise<void> {
     ok('Rol de Beto cambiado a administrador (con confirmación).');
     await shootAll(page, '06-colaboradores');
 
+    // Per-person schedule: personalize Ana (exact document), then "Volver al general" (deleted).
+    const anaItem = page.locator('.list > .list-item').filter({ hasText: 'Ana Rojas' });
+    const betoItem = page.locator('.list > .list-item').filter({ hasText: 'Beto Díaz' });
+    if (!(await anaItem.textContent())?.includes('Horario: General')) fail('Ana no aparece con "Horario: General"');
+    if (!(await betoItem.textContent())?.includes('Horario: Personalizado')) fail('Beto no aparece con "Horario: Personalizado"');
+    await page.getByRole('button', { name: 'Editar horario de Ana Rojas' }).click();
+    const anaPanel = page.getByRole('region', { name: 'Horario de Ana Rojas' });
+    await anaPanel.getByRole('button', { name: 'Personalizar horario' }).click();
+    await anaPanel.getByLabel('Entrada (Lunes)').fill('08:00');
+    await anaPanel.getByLabel('Salida (Lunes)').fill('17:00');
+    await anaPanel.getByRole('button', { name: 'Guardar horario personalizado' }).click();
+    await anaPanel.getByText('Horario personalizado de Ana Rojas guardado.').waitFor();
+    const anaSchedule = await until('schedules/colab-ana', async () => (await getFirestore().doc(`schedules/${seeded.ana}`).get()).data());
+    const personKeys = Object.keys(anaSchedule).sort().join(',');
+    const mon = (anaSchedule.week as WeekSchedule).mon;
+    if (personKeys !== 'updatedAt,updatedBy,week' || anaSchedule.updatedBy !== adminUid || mon?.start !== '08:00' || mon.end !== '17:00') {
+      fail(`schedules/colab-ana: ${JSON.stringify(anaSchedule)}`);
+    }
+    await until('chip "Personalizado" de Ana', async () => (await anaItem.textContent())?.includes('Horario: Personalizado'));
+    ok('Horario personalizado de Ana guardado desde el portal (week, updatedAt, updatedBy = admin).');
+    await shootAll(page, '06b-colaborador-horario');
+    await anaPanel.getByRole('button', { name: 'Volver al general' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Volver al general' }).click();
+    await anaPanel.getByText('Ana Rojas vuelve a usar el horario general.').waitFor();
+    await until('schedules/colab-ana borrado', async () => !(await getFirestore().doc(`schedules/${seeded.ana}`).get()).exists);
+    ok('"Volver al general": schedules/colab-ana borrado.');
+    await page.getByRole('button', { name: 'Cerrar horario de Ana Rojas' }).click();
+
     // 6. Settings: exact 6 fields.
     await navTo(page, 'Configuración');
     await page.getByLabel(/Difuminar capturas/).uncheck();
@@ -487,6 +623,50 @@ async function main(): Promise<void> {
       return JSON.stringify(d) === JSON.stringify(['impulseai.cl', 'compratuparcela.cl']) ? d : undefined;
     });
     await shootAll(page, '07-configuracion');
+
+    // Working hours from the UI: delete the seeded one, create it from the suggested values, edit and save.
+    const scheduleCard = page.getByRole('region', { name: 'Horario', exact: true });
+    await scheduleCard.getByRole('button', { name: 'Eliminar horario' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Eliminar horario' }).click();
+    await scheduleCard.getByText('Sin horario configurado').waitFor();
+    await until('config/schedule borrado', async () => !(await getFirestore().doc('config/schedule').get()).exists);
+    ok('Horario eliminado desde el portal (config/schedule borrado, con confirmación).');
+    await shootAll(page, '09-horario-vacio');
+    await scheduleCard.getByRole('button', { name: 'Crear horario' }).click();
+    if ((await scheduleCard.getByLabel('Entrada (Lunes)').inputValue()) !== '09:00') fail('el horario sugerido no empieza a las 09:00');
+    if ((await scheduleCard.getByLabel('Salida (Viernes)').inputValue()) !== '14:00') fail('el viernes sugerido no termina a las 14:00');
+    // Live validation.
+    await scheduleCard.getByLabel('Salida (Lunes)').fill('08:00');
+    await scheduleCard.getByText('Lunes: la salida debe ser posterior a la entrada (sin cruzar la medianoche).').waitFor();
+    await scheduleCard.getByLabel('Salida (Lunes)').fill('18:30');
+    await scheduleCard.getByLabel('Entrada (Lunes)').fill('08:30');
+    await scheduleCard.getByRole('button', { name: 'Copiar lunes a martes–viernes' }).click();
+    await scheduleCard.getByLabel('Tolerancia (minutos)').fill('10');
+    await scheduleCard.getByLabel('Agregar feriado').fill('2027-12-31');
+    await scheduleCard.getByRole('button', { name: 'Agregar fecha' }).click();
+    await scheduleCard.getByText('Feriado agregado').waitFor();
+    await shootAll(page, '09-horario-nuevo');
+    await scheduleCard.getByRole('button', { name: 'Guardar y activar horario' }).click();
+    await scheduleCard.getByText('Horario creado.', { exact: false }).waitFor();
+    const saved = await until('config/schedule creado', async () => (await getFirestore().doc('config/schedule').get()).data());
+    const scheduleKeys = Object.keys(saved).sort().join(',');
+    const savedWeek = saved.week as WeekSchedule;
+    const lj = JSON.stringify({ start: '08:30', end: '18:30', lunchStart: '13:00', lunchEnd: '14:00' });
+    const savedHolidays = saved.holidays as string[];
+    if (
+      scheduleKeys !== 'holidays,remindersEnabled,toleranceMinutes,updatedAt,updatedBy,week' ||
+      (['mon', 'tue', 'wed', 'thu', 'fri'] as const).some((d) => JSON.stringify(savedWeek[d]) !== lj) ||
+      savedWeek.sat !== null ||
+      savedWeek.sun !== null ||
+      saved.toleranceMinutes !== 10 ||
+      saved.remindersEnabled !== true ||
+      saved.updatedBy !== adminUid ||
+      JSON.stringify(savedHolidays) !== JSON.stringify([...new Set([...CHILE_HOLIDAY_DATES, '2027-12-31'])].sort())
+    ) {
+      fail(`config/schedule: ${JSON.stringify(saved)}`);
+    }
+    ok(`Horario creado desde el portal con los 6 campos: L–V 08:30–18:30 (copiado del lunes), tolerancia 10, ${savedHolidays.length} feriados.`);
+    await shootAll(page, '09-horario-guardado');
 
     // Mobile menu open (navigation on phones).
     await page.setViewportSize(MOBILE);

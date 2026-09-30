@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router';
-import { formatDuration, type TeamSummary } from '@timetracking/shared';
+import { formatDuration, type ComplianceTotals, type TeamSummary } from '@timetracking/shared';
 import { formatRelativeDateTime } from '../lib/dates';
+import type { MemberCompliance, TeamCompliance } from '../lib/schedule';
 import { ActivityMeter } from './ui';
 
 interface Props {
@@ -8,18 +9,74 @@ interface Props {
   now: number;
   /** Day opened in the detail page (`YYYY-MM-DD`). */
   detailDate: string;
+  /** Schedule compliance: its columns are shown only when there is a schedule. */
+  compliance?: TeamCompliance | null;
+}
+
+export const COMPLIANCE_HEADERS = [
+  'Esperadas',
+  'En horario',
+  'Fuera de horario',
+  'Atrasos',
+  'Sin conexión en horario',
+  'Ausencias',
+] as const;
+
+/** Schedule cells of one row (or the totals). `c` null = the person has no schedule. */
+function ComplianceCells({ c, source }: { c: ComplianceTotals | null; source?: MemberCompliance['source'] }) {
+  if (!c) {
+    return (
+      <>
+        <td className="num sch-group">
+          <span className="muted">Sin horario</span>
+        </td>
+        {COMPLIANCE_HEADERS.slice(1).map((h) => (
+          <td key={h} className="num">
+            <span className="muted">—</span>
+          </td>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      <td className="num sch-group">
+        <span className="strong">{formatDuration(c.expectedSoFarSeconds)}</span>
+        {c.expectedSeconds !== c.expectedSoFarSeconds ? (
+          <span className="sub" title="Horas de horario en todo el periodo">
+            de {formatDuration(c.expectedSeconds)}
+          </span>
+        ) : null}
+        {source === 'personal' ? <span className="sub">personalizado</span> : null}
+      </td>
+      <td className="num">{formatDuration(c.inScheduleSeconds)}</td>
+      <td className="num">{formatDuration(c.outsideScheduleSeconds)}</td>
+      <td className="num">
+        {c.lateCount === 0 ? (
+          '0'
+        ) : (
+          <>
+            <span className="strong">{c.lateCount}</span>
+            <span className="sub">{formatDuration(c.lateSeconds)}</span>
+          </>
+        )}
+      </td>
+      <td className="num">{formatDuration(c.offlineSeconds)}</td>
+      <td className="num">{c.absentDays === 0 ? '0' : `${c.absentDays} ${c.absentDays === 1 ? 'día' : 'días'}`}</td>
+    </>
+  );
 }
 
 export function memberHref(uid: string, date: string): string {
   return `/colaborador/${encodeURIComponent(uid)}?fecha=${date}`;
 }
 
-export function TeamTable({ team, now, detailDate }: Props) {
+export function TeamTable({ team, now, detailDate, compliance = null }: Props) {
   const navigate = useNavigate();
   const { rows, totals } = team;
   return (
     <div className="table-wrap" tabIndex={0} aria-label="Resumen del equipo (desplázate para ver todas las columnas)">
-      <table className="table team-table">
+      <table className={`table team-table${compliance ? ' with-schedule' : ''}`}>
         <thead>
           <tr>
             <th scope="col">Colaborador</th>
@@ -38,6 +95,13 @@ export function TeamTable({ team, now, detailDate }: Props) {
             <th scope="col" className="num">
               Jornadas
             </th>
+            {compliance
+              ? COMPLIANCE_HEADERS.map((h, i) => (
+                  <th key={h} scope="col" className={i === 0 ? 'num sch-group' : 'num'}>
+                    {h}
+                  </th>
+                ))
+              : null}
           </tr>
         </thead>
         <tbody>
@@ -87,6 +151,9 @@ export function TeamTable({ team, now, detailDate }: Props) {
                 <td className="num">{r.trackedSeconds > 0 ? formatDuration(r.outsideChromeSeconds) : '—'}</td>
                 <td>{r.lastActivityAt === null ? <span className="muted">—</span> : formatRelativeDateTime(r.lastActivityAt, now)}</td>
                 <td className="num">{r.sessionCount}</td>
+                {compliance ? (
+                  <ComplianceCells c={compliance.byUid.get(r.uid)?.totals ?? null} source={compliance.byUid.get(r.uid)?.source} />
+                ) : null}
               </tr>
             );
           })}
@@ -106,6 +173,7 @@ export function TeamTable({ team, now, detailDate }: Props) {
             <td className="num">{totals.trackedSeconds > 0 ? formatDuration(totals.outsideChromeSeconds) : '—'}</td>
             <td />
             <td className="num">{rows.reduce((n, r) => n + r.sessionCount, 0)}</td>
+            {compliance ? <ComplianceCells c={compliance.scheduled > 0 ? compliance.totals : null} /> : null}
           </tr>
         </tfoot>
       </table>

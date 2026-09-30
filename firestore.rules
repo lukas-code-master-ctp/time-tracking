@@ -6,7 +6,8 @@ rules_version = '2';
 // - A caller may write only when `users/{auth.uid}` exists with status 'active'.
 // - Admin = users doc with role 'admin' AND status 'active'.
 // - `users` docs are created only by Cloud Functions (Admin SDK bypasses rules).
-// - Nothing is deleted from clients, except invitations and per-person
+// - Nothing is deleted from clients, except invitations, the general
+//   schedule (`config/schedule`, "Eliminar horario") and per-person
 //   schedules (`schedules/{uid}`, "Volver al general") by an admin.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -184,7 +185,11 @@ service cloud.firestore {
       allow create, update: if isAdmin()
         && ((docId == 'org' && validOrgConfig(incoming()))
             || (docId == 'schedule' && validScheduleConfig(incoming())));
-      allow delete: if false;
+      // An admin may delete the general schedule ("Eliminar horario" in the
+      // portal): without it everything works as before the schedules (the
+      // extension measures whenever the work day is open). config/org is
+      // never deleted.
+      allow delete: if isAdmin() && docId == 'schedule';
     }
 
     // ---------- schedules/{uid} (per-person exception) ----------
