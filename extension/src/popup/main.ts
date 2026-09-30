@@ -251,7 +251,7 @@ function renderReady(s: StatusView): void {
         el('div', { className: 'value', textContent: hoursMinutes(s.today.meetingSeconds) }),
         el('div', {
           className: 'small muted',
-          textContent: 'Tiempo en reuniones web sin usar teclado ni mouse. No baja tu actividad.',
+          textContent: 'Tiempo en reuniones web sin usar teclado ni mouse. No sube ni baja tu actividad.',
         }),
       ]),
     ]),
