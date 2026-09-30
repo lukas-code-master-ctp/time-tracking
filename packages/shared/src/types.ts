@@ -109,5 +109,44 @@ export interface ScreenshotMeta {
   height: number;
 }
 
+/** Day of the week, as used by the keys of `WeekSchedule`. */
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+/**
+ * Working hours of one day of the week (spec 2026-09-30-horarios.md). Times
+ * are wall-clock `HH:MM` (24 h) in America/Santiago. `start < end` (no work
+ * day crosses midnight); lunch is both null or both set with
+ * `start <= lunchStart < lunchEnd <= end`.
+ */
+export interface DaySchedule {
+  start: string;
+  end: string;
+  lunchStart: string | null;
+  lunchEnd: string | null;
+}
+
+/** One entry per weekday; `null` = day off. */
+export type WeekSchedule = Record<Weekday, DaySchedule | null>;
+
+/** `config/schedule`: general working hours of the organization. */
+export interface ScheduleConfig {
+  week: WeekSchedule;
+  /** Days off, `YYYY-MM-DD` in America/Santiago (max 60, unique). */
+  holidays: string[];
+  /** Margin (0–60 min) before counting a late arrival or an early leave. */
+  toleranceMinutes: number;
+  remindersEnabled: boolean;
+  updatedAt: EpochMs;
+  /** uid of the admin who last changed it. */
+  updatedBy: string;
+}
+
+/** `schedules/{uid}`: per-person exception; replaces only the `week`. */
+export interface PersonSchedule {
+  week: WeekSchedule;
+  updatedAt: EpochMs;
+  updatedBy: string;
+}
+
 /** Firestore documents together with their id. */
 export type WithId<T> = T & { id: string };

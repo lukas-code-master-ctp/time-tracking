@@ -14,11 +14,11 @@
  *   `markActiveSecond`.
  * - Web meeting (spec 2026-09-30, "En reunión") → `setMeeting`: some tab of
  *   a normal, popup or app (PWA) window, not incognito, is a meeting room
- *   (`isMeetingUrl`) and
- *   either it is the active tab of the focused window, or it is playing
- *   audio (`tab.audible`), or it did so at most 2 min ago. Teams always needs
- *   recent audio (its URLs do not tell a meeting from the chat). Only the
- *   URL and the `audible` flag are read: never the audio or the video.
+ *   (`isMeetingUrl`) and it is playing audio (`tab.audible`) or did so at
+ *   most 2 min ago, for every platform and also when it is the tab in front
+ *   (spec 2026-09-30-horarios: a silent room left open is not a meeting).
+ *   Only the URL and the `audible` flag are read: never the audio or the
+ *   video.
  *   Never while the screen is locked, nor before the notice that describes
  *   it (CONSENT_VERSION) was accepted.
  *   Re-evaluated on `tabs.onUpdated` (only the events that can change it),
@@ -339,9 +339,8 @@ export class Tracker {
           audible.set(tab.id, at);
           changed = true;
         }
-        const inFront = win.focused === true && tab.active === true && idle !== 'locked';
         const url = tab.url || tab.pendingUrl;
-        if (isMeetingInProgress({ url, inFront, audible: isAudible, lastAudibleAt: audible.get(tab.id) ?? null }, at)) {
+        if (isMeetingInProgress({ url, audible: isAudible, lastAudibleAt: audible.get(tab.id) ?? null }, at)) {
           meeting = true;
         }
       }

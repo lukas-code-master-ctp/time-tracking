@@ -5,12 +5,17 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
+  CHILE_HOLIDAY_DATES,
   activityDocId,
   type ActivitySlot,
+  type DaySchedule,
   type Invitation,
   type OrgConfig,
+  type PersonSchedule,
+  type ScheduleConfig,
   type ScreenshotMeta,
   type Session,
+  type WeekSchedule,
 } from '@timetracking/shared';
 import { as, createEnv, NOW, profile, seed, seedUsers } from './env.js';
 
@@ -204,6 +209,206 @@ describe('config/org', () => {
   it('disabled admin is not an admin', async () => {
     await assertFails(db('eve').doc('config/org').set(orgConfig({ updatedBy: 'eve' })));
     await assertFails(db('eve').doc('config/org').get());
+  });
+});
+
+// ---------- config/schedule and schedules/{uid} ----------
+
+const LJ: DaySchedule = { start: '09:00', end: '18:30', lunchStart: '13:00', lunchEnd: '14:00' };
+const WEEK: WeekSchedule = {
+  mon: LJ,
+  tue: LJ,
+  wed: LJ,
+  thu: LJ,
+  fri: { start: '09:00', end: '14:00', lunchStart: null, lunchEnd: null },
+  sat: null,
+  sun: null,
+};
+
+function scheduleConfig(overrides: Partial<ScheduleConfig> = {}): ScheduleConfig {
+  return {
+    week: WEEK,
+    holidays: ['2026-12-25', '2027-01-01'],
+    toleranceMinutes: 5,
+    remindersEnabled: true,
+    updatedAt: NOW,
+    updatedBy: 'admin',
+    ...overrides,
+  };
+}
+
+function personSchedule(overrides: Partial<PersonSchedule> = {}): PersonSchedule {
+  return { week: { ...WEEK, fri: LJ }, updatedAt: NOW, updatedBy: 'admin', ...overrides };
+}
+
+/** Invalid days, each for one reason (the rest of the day is valid). */
+const BAD_DAYS: [string, unknown][] = [
+  ['start without leading zero', { ...LJ, start: '9:00' }],
+  ['hour 24', { ...LJ, end: '24:00' }],
+  ['minute 60', { ...LJ, start: '09:60' }],
+  ['seconds', { ...LJ, start: '09:00:00' }],
+  ['number instead of string', { ...LJ, start: 900 }],
+  ['start == end', { ...LJ, start: '18:30' }],
+  ['start > end (crosses midnight)', { start: '22:00', end: '06:00', lunchStart: null, lunchEnd: null }],
+  ['only lunchStart', { ...LJ, lunchEnd: null }],
+  ['only lunchEnd', { ...LJ, lunchStart: null }],
+  ['lunch reversed', { ...LJ, lunchStart: '14:00', lunchEnd: '13:00' }],
+  ['empty lunch', { ...LJ, lunchStart: '13:00', lunchEnd: '13:00' }],
+  ['lunch before start', { ...LJ, lunchStart: '08:00', lunchEnd: '09:30' }],
+  ['lunch after end', { ...LJ, lunchStart: '18:00', lunchEnd: '19:00' }],
+  ['missing lunch fields', { start: '09:00', end: '18:00' }],
+  ['extra field', { ...LJ, note: 'x' }],
+  ['not a map', '09:00-18:30'],
+  ['list', ['09:00', '18:30']],
+];
+
+describe('config/schedule', () => {
+  const doc = 'config/schedule';
+
+  it('active member and admin read it; disabled, without doc and anonymous do not', async () => {
+    await seed(env, { [doc]: scheduleConfig() });
+    await assertSucceeds(db('alice').doc(doc).get());
+    await assertSucceeds(db('admin').doc(doc).get());
+    await assertFails(db('dave').doc(doc).get());
+    await assertFails(db('eve').doc(doc).get());
+    await assertFails(db('nodoc').doc(doc).get());
+    await assertFails(db(null).doc(doc).get());
+  });
+
+  it('an active admin writes it; a member or a disabled admin does not', async () => {
+    await assertFails(db('alice').doc(doc).set(scheduleConfig({ updatedBy: 'alice' })));
+    await assertFails(db('eve').doc(doc).set(scheduleConfig({ updatedBy: 'eve' })));
+    await assertFails(db('nodoc').doc(doc).set(scheduleConfig({ updatedBy: 'nodoc' })));
+    await assertSucceeds(db('admin').doc(doc).set(scheduleConfig()));
+    await assertSucceeds(db('admin').doc(doc).update({ toleranceMinutes: 10, updatedAt: NOW + 1 }));
+    await assertFails(db('alice').doc(doc).update({ toleranceMinutes: 0, updatedBy: 'alice' }));
+  });
+
+  it('nobody deletes it', async () => {
+    await seed(env, { [doc]: scheduleConfig() });
+    await assertFails(db('admin').doc(doc).delete());
+  });
+
+  it('accepts every day off, the lunch on the borders and the Chilean holidays list', async () => {
+    const admin = db('admin');
+    const off: WeekSchedule = { mon: null, tue: null, wed: null, thu: null, fri: null, sat: null, sun: null };
+    await assertSucceeds(admin.doc(doc).set(scheduleConfig({ week: off, holidays: [] })));
+    const borders: DaySchedule = { start: '00:00', end: '23:59', lunchStart: '00:00', lunchEnd: '23:59' };
+    await assertSucceeds(admin.doc(doc).set(scheduleConfig({ week: { ...WEEK, sat: borders } })));
+    await assertSucceeds(admin.doc(doc).set(scheduleConfig({ holidays: [...CHILE_HOLIDAY_DATES] })));
+    await assertSucceeds(admin.doc(doc).set(scheduleConfig({ toleranceMinutes: 0, remindersEnabled: false })));
+    await assertSucceeds(admin.doc(doc).set(scheduleConfig({ toleranceMinutes: 60 })));
+  });
+
+  it.each(BAD_DAYS)('rejects an invalid day: %s', async (_why, day) => {
+    await assertFails(db('admin').doc(doc).set(scheduleConfig({ week: { ...WEEK, wed: day as DaySchedule } })));
+  });
+
+  it('rejects a week without all seven days or with unknown days', async () => {
+    const admin = db('admin');
+    const { sun: _sun, ...six } = WEEK;
+    await assertFails(admin.doc(doc).set({ ...scheduleConfig(), week: six } as unknown as ScheduleConfig));
+    await assertFails(admin.doc(doc).set({ ...scheduleConfig(), week: { ...WEEK, lun: null } } as unknown as ScheduleConfig));
+    await assertFails(admin.doc(doc).set({ ...scheduleConfig(), week: null } as unknown as ScheduleConfig));
+    await assertFails(admin.doc(doc).set({ ...scheduleConfig(), week: [LJ] } as unknown as ScheduleConfig));
+  });
+
+  it('rejects invalid holidays (format, types, duplicates, more than 60, hidden commas)', async () => {
+    const admin = db('admin');
+    const set = (holidays: unknown) => admin.doc(doc).set({ ...scheduleConfig(), holidays } as unknown as ScheduleConfig);
+    const sixty = Array.from({ length: 60 }, (_, i) => `2026-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`);
+    await assertSucceeds(set(sixty));
+    await assertFails(set([...sixty, '2026-12-31']));
+    await assertFails(set(['2026-12-25', '2026-12-25']));
+    await assertFails(set(['2026-12-5']));
+    await assertFails(set(['2026-13-01']));
+    await assertFails(set(['2026-12-32']));
+    await assertFails(set(['26-12-25']));
+    await assertFails(set(['2026/12/25']));
+    await assertFails(set(['2026-12-25 ']));
+    await assertFails(set([20261225]));
+    await assertFails(set([null]));
+    await assertFails(set(['2026-12-25', true]));
+    await assertFails(set('2026-12-25'));
+    await assertFails(set({ 0: '2026-12-25' }));
+    // An item holding two dates (joined, it would look like a valid list).
+    await assertFails(set(['2026-12-25,2026-12-31']));
+    await assertFails(set(['2026-12-25,2026-12-31', '2027-01-01']));
+    await assertFails(set(['2026-12-25', '']));
+  });
+
+  it('rejects invalid tolerance, reminders, metadata and extra fields', async () => {
+    const admin = db('admin');
+    const set = (o: object) => admin.doc(doc).set({ ...scheduleConfig(), ...o } as unknown as ScheduleConfig);
+    await assertFails(set({ toleranceMinutes: -1 }));
+    await assertFails(set({ toleranceMinutes: 61 }));
+    await assertFails(set({ toleranceMinutes: 2.5 }));
+    await assertFails(set({ toleranceMinutes: '5' }));
+    await assertFails(set({ remindersEnabled: 'true' }));
+    await assertFails(set({ updatedAt: '1' }));
+    await assertFails(set({ updatedBy: 'alice' }));
+    await assertFails(set({ extra: 1 }));
+    const missing: Partial<ScheduleConfig> = scheduleConfig();
+    delete missing.remindersEnabled;
+    await assertFails(admin.doc(doc).set(missing as ScheduleConfig));
+  });
+
+  it('config/org keeps its own validation (a schedule is not an org config)', async () => {
+    await assertFails(db('admin').doc('config/org').set(scheduleConfig() as unknown as OrgConfig));
+    await assertFails(db('admin').doc('config/schedule').set(orgConfig() as unknown as ScheduleConfig));
+    await assertFails(db('admin').doc('config/other').set(scheduleConfig()));
+  });
+});
+
+describe('schedules/{uid}', () => {
+  it('the person reads their own; another member does not; admins read all', async () => {
+    await seed(env, { 'schedules/alice': personSchedule(), 'schedules/bob': personSchedule() });
+    await assertSucceeds(db('alice').doc('schedules/alice').get());
+    await assertFails(db('alice').doc('schedules/bob').get());
+    await assertFails(db('alice').collection('schedules').get());
+    await assertSucceeds(db('admin').doc('schedules/bob').get());
+    await assertSucceeds(db('admin').collection('schedules').get());
+    // Disabled users (even the owner or a disabled admin) and anonymous do not.
+    await seed(env, { 'schedules/dave': personSchedule() });
+    await assertFails(db('dave').doc('schedules/dave').get());
+    await assertFails(db('eve').doc('schedules/alice').get());
+    await assertFails(db(null).doc('schedules/alice').get());
+  });
+
+  it('a missing exception can be read by its owner (the extension checks it)', async () => {
+    await assertSucceeds(db('alice').doc('schedules/alice').get());
+    await assertFails(db('alice').doc('schedules/bob').get());
+  });
+
+  it('only an active admin writes and deletes it', async () => {
+    await assertFails(db('alice').doc('schedules/alice').set(personSchedule({ updatedBy: 'alice' })));
+    await assertFails(db('alice').doc('schedules/bob').set(personSchedule({ updatedBy: 'alice' })));
+    await assertFails(db('eve').doc('schedules/alice').set(personSchedule({ updatedBy: 'eve' })));
+    await assertSucceeds(db('admin').doc('schedules/alice').set(personSchedule()));
+    await assertSucceeds(db('admin').doc('schedules/admin').set(personSchedule()));
+    await assertSucceeds(db('admin').doc('schedules/alice').update({ week: WEEK, updatedAt: NOW + 1 }));
+    await assertFails(db('alice').doc('schedules/alice').delete());
+    await assertFails(db('eve').doc('schedules/alice').delete());
+    await assertSucceeds(db('admin').doc('schedules/alice').delete());
+  });
+
+  it('only for existing users', async () => {
+    await assertFails(db('admin').doc('schedules/nobody').set(personSchedule()));
+  });
+
+  it('validates the shape: week, updatedBy, no holidays nor tolerance of its own', async () => {
+    const admin = db('admin');
+    const set = (o: object) => admin.doc('schedules/alice').set({ ...personSchedule(), ...o } as unknown as PersonSchedule);
+    await assertFails(set({ updatedBy: 'someone-else' }));
+    await assertFails(set({ updatedAt: '1' }));
+    await assertFails(set({ holidays: [] }));
+    await assertFails(set({ toleranceMinutes: 5 }));
+    await assertFails(set({ week: { ...WEEK, mon: { ...LJ, end: '08:00' } } }));
+    await assertFails(set({ week: { ...WEEK, mon: { ...LJ, lunchStart: '19:00', lunchEnd: '20:00' } } }));
+    await assertFails(set({ week: null }));
+    const noWeek: Partial<PersonSchedule> = personSchedule();
+    delete noWeek.week;
+    await assertFails(admin.doc('schedules/alice').set(noWeek as PersonSchedule));
   });
 });
 

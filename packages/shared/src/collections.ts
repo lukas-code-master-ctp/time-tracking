@@ -7,12 +7,17 @@ export const COLLECTIONS = {
   sessions: 'sessions',
   activity: 'activity',
   screenshots: 'screenshots',
+  /** `schedules/{uid}`: per-person exception to the working hours. */
+  schedules: 'schedules',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 
 /** Document id of the single organization config: `config/org`. */
 export const ORG_CONFIG_DOC_ID = 'org';
+
+/** Document id of the general working hours: `config/schedule`. */
+export const SCHEDULE_CONFIG_DOC_ID = 'schedule';
 
 /** Root folder of screenshots in Cloud Storage. */
 export const SCREENSHOTS_STORAGE_ROOT = 'screenshots';

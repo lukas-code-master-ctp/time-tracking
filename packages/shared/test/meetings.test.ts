@@ -3,7 +3,6 @@ import {
   MEETING_AUDIO_GRACE_MS,
   isMeetingInProgress,
   isMeetingUrl,
-  meetingNeedsAudio,
   meetingPlatformOf,
   type MeetingPlatform,
 } from '../src/meetings.js';
@@ -100,36 +99,32 @@ describe('meetingPlatformOf', () => {
     expect(meetingPlatformOf(null)).toBeNull();
     expect(isMeetingUrl(undefined)).toBe(false);
   });
-
-  it('only Teams always needs audio', () => {
-    expect(meetingNeedsAudio('teams')).toBe(true);
-    for (const p of ['meet', 'zoom', 'webex', 'jitsi', 'whereby', 'goto'] as const) expect(meetingNeedsAudio(p)).toBe(false);
-  });
 });
 
 describe('isMeetingInProgress', () => {
   const NOW = 1_790_000_000_000;
   const MEET = 'https://meet.google.com/abc-defg-hij';
   const TEAMS = 'https://teams.microsoft.com/v2/';
+  const ROOMS = [MEET, TEAMS, 'https://us02web.zoom.us/wc/81234567890/join', 'https://meet.jit.si/Sala'];
 
-  it('a room in front counts even without audio', () => {
-    expect(isMeetingInProgress({ url: MEET, inFront: true, audible: false, lastAudibleAt: null }, NOW)).toBe(true);
+  it('a room counts while audible or up to 2 min after, for every platform', () => {
+    for (const url of ROOMS) {
+      expect(isMeetingInProgress({ url, audible: true, lastAudibleAt: null }, NOW)).toBe(true);
+      expect(isMeetingInProgress({ url, audible: false, lastAudibleAt: NOW - MEETING_AUDIO_GRACE_MS }, NOW)).toBe(true);
+      expect(isMeetingInProgress({ url, audible: false, lastAudibleAt: NOW - MEETING_AUDIO_GRACE_MS - 1 }, NOW)).toBe(false);
+    }
   });
 
-  it('a room in the background counts while audible or up to 2 min after', () => {
-    expect(isMeetingInProgress({ url: MEET, inFront: false, audible: true, lastAudibleAt: null }, NOW)).toBe(true);
-    expect(isMeetingInProgress({ url: MEET, inFront: false, audible: false, lastAudibleAt: NOW - MEETING_AUDIO_GRACE_MS }, NOW)).toBe(true);
-    expect(isMeetingInProgress({ url: MEET, inFront: false, audible: false, lastAudibleAt: NOW - MEETING_AUDIO_GRACE_MS - 1 }, NOW)).toBe(false);
-    expect(isMeetingInProgress({ url: MEET, inFront: false, audible: false, lastAudibleAt: null }, NOW)).toBe(false);
-  });
-
-  it('Teams needs recent audio even in front', () => {
-    expect(isMeetingInProgress({ url: TEAMS, inFront: true, audible: false, lastAudibleAt: null }, NOW)).toBe(false);
-    expect(isMeetingInProgress({ url: TEAMS, inFront: true, audible: true, lastAudibleAt: null }, NOW)).toBe(true);
-    expect(isMeetingInProgress({ url: TEAMS, inFront: false, audible: false, lastAudibleAt: NOW - 60_000 }, NOW)).toBe(true);
+  it('a silent room does not count, even in front (spec 2026-09-30-horarios)', () => {
+    for (const url of ROOMS) {
+      // Extra fields (as an old caller passing `inFront`) change nothing.
+      const tab = { url, inFront: true, audible: false, lastAudibleAt: null };
+      expect(isMeetingInProgress(tab, NOW)).toBe(false);
+    }
   });
 
   it('audio on a page that is not a meeting room does not count', () => {
-    expect(isMeetingInProgress({ url: 'https://www.youtube.com/watch', inFront: true, audible: true, lastAudibleAt: NOW }, NOW)).toBe(false);
+    expect(isMeetingInProgress({ url: 'https://www.youtube.com/watch', audible: true, lastAudibleAt: NOW }, NOW)).toBe(false);
+    expect(isMeetingInProgress({ url: 'https://teams.microsoft.com/_#/conversations/General', audible: true, lastAudibleAt: NOW }, NOW)).toBe(false);
   });
 });

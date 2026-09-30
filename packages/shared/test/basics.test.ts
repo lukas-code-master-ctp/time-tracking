@@ -109,6 +109,7 @@ describe('collections', () => {
       sessions: 'sessions',
       activity: 'activity',
       screenshots: 'screenshots',
+      schedules: 'schedules',
     });
   });
 

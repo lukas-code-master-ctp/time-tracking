@@ -7,3 +7,5 @@ export * from './config.js';
 export * from './meetings.js';
 export * from './accumulator.js';
 export * from './reports.js';
+export * from './schedule.js';
+export * from './holidays-cl.js';

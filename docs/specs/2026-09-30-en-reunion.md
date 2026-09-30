@@ -9,7 +9,7 @@ En una videollamada web donde la persona solo escucha no hay teclado ni mouse, y
 Todo el tiempo en **sitios web de reuniones** se registra como **"En reunión"**: una categoría aparte que **no sube ni baja** el % de actividad.
 
 ## Qué es "estar en reunión"
-Un segundo cuenta como **en reunión** si **no** fue activo por teclado/mouse **y** en ese segundo hay una **reunión en curso** en alguna pestaña de una ventana de Chrome que no sea incógnito (normal, emergente o app web instalada, p. ej. Meet o Teams como PWA; nunca DevTools), esté o no al frente. Con la pantalla bloqueada nunca hay reunión (la persona no está).
+Un segundo cuenta como **en reunión** si **no** fue activo por teclado/mouse **y** en ese segundo hay una **reunión en curso** en alguna pestaña de una ventana de Chrome que no sea incógnito (normal, emergente o app web instalada, p. ej. Meet o Teams como PWA; nunca DevTools), esté o no al frente, siempre que esa pestaña tenga audio reciente (ver abajo). Con la pantalla bloqueada nunca hay reunión (la persona no está).
 
 Una pestaña tiene una **reunión en curso** si su URL (sanitizada) coincide con el patrón de sala de una plataforma conocida:
 
@@ -23,7 +23,7 @@ Una pestaña tiene una **reunión en curso** si su URL (sanitizada) coincide con
 | Whereby | `whereby.com/<sala>` |
 | GoTo Meeting | `app.goto.com/meeting/…`, `meet.goto.com/…` |
 
-Para Meet, Zoom, Webex, Jitsi, Whereby y GoTo basta la URL de sala. Además se exige que la pestaña esté **al frente o haya reproducido audio en los últimos 2 min**, para no contar una sala que quedó abierta en segundo plano después de terminar. Teams siempre exige audio reciente, porque su URL no distingue bien una reunión del chat.
+Además de la URL de sala, se exige que la pestaña esté **reproduciendo audio o lo haya hecho en los últimos 2 min**, para todas las plataformas y **también con la pestaña al frente** (cambio del 2026-09-30, spec `2026-09-30-horarios.md`, aprobado por el usuario). Antes bastaba estar al frente para Meet, Zoom, Webex, Jitsi, Whereby y GoTo; eso contaba como reunión la sala de espera o la pantalla "Saliste de la reunión". En Teams siempre fue así, porque su URL no distingue bien una reunión del chat.
 
 La lista vive en `packages/shared` (`meetings.ts`) con tests por patrón. No hay configuración desde el portal en esta versión.
 
@@ -56,12 +56,12 @@ La lista vive en `packages/shared` (`meetings.ts`) con tests por patrón. No hay
 
 Si una 0.1.2 escribe contra reglas antiguas, Firestore rechaza el bloque con `permission-denied` por el campo desconocido. Como resguardo, el cliente reintenta de inmediato ese mismo bloque sin `meetingSeconds` (como la 0.1.1): no se pierde el bloque, solo el tiempo en reunión. Es un resguardo, no el camino previsto.
 
-**Limitaciones conocidas:** una sala de Meet/Zoom/etc. que queda **al frente** cuenta como reunión aunque no haya audio (p. ej. la pantalla "Saliste de la reunión" en la misma URL, o la sala de espera antes de entrar) hasta que la persona cambia de pestaña o bloquea la pantalla. En Teams, como su URL no distingue la reunión del chat, un sonido de notificación da hasta 2 min de "reunión" si no hay teclado/mouse. El fin del período de gracia de 2 min se aplica en el siguiente pulso (hasta 30 s tarde).
+**Limitaciones conocidas:** una reunión en la que nadie habla por más de 2 min (o con el audio de la pestaña silenciado) deja de contar como reunión hasta que vuelve a sonar. Tras salir, la sala sigue contando hasta 2 min después del último audio. En Teams, como su URL no distingue la reunión del chat, un sonido de notificación da hasta 2 min de "reunión" si no hay teclado/mouse. El fin del período de gracia de 2 min se aplica en el siguiente pulso (hasta 30 s tarde).
 
 ## Criterios de aceptación
 1. Meet en una sala, sin tocar nada por 5 min: el bloque queda con `meetingSeconds` ≈ lo medido y el portal lo muestra "En reunión" sin bajar el %.
 2. Escribir en Docs con Meet en otra pestaña con audio: los segundos con teclado son activos y el resto reunión.
-3. Sala de Meet abierta en segundo plano, sin audio más de 2 min y sin estar al frente: no cuenta como reunión.
+3. Sala de Meet sin audio por más de 2 min: no cuenta como reunión, esté al frente o en segundo plano.
 4. Docs 0.1.1 sin `meetingSeconds` siguen válidos y se leen como 0.
 5. Reglas: rechazan `meetingSeconds` negativo, no entero o que rompa la suma.
 6. Todos los tests, typecheck, build y e2e en verde.

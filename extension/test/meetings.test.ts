@@ -82,12 +82,16 @@ describe('Tracker — web meetings ("En reunión")', () => {
     expect(h.app.store.acc!.inMeeting).toBe(true);
   });
 
-  it('a room in front counts without audio (listening, no keyboard/mouse)', async () => {
+  it('a room in front needs recent audio too (spec 2026-09-30-horarios)', async () => {
     tab(11).url = MEET;
     await hello(h, 11);
     await h.app.session.start();
-    await run(60_000);
-    expect(current(h)).toMatchObject({ trackedSeconds: 60, activeSeconds: 0, meetingSeconds: 60 });
+    await run(30_000);
+    // Silent room in front (waiting room, "you left the meeting"): not a meeting.
+    expect(current(h)).toMatchObject({ trackedSeconds: 30, activeSeconds: 0, meetingSeconds: 0 });
+    await setAudible(11, true);
+    await run(30_000);
+    expect(current(h)).toMatchObject({ trackedSeconds: 60, activeSeconds: 0, meetingSeconds: 30 });
     expect(current(h)!.domains).toEqual({ 'meet.google.com': 60 });
   });
 
@@ -249,10 +253,10 @@ describe('Tracker — web meetings ("En reunión")', () => {
   });
 
   it('navigating the room tab away (url change) ends the meeting', async () => {
-    addMeetingTab(MEET, false);
+    addMeetingTab(MEET, true);
     await hello(h, 13);
     for (const t of win().tabs) t.active = t.id === 13;
-    await h.app.session.start(); // room in front, silent
+    await h.app.session.start(); // room in front, with audio
     await advance(10_000);
     tab(13).url = 'https://meet.google.com/';
     await h.app.tracker.onTabUpdated(13, { url: tab(13).url }, tabObj(13));
@@ -261,24 +265,25 @@ describe('Tracker — web meetings ("En reunión")', () => {
     expect(current(h)!.meetingSeconds).toBe(10);
   });
 
-  it('a silent room counts only while in front (onActivated, windows.onFocusChanged)', async () => {
+  it('a silent room never counts, in front or not (onActivated, windows.onFocusChanged)', async () => {
     addMeetingTab(MEET, false);
     await hello(h, 13); // measurable: no keyboard/mouse there means not active
     for (const t of win().tabs) t.active = t.id === 13;
     await h.app.session.start();
-    await advance(10_000); // 0–10 s in front → meeting
+    await advance(10_000); // in front, silent
     await activate(11);
-    await advance(10_000); // 10–20 s another tab → not a meeting
+    await advance(10_000); // another tab
     await activate(13);
-    await advance(10_000); // 20–30 s in front again → meeting
+    await advance(10_000); // in front again, silent
     win().focused = false;
     await h.app.tracker.onWindowFocusChanged(chrome.windows.WINDOW_ID_NONE);
     await h.app.tracker.onIdleState('idle');
-    await advance(10_000); // 30–40 s another app → not a meeting
+    await advance(10_000); // another app
     await pulse(h);
     const slot = current(h)!;
     expect(slot.trackedSeconds).toBe(40);
-    expect(slot.meetingSeconds).toBe(20);
+    expect(slot.meetingSeconds).toBe(0);
+    expect(h.app.store.acc!.inMeeting).toBe(false);
   });
 
   it('a meeting crossing a block boundary is split between both blocks', async () => {

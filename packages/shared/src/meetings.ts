@@ -3,9 +3,11 @@
  *
  * A tab "has a meeting" when its URL is the room of a known platform. The URL
  * is only inspected here (host + path, and for Teams the `#/…` route of its
- * old web client); it is never stored because of this. The extension adds the
- * "in front or audible in the last 2 min" condition (see `meetingNeedsAudio`
- * and the Tracker).
+ * old web client); it is never stored because of this. A room only counts
+ * while it plays audio or did so in the last 2 min, for every platform and
+ * also with the tab in front (`isMeetingInProgress`, spec 2026-09-30-horarios):
+ * a silent room left open (the "you left the meeting" page, a waiting room)
+ * is not a meeting.
  *
  * Only the web clients in Chrome are detectable: desktop apps (Zoom, Teams…)
  * keep being measured with the system idle state.
@@ -128,30 +130,20 @@ export function isMeetingUrl(url: string | null | undefined): boolean {
   return meetingPlatformOf(url) !== null;
 }
 
-/**
- * Teams' URLs do not tell a meeting from the chat, so it always needs recent
- * audio; the others count when the room is in front or had recent audio.
- */
-export function meetingNeedsAudio(platform: MeetingPlatform): boolean {
-  return platform === 'teams';
-}
-
 export interface MeetingTabInput {
   url: string | null | undefined;
-  /** Active tab of the focused (normal) window, with the screen unlocked. */
-  inFront: boolean;
   /** `tab.audible` right now. */
   audible: boolean;
   /** Last instant the tab was seen audible (ms), or null. */
   lastAudibleAt: number | null;
 }
 
-/** Whether this tab holds a meeting in progress at `now`. Pure. */
+/**
+ * Whether this tab holds a meeting in progress at `now`: a meeting room that
+ * is playing audio or played it at most 2 min ago. Being in front is not
+ * enough (spec 2026-09-30-horarios). Pure.
+ */
 export function isMeetingInProgress(tab: MeetingTabInput, now: number): boolean {
-  const platform = meetingPlatformOf(tab.url);
-  if (!platform) return false;
-  const recentAudio =
-    tab.audible || (tab.lastAudibleAt !== null && now - tab.lastAudibleAt <= MEETING_AUDIO_GRACE_MS);
-  if (meetingNeedsAudio(platform)) return recentAudio;
-  return tab.inFront || recentAudio;
+  if (!isMeetingUrl(tab.url)) return false;
+  return tab.audible || (tab.lastAudibleAt !== null && now - tab.lastAudibleAt <= MEETING_AUDIO_GRACE_MS);
 }
