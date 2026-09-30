@@ -10,24 +10,28 @@
  */
 import type { InlineConfig, Plugin } from 'vite';
 import { join } from 'node:path';
-import { ROOT, baseConfig, missingFirebaseValues, packageVersion, resolveBuildConfig } from './common.ts';
+import { ROOT, baseConfig, missingFirebaseValues, packageVersion, resolveBuildConfig, type BuildTarget } from './common.ts';
 import { BACKGROUND_FILE, CONTENT_FILE, buildManifest } from './manifest.ts';
+import { STORE_PUBLIC_KEY } from './store-key.ts';
 
 export type Part = 'background' | 'content' | 'popup';
 export const PARTS: readonly Part[] = ['background', 'content', 'popup'];
 
-function manifestPlugin(mode: string): Plugin {
+function manifestPlugin(target: BuildTarget): Plugin {
   return {
     name: 'timetracking-manifest',
     generateBundle() {
-      const cfg = resolveBuildConfig(mode);
+      const cfg = resolveBuildConfig(target);
       const manifest = buildManifest({
         appEnv: cfg.appEnv,
         version: packageVersion(),
         oauthClientId: cfg.oauthClientId,
+        // Only QA: same ID as the store item. The store build never has `key`.
+        publicKey: target === 'qa' ? STORE_PUBLIC_KEY : undefined,
       });
       this.emitFile({ type: 'asset', fileName: 'manifest.json', source: `${JSON.stringify(manifest, null, 2)}\n` });
-      if (cfg.appEnv === 'prod') {
+      // QA fails earlier (scripts/build.ts) if these values are missing.
+      if (target === 'prod') {
         const missing = missingFirebaseValues(cfg);
         if (missing.length > 0) {
           this.warn(
@@ -40,14 +44,14 @@ function manifestPlugin(mode: string): Plugin {
   };
 }
 
-export function partConfig(part: Part, mode: string): InlineConfig {
-  const base = baseConfig(mode);
+export function partConfig(part: Part, target: BuildTarget, outDir?: string): InlineConfig {
+  const base = baseConfig(target, outDir);
   const build = base.build ?? {};
   switch (part) {
     case 'background':
       return {
         ...base,
-        plugins: [manifestPlugin(mode)],
+        plugins: [manifestPlugin(target)],
         build: {
           ...build,
           rollupOptions: {

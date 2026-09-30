@@ -1,30 +1,43 @@
 /**
- * Builds the extension: `node scripts/build.ts --mode production|development [--watch]`.
- * Output: `dist/` (prod) or `dist-dev/` (dev), loadable with "Load unpacked".
+ * Builds the extension:
+ * `node scripts/build.ts --mode production|development|qa [--watch] [--out-dir <dir>]`.
+ * Output: `dist/` (prod, the store package), `dist-dev/` (dev) or `dist-qa/`
+ * (prod bundle + the store item's `key`), loadable with "Load unpacked".
+ * `--out-dir` builds elsewhere (e.g. a temp folder to check prod when `dist/`
+ * is locked); relative paths are resolved against `extension/`.
  *
  * Runs with Node's built-in TypeScript type stripping (Node >= 22.18).
  */
 import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { build } from 'vite';
-import { ROOT, outDirOf } from '../build/common.ts';
-import { BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, ICONS, POPUP_FILE } from '../build/manifest.ts';
+import { ROOT, missingFirebaseValues, outDirOf, resolveBuildConfig, type BuildTarget } from '../build/common.ts';
+import { BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, DEV_EXTENSION_ID, ICONS, POPUP_FILE } from '../build/manifest.ts';
 import { PARTS, partConfig } from '../build/parts.ts';
+import { STORE_EXTENSION_ID, STORE_PUBLIC_KEY, extensionIdFromKey } from '../build/store-key.ts';
+
+const TARGETS: Record<string, BuildTarget> = { production: 'prod', development: 'dev', qa: 'qa' };
 
 const args = process.argv.slice(2);
-const modeIdx = args.indexOf('--mode');
-const mode = modeIdx >= 0 ? (args[modeIdx + 1] ?? '') : 'production';
-if (mode !== 'production' && mode !== 'development') {
-  console.error(`Modo inválido "${mode}" (usa production o development).`);
-  process.exit(1);
-}
+const argOf = (name: string): string | undefined => {
+  const i = args.indexOf(name);
+  return i >= 0 ? (args[i + 1] ?? '') : undefined;
+};
+const mode = argOf('--mode') ?? 'production';
+const target = TARGETS[mode];
+if (!target) fail(`Modo inválido "${mode}" (usa production, development o qa).`);
 const watch = args.includes('--watch');
-const outDir = join(ROOT, outDirOf(mode));
+const outDir = resolve(ROOT, argOf('--out-dir') || outDirOf(target));
+// rmSync below: never wipe extension/ itself or one of its parents.
+const toRoot = relative(outDir, ROOT);
+if (toRoot === '' || (!toRoot.startsWith('..') && !isAbsolute(toRoot))) fail(`--out-dir inválido: ${outDir}`);
+
+if (target === 'qa') checkQaConfig();
 
 rmSync(outDir, { recursive: true, force: true });
 
 for (const part of PARTS) {
-  const config = partConfig(part, mode);
+  const config = partConfig(part, target, outDir);
   if (watch) config.build = { ...config.build, watch: {} };
   await build(config);
 }
@@ -34,12 +47,39 @@ cpSync(join(ROOT, 'icons'), join(outDir, 'icons'), { recursive: true });
 if (watch) {
   console.log(`Vigilando cambios → ${outDir}`);
 } else {
-  checkBundle();
+  const id = checkBundle();
   console.log(`Extensión (${mode}) generada en ${outDir}`);
+  if (id) console.log(`ID de la extensión: ${id}`);
+}
+
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
 }
 
 /**
- * The prod bundle must not carry the dev login, the debug hooks nor the
+ * QA is only useful with login against production: missing Firebase values or
+ * OAuth client ID are an error here (prod only warns), and the store key must
+ * still yield the store item's ID.
+ */
+function checkQaConfig(): void {
+  const derived = extensionIdFromKey(STORE_PUBLIC_KEY);
+  if (derived !== STORE_EXTENSION_ID) {
+    fail(`La clave de build/store-key.ts da el ID ${derived}, no el de la tienda (${STORE_EXTENSION_ID}).`);
+  }
+  const cfg = resolveBuildConfig('qa');
+  const missing = missingFirebaseValues(cfg);
+  if (!cfg.oauthClientId) missing.push('VITE_OAUTH_CLIENT_ID');
+  if (missing.length > 0) {
+    fail(
+      `Build QA cancelado: faltan valores reales en .env.production / .env.production.local (${missing.join(', ')}). ` +
+        'Sin ellos el login con Google contra producción no funciona. Ver extension/README.md.',
+    );
+  }
+}
+
+/**
+ * The prod (and QA) bundle must not carry the dev login, the debug hooks nor the
  * emulator wiring: they sit behind `__APP_ENV__ === 'dev'`, which Vite
  * replaces literally and the minifier drops.
  */
@@ -54,8 +94,30 @@ function devLeftovers(): string[] {
   return found;
 }
 
+/** `key` rules of each target; returns the resulting extension ID (if pinned). */
+function manifestProblems(problems: string[]): string | undefined {
+  const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')) as chrome.runtime.ManifestV3;
+  const id = manifest.key ? extensionIdFromKey(manifest.key) : undefined;
+  switch (target) {
+    case 'prod':
+      // Chrome Web Store rejects packages whose manifest has `key`.
+      if (manifest.key) problems.push('manifest.json del build prod tiene "key" (Chrome Web Store lo rechaza)');
+      break;
+    case 'qa':
+      if (manifest.key !== STORE_PUBLIC_KEY || id !== STORE_EXTENSION_ID) {
+        problems.push(`manifest.json de QA sin la key de la tienda (ID ${id ?? 'sin key'} ≠ ${STORE_EXTENSION_ID})`);
+      }
+      if (!manifest.oauth2?.client_id) problems.push('manifest.json de QA sin oauth2.client_id');
+      break;
+    case 'dev':
+      if (id !== DEV_EXTENSION_ID) problems.push(`manifest.json dev con ID ${id ?? 'sin key'} ≠ ${DEV_EXTENSION_ID}`);
+      break;
+  }
+  return id;
+}
+
 /** Guards against output that Chrome would refuse to run. */
-function checkBundle(): void {
+function checkBundle(): string | undefined {
   const problems: string[] = [];
   const iconsOn = Object.values(ICONS).map((p) => p.replace('icon-', 'icon-on-'));
   for (const f of [BACKGROUND_FILE, CONTENT_FILE, POPUP_FILE, CONSENT_FILE, 'manifest.json', ...Object.values(ICONS), ...iconsOn]) {
@@ -67,9 +129,8 @@ function checkBundle(): void {
   const content = readFileSync(join(outDir, CONTENT_FILE), 'utf8');
   // Content scripts are classic scripts: no ESM syntax.
   if (/^\s*(import|export)\s/m.test(content)) problems.push(`${CONTENT_FILE} contiene sintaxis ESM`);
-  if (mode === 'production') problems.push(...devLeftovers());
-  if (problems.length > 0) {
-    console.error(`Build inválido:\n - ${problems.join('\n - ')}`);
-    process.exit(1);
-  }
+  if (target !== 'dev') problems.push(...devLeftovers());
+  const id = existsSync(join(outDir, 'manifest.json')) ? manifestProblems(problems) : undefined;
+  if (problems.length > 0) fail(`Build inválido:\n - ${problems.join('\n - ')}`);
+  return id;
 }

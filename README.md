@@ -115,6 +115,7 @@ Las cuentas se crean con el mismo token simulado que el login dev, así que pued
 | `npm test` | Tests unitarios (Vitest): shared, extensión, portal, functions y generador del seed. |
 | `npm run test:emulator` | Reglas de Firestore/Storage, Cloud Functions y subida a Storage contra emuladores reales (`firebase emulators:exec`). |
 | `npm run build` | Builds de producción: shared, extensión (`extension/dist`), portal (`portal/dist`), functions (`functions/lib`). Falla si el build prod contiene código dev. |
+| `npm run build:extension:qa` | Build QA de la extensión (`extension/dist-qa`): el bundle prod con el mismo ID que el ítem de la tienda, para probar contra producción. Ver [QA sin la tienda](#qa-sin-la-tienda). |
 | `npm run e2e:extension` | Extensión dev en Chromium contra emuladores: login dev → aviso → jornada → captura difuminada → cierre; verifica Firestore y Storage. |
 | `npm run e2e:portal` | Portal dev en Chromium con datos sembrados: tabla del equipo, detalle, lightbox, invitación, rol, configuración, CSV; capturas de pantalla en `%TEMP%/timetracking-portal-shots`. |
 | `npm run e2e` | **Flujo completo en el orden real**: la admin activa capturas e invita desde el portal (UI) → el colaborador entra en la extensión, acepta el aviso, trabaja ~70 s en una página local, se fuerza una captura y cierra la jornada → la admin ve al colaborador con horas > 0, su actividad y su captura en el detalle. |
@@ -157,6 +158,15 @@ En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) →
 
 1. Google Cloud → **APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth → tipo "Extensión de Chrome"**, con el **ID del ítem** del paso 3. Créalo en el **mismo proyecto** de Firebase (si no, agrégalo en Firebase Auth → Google → *Safelist client IDs from external projects*).
 2. Pon el ID de cliente en `VITE_OAUTH_CLIENT_ID` de `extension/.env.production`, vuelve a correr `npm run build -w extension` y sube la nueva versión. Chrome Web Store exige un número de versión mayor en cada subida: súbelo en `"version"` de `extension/package.json` (el manifest se genera desde ahí) antes de compilar. Detalles y notas en [extension/README.md](extension/README.md#login-con-google-en-producción-checklist).
+
+### QA sin la tienda
+
+Mientras la tienda revisa una versión, puedes probarla contra producción cargándola descomprimida con el **mismo ID** que el ítem publicado:
+
+1. `npm run build:extension:qa` → `extension/dist-qa` (mismo código y configuración que `npm run build`, más la `key` pública del ítem de la tienda). El build muestra el ID (`egaklokkbnbnccnjicaahaifnkaeobfj`) y falla si no coincide o si falta `VITE_OAUTH_CLIENT_ID` o algún valor real de Firebase.
+2. `chrome://extensions` → **Modo de desarrollador** → **Cargar descomprimida** → `extension/dist-qa`.
+
+Como el ID coincide con el de la tienda, el login con Google funciona. Ojo: **los datos van a producción**; no puedes tener instaladas a la vez la de la tienda y la de QA (mismo ID: Chrome usa una sola), y la política de Google Workspace puede bloquear las extensiones descomprimidas. A la tienda se sube siempre `dist`, nunca `dist-qa`. Detalles en [extension/README.md](extension/README.md#qa-sin-la-tienda).
 
 ### 5. Configuración del portal y de functions
 

@@ -39,6 +39,7 @@ Thumbs.db
 !extension/.env.development
 !extension/.env.production
 extension/dist-dev/
+extension/dist-qa/
 # Portal build config (not secret; placeholders documented inside)
 !portal/.env.development
 !portal/.env.production

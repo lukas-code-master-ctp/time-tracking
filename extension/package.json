@@ -12,6 +12,7 @@
     "test:emulator": "vitest run -c vitest.emulator.config.ts",
     "build": "node scripts/build.ts --mode production",
     "build:dev": "node scripts/build.ts --mode development",
+    "build:qa": "node scripts/build.ts --mode qa",
     "dev": "node scripts/build.ts --mode development --watch",
     "smoke": "node scripts/smoke.ts",
     "icons": "node scripts/icons.ts"

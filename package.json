@@ -20,6 +20,7 @@
     "test:emulator": "npm run build:functions && firebase emulators:exec --only auth,firestore,storage,functions --project demo-timetracking \"npm run test:emulator --workspaces --if-present\"",
     "build": "npm run build:shared && npm run build --workspaces --if-present",
     "build:functions": "npm run build:shared && npm run build -w @timetracking/functions",
+    "build:extension:qa": "npm run build:qa -w @timetracking/extension",
     "e2e:extension": "npm run build:functions && npm run build:dev -w @timetracking/extension && firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking \"node extension/scripts/smoke.ts --e2e\"",
     "e2e:portal": "npm run build:functions && firebase emulators:exec --only auth,firestore,functions,storage --project demo-timetracking \"node portal/e2e/portal.e2e.ts\"",
     "emulators": "npm run build:functions && node scripts/emulators.ts",

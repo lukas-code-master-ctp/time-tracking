@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildManifest, DEV_PUBLIC_KEY, ICONS } from '../build/manifest';
+import { buildManifest, DEV_EXTENSION_ID, DEV_PUBLIC_KEY, ICONS } from '../build/manifest';
+import { extensionIdFromKey, STORE_EXTENSION_ID, STORE_PUBLIC_KEY } from '../build/store-key';
 
 /** Minimal page globals for the content script (node environment). */
 function installPage() {
@@ -118,5 +119,24 @@ describe('manifest', () => {
     expect(buildManifest({ appEnv: 'prod', version: '1' }).oauth2).toBeUndefined();
     expect(buildManifest({ appEnv: 'prod', version: '1', oauthClientId: 'abc.apps.googleusercontent.com' }).oauth2)
       .toEqual({ client_id: 'abc.apps.googleusercontent.com', scopes: ['openid', 'email', 'profile'] });
+  });
+
+  it('qa: prod manifest plus the store key', () => {
+    const opts = { appEnv: 'prod', version: '1', oauthClientId: 'abc.apps.googleusercontent.com' } as const;
+    const qa = buildManifest({ ...opts, publicKey: STORE_PUBLIC_KEY });
+    expect(qa.key).toBe(STORE_PUBLIC_KEY);
+    const { key: _key, ...rest } = qa;
+    expect(rest).toEqual(buildManifest(opts));
+    // Dev always keeps its own key.
+    expect(buildManifest({ appEnv: 'dev', version: '1', publicKey: STORE_PUBLIC_KEY }).key).toBe(DEV_PUBLIC_KEY);
+  });
+});
+
+describe('extensionIdFromKey', () => {
+  it('derives the Chrome extension ID from the manifest key', () => {
+    expect(extensionIdFromKey(DEV_PUBLIC_KEY)).toBe('klmbbjhphdmmicdbbgkofkpgapcinbmd');
+    expect(extensionIdFromKey(DEV_PUBLIC_KEY)).toBe(DEV_EXTENSION_ID);
+    expect(extensionIdFromKey(STORE_PUBLIC_KEY)).toBe('egaklokkbnbnccnjicaahaifnkaeobfj');
+    expect(STORE_EXTENSION_ID).toBe('egaklokkbnbnccnjicaahaifnkaeobfj');
   });
 });

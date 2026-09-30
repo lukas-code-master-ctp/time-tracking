@@ -1,6 +1,6 @@
 /**
  * Shared pieces of the three Vite builds (background, content, popup).
- * See `scripts/build.mjs` for the orchestration.
+ * See `scripts/build.ts` for the orchestration.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -31,12 +31,27 @@ export interface BuildConfig {
   oauthClientId: string;
 }
 
-export function appEnvOf(mode: string): AppEnv {
-  return mode === 'development' ? 'dev' : 'prod';
+/**
+ * Build flavours:
+ * - `dev`: emulators, dev login/debug hooks, fixed dev `key` → `dist-dev/`.
+ * - `prod`: the package uploaded to Chrome Web Store → `dist/` (never `key`).
+ * - `qa`: exactly the prod bundle (same Vite mode `production`, same
+ *   `.env.production` + `.env.production.local`) plus the store item's `key`
+ *   in the manifest → `dist-qa/`, to load unpacked with the store ID.
+ */
+export type BuildTarget = 'dev' | 'prod' | 'qa';
+
+/** Vite mode (and `.env.<mode>` files) of each target: QA reuses production. */
+export function viteModeOf(target: BuildTarget): 'development' | 'production' {
+  return target === 'dev' ? 'development' : 'production';
 }
 
-export function outDirOf(mode: string): string {
-  return appEnvOf(mode) === 'dev' ? 'dist-dev' : 'dist';
+export function appEnvOf(target: BuildTarget): AppEnv {
+  return target === 'dev' ? 'dev' : 'prod';
+}
+
+export function outDirOf(target: BuildTarget): string {
+  return { dev: 'dist-dev', prod: 'dist', qa: 'dist-qa' }[target];
 }
 
 export function packageVersion(): string {
@@ -45,10 +60,10 @@ export function packageVersion(): string {
 }
 
 /** Reads `.env`, `.env.<mode>` and `.env.<mode>.local` (only `VITE_*`). */
-export function resolveBuildConfig(mode: string): BuildConfig {
-  const env = loadEnv(mode, ROOT, 'VITE_');
+export function resolveBuildConfig(target: BuildTarget): BuildConfig {
+  const env = loadEnv(viteModeOf(target), ROOT, 'VITE_');
   const get = (name: string, fallback = ''): string => (env[`VITE_${name}`] ?? fallback).trim();
-  const appEnv = appEnvOf(mode);
+  const appEnv = appEnvOf(target);
   // Dev always talks to the demo project of the emulators.
   const dev = appEnv === 'dev';
   return {
@@ -74,12 +89,15 @@ export function missingFirebaseValues(cfg: BuildConfig): string[] {
     .map(([key]) => key);
 }
 
-/** Options common to every build part. */
-export function baseConfig(mode: string): InlineConfig {
-  const cfg = resolveBuildConfig(mode);
+/**
+ * Options common to every build part. `outDir` overrides `outDirOf(target)`
+ * (absolute or relative to `extension/`).
+ */
+export function baseConfig(target: BuildTarget, outDir = outDirOf(target)): InlineConfig {
+  const cfg = resolveBuildConfig(target);
   return {
     root: ROOT,
-    mode,
+    mode: viteModeOf(target),
     configFile: false,
     publicDir: false,
     logLevel: 'warn',
@@ -89,7 +107,7 @@ export function baseConfig(mode: string): InlineConfig {
       __BUILD_CONFIG__: JSON.stringify(cfg),
     },
     build: {
-      outDir: outDirOf(mode),
+      outDir,
       emptyOutDir: false,
       target: 'chrome120',
       minify: cfg.appEnv === 'prod',

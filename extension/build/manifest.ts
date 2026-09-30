@@ -33,6 +33,12 @@ export interface ManifestOptions {
   version: string;
   /** OAuth client ID ("Chrome extension" type) for chrome.identity (prod). */
   oauthClientId?: string | undefined;
+  /**
+   * `key` for a prod-config build (only the QA build: the store item's public
+   * key, see `store-key.ts`). Ignored in dev, which always uses
+   * {@link DEV_PUBLIC_KEY}. The store build leaves it unset.
+   */
+  publicKey?: string | undefined;
 }
 
 export function buildManifest(opts: ManifestOptions): chrome.runtime.ManifestV3 {
@@ -62,6 +68,7 @@ export function buildManifest(opts: ManifestOptions): chrome.runtime.ManifestV3 
     ],
   };
   if (dev) manifest.key = DEV_PUBLIC_KEY;
+  else if (opts.publicKey) manifest.key = opts.publicKey;
   if (!dev && opts.oauthClientId) {
     manifest.oauth2 = {
       client_id: opts.oauthClientId,

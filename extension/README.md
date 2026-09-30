@@ -8,6 +8,7 @@ Mide la jornada del colaborador (spec `docs/specs/2026-09-29-time-tracking-exten
 |---|---|
 | `build` | Build **prod** → `extension/dist` (usa `.env.production`) |
 | `build:dev` | Build **dev** → `extension/dist-dev` (emuladores en 127.0.0.1) |
+| `build:qa` | Build **QA** → `extension/dist-qa`: el mismo bundle prod + la `key` del ítem de la tienda (mismo ID). Ver [QA sin la tienda](#qa-sin-la-tienda) |
 | `dev` | Build dev en modo watch |
 | `typecheck` / `test` | TypeScript estricto / Vitest (node, mocks de `chrome.*`) |
 | `test:emulator` | `uploadToStorage()` contra los emuladores reales de Auth/Firestore/Storage y `storage.rules` (lo corre `npm run test:emulator` en la raíz) |
@@ -16,7 +17,7 @@ Mide la jornada del colaborador (spec `docs/specs/2026-09-29-time-tracking-exten
 
 Prueba de extremo a extremo contra emuladores (auth, firestore, functions, storage): `npm run e2e:extension` en la raíz. Login dev → `joinOrg` → se abre sola la página del aviso → aceptar (verifica `consentVersion` en `users/{uid}`) → iniciar jornada → el "admin" activa capturas difuminadas en `config/org` → `debug.forcePulse` + `debug.forceScreenshot` → verifica el JPEG en Storage (tipo, tamaño < 1 MB, realmente difuminado) y el doc `screenshots` con los 7 campos → una segunda captura del mismo bloque es `duplicate` → cerrar jornada → cola vacía, `sessions`/`activity` en Firestore.
 
-El build prod falla si su bundle contiene restos dev (login dev, mensajes `debug.*`, `127.0.0.1`…): ver `devLeftovers()` en `scripts/build.ts`.
+Los builds prod y QA fallan si su bundle contiene restos dev (login dev, mensajes `debug.*`, `127.0.0.1`…): ver `devLeftovers()` en `scripts/build.ts`. El build prod además falla si `dist/manifest.json` trae `key` (Chrome Web Store lo rechaza). `node scripts/build.ts --mode production|development|qa --out-dir <carpeta>` genera en otra carpeta (útil si `dist` está bloqueada por otro proceso).
 
 `smoke` necesita el Chromium de Playwright (`npx playwright install chromium`), uno ya descargado en `ms-playwright/chromium-*` o `SMOKE_CHROMIUM=<ruta a chrome>`. Google Chrome de marca ignora `--load-extension` desde la v137.
 
@@ -25,6 +26,7 @@ El build prod falla si su bundle contiene restos dev (login dev, mensajes `debug
 `chrome://extensions` → Modo desarrollador → **Cargar descomprimida** → `extension/dist-dev` (o `dist`).
 
 - El build dev lleva `key` fija en el manifest (`build/manifest.ts`), así que su ID es siempre **`klmbbjhphdmmicdbbgkofkpgapcinbmd`**. La clave privada se descartó a propósito: una extensión descomprimida solo necesita la pública, y el ID de producción lo asigna Chrome Web Store (el manifest prod no lleva `key`).
+- El build QA (`dist-qa`) lleva la clave pública del ítem de la tienda: su ID es **`egaklokkbnbnccnjicaahaifnkaeobfj`**, el mismo que el publicado. Ver abajo.
 - Para el login dev: `firebase emulators:start --only auth,firestore,functions,storage --project demo-timetracking` (tras `npm run build:functions`). Con el correo de `BOOTSTRAP_ADMINS` (`functions/.env.demo-timetracking`) o uno invitado.
 
 ## Configuración
@@ -42,7 +44,22 @@ El build prod falla si su bundle contiene restos dev (login dev, mensajes `debug
 Notas:
 - El flujo es `chrome.identity.getAuthToken` (access token, no ID token) → `GoogleAuthProvider.credential(null, accessToken)` → `signInWithCredential` de `firebase/auth/web-extension`. Firebase obtiene el perfil con ese token; con el scope `email` el usuario queda con `emailVerified: true` y el ID token de Firebase trae `email_verified: true` (lo exige `joinOrg`). Sin el scope `email` Firebase no recibe el correo y `joinOrg` rechaza con `no-email`.
 - `getAuthToken` usa **siempre la cuenta principal del perfil de Chrome** (no hay selector de cuenta). El colaborador debe usar un perfil de Chrome con su cuenta de la empresa; con una cuenta personal verá "Esta cuenta no es de la empresa". Si el perfil no tiene cuenta, la extensión le pide iniciar sesión en Chrome.
-- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin publicar, crea un segundo cliente OAuth con el ID de esa copia (o publícala como *no listada*; *privada* no sirve porque se limita a un solo dominio).
+- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin esperar a la tienda usa el build QA ([QA sin la tienda](#qa-sin-la-tienda)), que tiene el mismo ID que el ítem publicado.
+
+## QA sin la tienda
+
+Para probar contra **producción** una versión que la tienda todavía está revisando (o antes de subirla):
+
+1. `npm run build:qa -w extension` (o `npm run build:extension:qa` en la raíz) → `extension/dist-qa` (ignorada por git). Usa exactamente el mismo código y configuración que `npm run build` (`.env.production` + `.env.production.local`, incluido `VITE_OAUTH_CLIENT_ID` → `oauth2`) y pasa los mismos chequeos de restos dev. La única diferencia es que el manifest lleva `"key"` con la clave pública del ítem de la tienda (`build/store-key.ts`; no es secreta). El build imprime el ID y falla si no es `egaklokkbnbnccnjicaahaifnkaeobfj`.
+2. A diferencia de `build`, que solo avisa, el build QA **falla** si falta `VITE_OAUTH_CLIENT_ID` o algún valor real de Firebase: un QA sin login no sirve.
+3. `chrome://extensions` → **Modo de desarrollador** → **Cargar descomprimida** → `extension/dist-qa`.
+
+Qué tener en cuenta:
+- Como el ID coincide con el de la tienda, el cliente OAuth de la extensión lo acepta y "Iniciar sesión con Google" funciona.
+- **Los datos van a producción** (Firestore, Storage y Functions reales): las jornadas, la actividad y las capturas de QA las ve el portal real. Usa una cuenta de prueba o avisa al equipo.
+- No puedes tener instaladas a la vez la versión de la tienda y la de QA: tienen el mismo ID y Chrome usa solo una. Desinstala (o desactiva) una antes de cargar la otra; al volver a la de la tienda, quita la descomprimida.
+- La política de Google Workspace puede bloquear las extensiones descomprimidas (o el Modo de desarrollador) en perfiles administrados; en ese caso usa un perfil donde esté permitido.
+- **Nunca** subas `dist-qa` a la tienda: el paquete para Chrome Web Store es siempre `dist` (`npm run build`), que no lleva `key`.
 
 ## Arquitectura
 
