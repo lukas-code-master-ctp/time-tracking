@@ -261,6 +261,39 @@ describe('extension with working hours', () => {
     expect(current(h)).toMatchObject({ slotStart: at(MON, '14:00'), trackedSeconds: 20 });
   });
 
+  it('a gap longer than 90 s across a boundary stays "no data" (not split at the boundary)', async () => {
+    await useSchedule(h, CONFIG);
+    vi.setSystemTime(at(MON, '12:58'));
+    await h.app.session.start();
+    for (const t of [30, 60, 90]) {
+      vi.setSystemTime(at(MON, '12:58', t));
+      await h.app.session.pulse();
+    }
+    // The worker slept 12:59:30 → 13:05:00 (no alarm, no pulse).
+    h.chrome.world.alarms.delete(SCHEDULE_ALARM);
+    vi.setSystemTime(at(MON, '13:05'));
+    await h.app.session.pulse();
+    await h.settle();
+    expect(h.app.store.acc!.paused).toBe(true);
+    // 12:58:00–12:59:29 only; 12:59:30–12:59:59 was not observed.
+    expect(h.backend.activity.get(`u1_${at(MON, '12:50')}`)).toMatchObject({ trackedSeconds: 90 });
+  });
+
+  it('closing the work day just after a boundary does not measure the seconds of the lunch', async () => {
+    await useSchedule(h, CONFIG);
+    vi.setSystemTime(at(MON, '12:59'));
+    await h.app.session.start();
+    h.chrome.world.alarms.delete(SCHEDULE_ALARM);
+    vi.setSystemTime(at(MON, '12:59', 58));
+    await h.app.session.pulse();
+    vi.setSystemTime(at(MON, '13:00', 25));
+    await h.app.session.stop();
+    await h.settle();
+    expect(h.backend.activity.get(`u1_${at(MON, '12:50')}`)).toMatchObject({ trackedSeconds: 60 });
+    expect(h.backend.activity.has(`u1_${at(MON, '13:00')}`)).toBe(false);
+    expect(uploadedTracked(h)).toBe(60);
+  });
+
   it('no screenshot in the lunch nor outside the schedule, even when forced', async () => {
     h.backend.org = { ...h.backend.org!, screenshotsEnabled: true };
     await h.app.refreshOrgConfig(0);
@@ -366,6 +399,19 @@ describe('extension with working hours', () => {
       await h.app.session.stop();
       await runUntil(h, at('2026-10-06', '10:00'));
       expect(h.chrome.world.notificationLog).toEqual([]);
+    });
+
+    it('a reminder of another day left in the notification center does not touch the work day of today', async () => {
+      await useSchedule(h, CONFIG);
+      vi.setSystemTime(at('2026-10-06', '09:00'));
+      await h.app.session.start();
+      await h.app.onReminderAction(`tt-reminder:end:${MON}`);
+      expect(h.app.store.session).not.toBeNull();
+      expect(h.chrome.world.popupOpened).toBe(1);
+      await h.app.session.stop();
+      await h.app.onReminderAction(`tt-reminder:start:${MON}`);
+      expect(h.app.store.session).toBeNull();
+      expect(h.chrome.world.popupOpened).toBe(2);
     });
 
     it('clicking the notification opens the popup (or the popup page in a tab)', async () => {

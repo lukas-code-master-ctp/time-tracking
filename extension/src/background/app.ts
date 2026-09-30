@@ -18,6 +18,8 @@
  */
 import {
   CONSENT_VERSION,
+  DEFAULT_TIME_ZONE,
+  dateKey,
   readPersonSchedule,
   readScheduleConfig,
   type OrgConfig,
@@ -328,12 +330,19 @@ export class App {
   /**
    * Button of a reminder: "Iniciar jornada" starts the work day (the notice
    * must be accepted: otherwise it opens the notice) and "Cerrar jornada"
-   * closes it. Any other problem opens the popup, which explains it.
+   * closes it. Any other problem, or a reminder of another day, opens the
+   * popup, which explains it.
    */
   async onReminderAction(notificationId: string): Promise<void> {
     const reminder = parseReminderNotificationId(notificationId);
     if (!reminder) return;
     await chrome.notifications.clear(notificationId).catch(() => undefined);
+    // A reminder of another day (left in the notification center) must not
+    // start or close today's work day: the popup shows the current state.
+    if (reminder.date !== dateKey(this.now(), DEFAULT_TIME_ZONE)) {
+      await this.openPopup();
+      return;
+    }
     try {
       if (reminder.kind === 'start') {
         await this.session.start();

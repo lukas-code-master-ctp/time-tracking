@@ -243,7 +243,12 @@ export class Tracker {
 
   /** Closes the work day in the accumulator (no more seconds are tracked). */
   endMeasuring(at: number): void {
-    this.store.acc?.setSession(null, at);
+    const acc = this.store.acc;
+    if (!acc) return;
+    // The interval since the last event keeps the pause of the schedule
+    // (closing at 13:00:25 after a pulse at 12:59:58 measures no lunch).
+    this.syncPause(acc, at);
+    acc.setSession(null, at);
   }
 
   /**
@@ -290,7 +295,9 @@ export class Tracker {
   syncPause(acc: SlotAccumulator, at: number): void {
     const schedule = effectiveSchedule(this.store.meta.schedule, acc.uid);
     const from = acc.lastEventAt;
-    if (from !== null) {
+    // A gap longer than maxGapMs is "no data" as a whole: splitting it at the
+    // boundaries would attribute its first seconds (up to 90 s per boundary).
+    if (from !== null && at - from <= acc.maxGapMs) {
       for (const t of pauseBoundaries(schedule, from, at)) acc.setPaused(!isMeasuringAt(schedule, t), t);
     }
     acc.setPaused(!isMeasuringAt(schedule, at), at);
