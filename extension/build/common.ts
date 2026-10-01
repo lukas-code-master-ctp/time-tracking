@@ -29,6 +29,8 @@ export interface BuildConfig {
   /** Raw `VITE_ALLOWED_DOMAIN`: comma separated list (parsed at runtime; empty = defaults). */
   allowedDomains: string;
   oauthClientId: string;
+  /** Web OAuth client of the Firebase Google provider (launchWebAuthFlow outside Chrome). */
+  googleWebClientId: string;
 }
 
 /**
@@ -79,6 +81,7 @@ export function resolveBuildConfig(target: BuildTarget): BuildConfig {
     emulatorHost: dev ? get('EMULATOR_HOST', '127.0.0.1') : '',
     allowedDomains: get('ALLOWED_DOMAIN'),
     oauthClientId: get('OAUTH_CLIENT_ID'),
+    googleWebClientId: get('GOOGLE_WEB_CLIENT_ID'),
   };
 }
 

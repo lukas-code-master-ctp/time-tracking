@@ -39,6 +39,12 @@ function manifestPlugin(target: BuildTarget): Plugin {
               'Ver extension/README.md.',
           );
         }
+        if (!cfg.googleWebClientId) {
+          this.warn(
+            'Falta VITE_GOOGLE_WEB_CLIENT_ID: el login funcionará solo en Google Chrome (Edge, Brave, Opera… verán ' +
+              '"Este navegador no es compatible todavía"). Ver extension/README.md.',
+          );
+        }
       }
     },
   };

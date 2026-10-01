@@ -100,9 +100,9 @@ function assertSafeOutDir(dir: string): void {
 }
 
 /**
- * QA is only useful with login against production: missing Firebase values or
- * OAuth client ID are an error here (prod only warns), and the store key must
- * still yield the store item's ID.
+ * QA is only useful with login against production: missing Firebase values,
+ * OAuth client ID or web client ID (other browsers) are an error here (prod
+ * only warns), and the store key must still yield the store item's ID.
  */
 function checkQaConfig(): void {
   const derived = extensionIdFromKey(STORE_PUBLIC_KEY);
@@ -112,6 +112,7 @@ function checkQaConfig(): void {
   const cfg = resolveBuildConfig('qa');
   const missing = missingFirebaseValues(cfg);
   if (!cfg.oauthClientId) missing.push('VITE_OAUTH_CLIENT_ID');
+  if (!cfg.googleWebClientId) missing.push('VITE_GOOGLE_WEB_CLIENT_ID');
   if (missing.length > 0) {
     fail(
       `Build QA cancelado: faltan valores reales en .env.production / .env.production.local (${missing.join(', ')}). ` +

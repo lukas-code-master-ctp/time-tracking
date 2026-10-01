@@ -17,6 +17,8 @@ declare const __BUILD_CONFIG__: {
   /** Raw comma separated list from `VITE_ALLOWED_DOMAIN` (empty = defaults). */
   allowedDomains: string;
   oauthClientId: string;
+  /** Web OAuth client of the Firebase Google provider (launchWebAuthFlow outside Chrome). */
+  googleWebClientId: string;
 };
 
 /** Side-effect CSS imports (bundled by Vite). */

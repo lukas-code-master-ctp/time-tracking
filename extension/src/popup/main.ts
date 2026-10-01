@@ -14,6 +14,7 @@ import '../ui/base.css';
 import './popup.css';
 import type { PopupRequest, StatusView } from '../messages';
 import { clock, el, hoursMinutes, percent, send } from '../ui/dom';
+import { usesGoogleAccountChooser } from '../browser';
 import { ALLOWED_DOMAINS } from '../env';
 
 const root = document.getElementById('app') as HTMLElement;
@@ -157,6 +158,10 @@ function renderSignedOut(s: StatusView): void {
     hero.append(form);
   } else {
     hero.append(button('Iniciar sesión con Google', 'primary big', () => void act({ type: 'auth.signIn' })));
+    // Outside Chrome the sign-in opens Google's account chooser (launchWebAuthFlow).
+    if (usesGoogleAccountChooser()) {
+      hero.append(el('p', { className: 'muted', textContent: 'Se abrirá una ventana de Google: elige tu cuenta de la empresa.' }));
+    }
   }
   root.append(hero);
 }

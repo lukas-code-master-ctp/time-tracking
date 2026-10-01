@@ -3,11 +3,25 @@
 Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de unas 30 personas que trabaja con Google Workspace. Admite **varios dominios de Workspace** (hoy `@impulseai.cl` y `@compratuparcela.cl`, dos organizaciones distintas); la lista se edita en el portal (Configuración).
 
 - La persona **admin** invita a los colaboradores desde un **portal web** (les comparte el enlace de instalación; el correo de invitación es opcional).
-- Cada **colaborador** instala una **extensión de Chrome**, entra con su cuenta de la empresa y **abre y cierra su jornada**.
+- Cada **colaborador** instala una **extensión de Chrome** (desde la 0.2.1 también funciona en Edge, Brave, Opera, Vivaldi y Arc: ver [Navegadores compatibles](#navegadores-compatibles)), entra con su cuenta de la empresa y **abre y cierra su jornada**.
 - Mientras la jornada está abierta, la extensión mide el nivel de actividad, los sitios usados y, si está activado, toma capturas de la pestaña visible. Si la admin configuró un **horario laboral**, solo mide dentro del horario y fuera de la colación (el inicio y el cierre de la jornada se registran siempre).
 - La persona admin ve todo en la **reportería del portal**: horas, % de actividad, sitios, línea de tiempo, capturas y, con horario, el **cumplimiento** (horas esperadas, atrasos, salidas anticipadas, ausencias, tiempo fuera de horario).
 
-Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [spec de "En reunión"](docs/specs/2026-09-30-en-reunion.md) · [spec de horarios](docs/specs/2026-09-30-horarios.md) · [plan de horarios](docs/plans/2026-09-30-horarios.md) · [detalles de la extensión](extension/README.md).
+Documentos de diseño: [spec](docs/specs/2026-09-29-time-tracking-extension.md) · [plan](docs/plans/2026-09-29-time-tracking-extension.md) · [spec de varios dominios](docs/specs/2026-09-29-multi-dominio.md) · [spec de "En reunión"](docs/specs/2026-09-30-en-reunion.md) · [spec de horarios](docs/specs/2026-09-30-horarios.md) · [plan de horarios](docs/plans/2026-09-30-horarios.md) · [spec de login en otros navegadores](docs/specs/2026-10-01-login-otros-navegadores.md) · [plan](docs/plans/2026-10-01-login-otros-navegadores.md) · [detalles de la extensión](extension/README.md).
+
+## Navegadores compatibles
+
+La extensión se publica en Chrome Web Store y funciona en navegadores basados en Chromium (extensión **0.2.1** o superior fuera de Chrome):
+
+| Navegador | Cómo instalarla | Inicio de sesión |
+|---|---|---|
+| Google Chrome | Enlace de la ficha → **Agregar a Chrome** | Cuenta del perfil de Chrome |
+| Microsoft Edge | Abre el enlace de la ficha, pulsa **"Permitir extensiones de otras tiendas"** → *Permitir* y luego **Agregar a Chrome** | Se abre una ventana de Google para elegir la cuenta de la empresa |
+| Brave, Vivaldi, Arc | Enlace de la ficha → **Agregar a…** (directo) | Ventana de Google para elegir la cuenta |
+| Opera | Instala antes el complemento **"Install Chrome Extensions"** (addons.opera.com) y luego **Agregar a Opera** en la ficha | Ventana de Google para elegir la cuenta |
+| Firefox, Safari | No compatibles | — |
+
+Solo se mide el navegador donde está instalada la extensión. La instalación forzada desde Google Workspace ([paso 8](#8-instalación-forzada-en-google-workspace-en-cada-organización)) aplica solo a Chrome. Detalles técnicos en [extension/README.md](extension/README.md#otros-navegadores-chromium-021).
 
 ## Qué mide (y qué NO)
 
@@ -195,6 +209,7 @@ En [Google Cloud Console](https://console.cloud.google.com) (mismo proyecto) →
 
 1. Google Cloud → **APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth → tipo "Extensión de Chrome"**, con el **ID del ítem** del paso 3. Créalo en el **mismo proyecto** de Firebase (si no, agrégalo en Firebase Auth → Google → *Safelist client IDs from external projects*).
 2. Pon el ID de cliente en `VITE_OAUTH_CLIENT_ID` de `extension/.env.production`, vuelve a correr `npm run build -w extension` y sube la nueva versión. Chrome Web Store exige un número de versión mayor en cada subida: súbelo en `"version"` de `extension/package.json` (el manifest se genera desde ahí) antes de compilar. Detalles y notas en [extension/README.md](extension/README.md#login-con-google-en-producción-checklist).
+3. **Otros navegadores (Edge, Brave, Opera, Vivaldi, Arc)**: Google Cloud → Credenciales → el cliente **"Web client (auto created by Google Service)"** (el del proveedor Google de Firebase) → **URI de redireccionamiento autorizados** → agrega `https://<ID del ítem>.chromiumapp.org/` (para el ítem actual, `https://egaklokkbnbnccnjicaahaifnkaeobfj.chromiumapp.org/`, ya agregada). Pon el client ID de ese cliente web en `VITE_GOOGLE_WEB_CLIENT_ID` de `extension/.env.production.local`. Sin él la extensión funciona solo en Chrome (los demás navegadores muestran "Este navegador no es compatible todavía: usa Google Chrome") y el build QA falla.
 
 ### QA sin la tienda
 
@@ -327,7 +342,10 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | Extensión dev: el login o el envío fallan | Los emuladores deben estar arriba en 127.0.0.1 (el popup muestra los envíos pendientes); recarga la extensión en `chrome://extensions`. |
 | "Pide a tu admin que te invite" | El correo no tiene invitación pendiente/aceptada (o fue revocada). Invítalo desde el portal. |
 | "Esta cuenta no es de la empresa" (prod) | El perfil de Chrome usa una cuenta personal (`getAuthToken` usa siempre la cuenta del perfil) o el dominio de la cuenta no está en **Configuración → Dominios permitidos** del portal. |
-| "Google rechazó el acceso" (prod) | El cliente OAuth no corresponde al ID de la extensión o está en otro proyecto (ver paso 4). |
+| "Google rechazó el acceso" (prod) | El cliente OAuth no corresponde al ID de la extensión o está en otro proyecto (ver paso 4). En Edge/Brave/Opera: `VITE_GOOGLE_WEB_CLIENT_ID` no es el cliente web del proveedor Google de Firebase. |
+| "La extensión no tiene configurado el inicio de sesión con Google (Invalid OAuth2 Client ID.)" o un error que termina en "(getAuthToken: …)" | El paquete se construyó sin `VITE_OAUTH_CLIENT_ID` (sin `manifest.oauth2`) o con un cliente que no es del ID de la extensión (paso 4). Desde la 0.2.1, con `VITE_GOOGLE_WEB_CLIENT_ID` se usa la ventana de Google en su lugar; el texto entre paréntesis es el error original de Chrome. |
+| "Este navegador no es compatible todavía: usa Google Chrome" | Extensión construida sin `VITE_GOOGLE_WEB_CLIENT_ID` (ver paso 4.3). |
+| Edge/Brave/Opera: la ventana de Google dice `redirect_uri_mismatch` | Falta `https://<ID>.chromiumapp.org/` en las URI de redireccionamiento del cliente web (paso 4.3). Una copia descomprimida con otro ID necesita su propia URI. |
 | El deploy pregunta "How many days do you want to keep container images…" y termina con "An unexpected error" | Es la política de limpieza de imágenes de las funciones. Configúrala una vez con `npx firebase functions:artifacts:setpolicy --location southamerica-west1 --days 7 --force --project prod` (y lo mismo con `--location southamerica-east1`) y vuelve a desplegar. |
 | El primer `firebase deploy` de functions falla con un error de permisos de Eventarc o de "service agent" | Es normal en proyectos nuevos: Google tarda unos minutos en crear los permisos de los disparadores. Espera 5–10 minutos y vuelve a correr el mismo `npx firebase deploy`. |
 | `firebase deploy` pide valores de `SMTP_*` o falla por secretos | `functions/.env.<proyecto>` tiene `INVITE_EMAIL_ENABLED=true` y faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). Si no quieres correo, pon `INVITE_EMAIL_ENABLED=false` y vuelve a desplegar. |
@@ -347,7 +365,7 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 - Una reunión cuenta solo con **audio reciente** en su pestaña (últimos 2 min), también si está al frente: si nadie habla por más de 2 min, o la pestaña está silenciada, deja de contar hasta que vuelve a sonar; tras salir, la sala cuenta hasta 2 min después del último audio. En **Teams**, como su dirección no distingue la reunión del chat, un sonido de notificación puede dar hasta 2 min de "reunión" sin teclado ni mouse. El fin de los 2 min de gracia tras el último audio se aplica en el pulso siguiente (hasta 30 s tarde).
 - Los bloques de la extensión **0.1.1** (y los datos anteriores) no traen `meetingSeconds`: el portal los lee como 0 (sin tiempo en reunión). Una jornada abierta con la 0.1.1 que se actualiza a la 0.1.2 no mide reuniones hasta que la persona acepta el aviso nuevo.
 - Si la 0.1.2 se distribuye **antes** de desplegar las reglas nuevas, se pierde el tiempo en reunión de esos bloques (ver [7. Desplegar](#7-desplegar)).
-- **Otros navegadores** (Edge, Firefox, Safari) y **pestañas de incógnito** no se miden.
+- Solo se mide el navegador donde está instalada la extensión: otro navegador sin ella (o Firefox/Safari, no compatibles) y las **pestañas de incógnito** no se miden.
 - **Capturas solo de la pestaña visible**, no de la pantalla completa ni de otras apps. Hay **un solo intento por bloque**: si en ese instante Chrome no está enfocado, la pantalla está bloqueada o la pestaña no es http(s), ese bloque queda sin captura (no se reintenta ni se registra).
 - **Reloj adelantado > 15 min**: las reglas rechazan tiempos "del futuro"; un computador con la hora muy adelantada no podrá subir datos hasta corregirla.
 - Las horas y el % que ve el colaborador en el popup son solo de **ese navegador** (no suma otros computadores).

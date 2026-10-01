@@ -11,10 +11,24 @@
  *   null, accessToken)` → `signInWithCredential`. A token rejected by Firebase
  *   (revoked/expired in Chrome's cache) is removed with
  *   `removeCachedAuthToken` and the flow is retried once.
+ * - Other Chromium browsers (Edge, Brave, Opera, Vivaldi, Arc) have no working
+ *   `getAuthToken`: when it is missing or fails for any reason other than a
+ *   user cancellation (not supported, no account in the profile, OAuth
+ *   config…; see `FALLBACK_REASONS`) the sign-in falls back to
+ *   `chrome.identity.launchWebAuthFlow` with Google's OpenID Connect implicit
+ *   flow (`response_type=id_token`, random `nonce`, redirect URI
+ *   `https://<id>.chromiumapp.org/`) using the web OAuth client of the
+ *   Firebase Google provider (`VITE_GOOGLE_WEB_CLIENT_ID`) →
+ *   `GoogleAuthProvider.credential(idToken)` → `signInWithCredential`. The
+ *   `id_token` signature is NOT checked here: Firebase Auth verifies it
+ *   (signature, issuer, audience = a client of the provider, expiry); we only
+ *   decode its payload to match the `nonce` of this attempt. A user who
+ *   cancels never gets the other method.
  * - After signing in, `joinOrg()` calls the callable of the same name, which
  *   creates `users/{uid}` or rejects with `details.reason` (no invitation,
  *   domain not allowed…), mapped to clear Spanish messages here.
- * - Signing out also drops Chrome's cached token.
+ * - Signing out also drops Chrome's cached token (only where `getAuthToken`
+ *   exists; the web flow caches nothing: Firebase keeps its own session).
  */
 import {
   GoogleAuthProvider,
@@ -26,7 +40,8 @@ import {
 } from 'firebase/auth/web-extension';
 import { httpsCallable, type Functions } from 'firebase/functions';
 import { emailKey, formatDomains, type UserProfile } from '@timetracking/shared';
-import { ALLOWED_DOMAINS } from '../env';
+import { hasGetAuthToken, isGoogleChrome } from '../browser';
+import { ALLOWED_DOMAINS, BUILD_CONFIG } from '../env';
 
 export interface AuthUser {
   uid: string;
@@ -41,7 +56,7 @@ export interface AuthService {
   currentUser(): AuthUser | null;
   /** Dev build only (Auth emulator). Rejects in prod builds. */
   signInDev(email: string): Promise<AuthUser>;
-  /** Google sign-in with chrome.identity. Throws {@link AuthError}. */
+  /** Google sign-in with chrome.identity (getAuthToken or launchWebAuthFlow). Throws {@link AuthError}. */
   signInInteractive(): Promise<AuthUser>;
   signOut(): Promise<void>;
   /** Called whenever the signed-in user changes (also when Firebase drops the session). */
@@ -65,6 +80,8 @@ export class AuthError extends Error {
   constructor(
     readonly reason: string,
     message: string,
+    /** Original technical message (chrome.identity), kept for diagnosis. */
+    readonly detail = '',
   ) {
     super(message);
     this.name = 'AuthError';
@@ -97,7 +114,7 @@ export function joinErrorMessage(reason: string, domains: readonly string[] = AL
     case 'invitation-revoked':
       return 'Tu invitación fue revocada. Pide a tu administrador que te invite de nuevo.';
     case 'domain-not-allowed':
-      return `Esta cuenta no es de la empresa. Usa tu cuenta ${formatDomains(domains)} (la cuenta con la que iniciaste sesión en Chrome).`;
+      return `Esta cuenta no es de la empresa. Usa tu cuenta ${formatDomains(domains)} (la cuenta Google con la que iniciaste sesión).`;
     case 'user-disabled':
       return 'Tu cuenta está desactivada. Habla con tu administrador.';
     case 'email-not-verified':
@@ -129,24 +146,51 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err ?? '');
 }
 
+const CANCELLED_MESSAGE = 'Se canceló el inicio de sesión. Pulsa “Iniciar sesión con Google” para intentarlo de nuevo.';
+
+/**
+ * `getAuthToken` failures that mean "this browser has no Chrome sign-in", so
+ * the web flow is used instead. Known messages:
+ * - Edge: "This API is not supported on Microsoft Edge." (older versions:
+ *   "OAuth2 request failed: Connection failed (-2).");
+ * - Brave: "The user turned off browser signin" (Chromium's message when
+ *   browser sign-in is disabled; also a Chrome user who disabled it, for whom
+ *   the web flow works too);
+ * - any "… is not available / unsupported / not implemented".
+ */
+export function isUnsupportedIdentityError(err: unknown): boolean {
+  return /not supported|unsupported|is not available|not implemented|turned off browser sign-?in|connection failed \(-2\)/i.test(
+    messageOf(err),
+  );
+}
+
 /** chrome.identity rejection → AuthError (cancelled vs failure). */
 export function identityError(err: unknown): AuthError {
   const msg = messageOf(err);
+  // Checked first: Edge's old message starts with "OAuth2 request failed".
+  if (isUnsupportedIdentityError(err)) {
+    return new AuthError('unsupported', `Este navegador no permite el inicio de sesión de Chrome (${msg}).`, msg);
+  }
   // "The user is not signed in.": the Chrome profile has no Google account
   // (getAuthToken always uses the profile's primary account).
   if (/not signed in/i.test(msg)) {
     return new AuthError(
       'chrome-signed-out',
       'Chrome no tiene una cuenta Google iniciada. Inicia sesión en Chrome con tu cuenta de la empresa (ícono de perfil, arriba a la derecha) y vuelve a intentarlo.',
+      msg,
     );
   }
   if (/did not approve|not granted|revoked|canceled|cancelled|user interaction required|closed/i.test(msg)) {
-    return new AuthError('cancelled', 'Se canceló el inicio de sesión. Pulsa “Iniciar sesión con Google” para intentarlo de nuevo.');
+    return new AuthError('cancelled', CANCELLED_MESSAGE, msg);
   }
   if (/oauth2|client id|bad client/i.test(msg)) {
-    return new AuthError('oauth-config', 'La extensión no tiene configurado el inicio de sesión con Google. Avisa a tu administrador.');
+    return new AuthError(
+      'oauth-config',
+      `La extensión no tiene configurado el inicio de sesión con Google. Avisa a tu administrador (${msg}).`,
+      msg,
+    );
   }
-  return new AuthError('identity-failed', `No se pudo iniciar sesión con Google (${msg || 'error desconocido'}).`);
+  return new AuthError('identity-failed', `No se pudo iniciar sesión con Google (${msg || 'error desconocido'}).`, msg);
 }
 
 /** Firebase signInWithCredential rejection (other than a bad token) → AuthError. */
@@ -186,6 +230,172 @@ export async function googleSignIn(deps: GoogleSignInDeps): Promise<AuthUser> {
   }
 }
 
+// ---------- launchWebAuthFlow (Edge, Brave, Opera, Vivaldi, Arc) ----------
+
+export const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+
+export const UNSUPPORTED_BROWSER_MESSAGE = 'Este navegador no es compatible todavía: usa Google Chrome.';
+
+/** chrome.identity / Firebase pieces used by {@link webAuthFlowSignIn} (faked in tests). */
+export interface WebAuthFlowDeps {
+  /** Web OAuth client of the Firebase Google provider (`VITE_GOOGLE_WEB_CLIENT_ID`); empty = not configured. */
+  clientId: string;
+  /** `chrome.identity.getRedirectURL()` → `https://<extension-id>.chromiumapp.org/`. */
+  redirectUri(): string;
+  /** Allowed Workspace domains: `hd` is sent only when there is exactly one. */
+  domains: readonly string[];
+  /** Fresh random value per attempt. */
+  nonce(): string;
+  /** `chrome.identity.launchWebAuthFlow({ url, interactive: true })`; resolves to the final redirect URL. */
+  launchWebAuthFlow(url: string): Promise<string | undefined>;
+  signInWithIdToken(idToken: string): Promise<AuthUser>;
+}
+
+/** Google's authorization URL for the OpenID Connect implicit flow (`id_token` only). */
+export function webAuthUrl(p: { clientId: string; redirectUri: string; nonce: string; domains: readonly string[] }): string {
+  const params = new URLSearchParams({
+    client_id: p.clientId,
+    response_type: 'id_token',
+    redirect_uri: p.redirectUri,
+    scope: 'openid email profile',
+    nonce: p.nonce,
+    prompt: 'select_account',
+  });
+  // `hd` only pre-filters Google's account chooser; joinOrg is the real check.
+  if (p.domains.length === 1) params.set('hd', p.domains[0] as string);
+  // URLSearchParams encodes spaces as "+"; %20 is the documented form.
+  return `${GOOGLE_AUTH_ENDPOINT}?${params.toString().replace(/\+/g, '%20')}`;
+}
+
+/** 128 random bits (hex) from the Web Crypto API. */
+export function randomNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Payload of a JWT, decoded WITHOUT checking the signature (Firebase checks
+ * it in signInWithCredential). Null when it is not a readable JWT.
+ */
+export function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
+  const part = jwt.split('.')[1];
+  if (!part) return null;
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
+    const bin = atob(b64);
+    const json = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+    const payload: unknown = JSON.parse(json);
+    return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Final redirect URL of the web flow → `id_token` of this attempt. Google puts
+ * the result in the fragment (`#id_token=…` / `#error=…`); errors may also
+ * come in the query string.
+ */
+export function idTokenFromRedirect(responseUrl: string, nonce: string): string {
+  let url: URL;
+  try {
+    url = new URL(responseUrl);
+  } catch {
+    throw new AuthError('web-auth-failed', 'Google devolvió una respuesta inválida. Inténtalo de nuevo.');
+  }
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const error = fragment.get('error') ?? url.searchParams.get('error');
+  if (error) {
+    if (error === 'access_denied') throw new AuthError('cancelled', CANCELLED_MESSAGE);
+    const description = fragment.get('error_description') ?? url.searchParams.get('error_description');
+    throw new AuthError('web-auth-failed', `Google no permitió iniciar sesión (${description ? `${error}: ${description}` : error}).`);
+  }
+  const idToken = fragment.get('id_token');
+  if (!idToken) throw new AuthError('no-id-token', 'Google no devolvió la identidad de tu cuenta. Inténtalo de nuevo.');
+  if (decodeJwtPayload(idToken)?.nonce !== nonce) {
+    throw new AuthError('nonce-mismatch', 'La respuesta de Google no corresponde a este inicio de sesión. Inténtalo de nuevo.');
+  }
+  return idToken;
+}
+
+/** launchWebAuthFlow → id_token (nonce checked) → signInWithCredential. */
+export async function webAuthFlowSignIn(deps: WebAuthFlowDeps): Promise<AuthUser> {
+  if (!deps.clientId) throw new AuthError('unsupported-browser', UNSUPPORTED_BROWSER_MESSAGE);
+  const nonce = deps.nonce();
+  let redirect: string | undefined;
+  try {
+    redirect = await deps.launchWebAuthFlow(webAuthUrl({ clientId: deps.clientId, redirectUri: deps.redirectUri(), nonce, domains: deps.domains }));
+  } catch (err) {
+    // Window closed: "The user did not approve access." → cancelled.
+    throw identityError(err);
+  }
+  if (!redirect) throw new AuthError('cancelled', CANCELLED_MESSAGE);
+  const idToken = idTokenFromRedirect(redirect, nonce);
+  try {
+    return await deps.signInWithIdToken(idToken);
+  } catch (err) {
+    if (BAD_TOKEN_CODES.has(codeOf(err))) {
+      throw new AuthError('invalid-token', 'Google rechazó el acceso. Inténtalo de nuevo; si sigue fallando, avisa a tu administrador.');
+    }
+    throw firebaseSignInError(err);
+  }
+}
+
+/** Both sign-in methods; `chrome` is null where `getAuthToken` does not exist. */
+export interface SignInMethods {
+  chrome: GoogleSignInDeps | null;
+  web: WebAuthFlowDeps;
+  /** Google Chrome itself (not Edge/Brave/Opera…), see `isGoogleChrome()`: picks the message when there is no web client. */
+  isGoogleChrome: boolean;
+}
+
+/**
+ * `getAuthToken` failures that move on to the web flow: everything except a
+ * user cancellation — not supported (Edge, Brave), no Google account in the
+ * browser profile (the user picks one in Google's window instead), OAuth
+ * configuration ("Invalid OAuth2 Client ID", e.g. a package without
+ * manifest.oauth2) and unknown chrome.identity errors. Errors after
+ * getAuthToken succeeded (Firebase, network) are final.
+ */
+const FALLBACK_REASONS = new Set(['unsupported', 'chrome-signed-out', 'oauth-config', 'identity-failed']);
+
+/** "<message> (getAuthToken: <technical text>)", to diagnose a failed fallback. */
+function withChromeDetail(err: AuthError, chromeError: AuthError): AuthError {
+  if (!chromeError.detail) return err;
+  return new AuthError(err.reason, `${err.message.replace(/\.$/, '')} (getAuthToken: ${chromeError.detail}).`, chromeError.detail);
+}
+
+/**
+ * Chrome: getAuthToken (unchanged when it works). When it does not exist or
+ * fails for any reason other than a cancellation (see
+ * {@link FALLBACK_REASONS}), the web flow is used. A cancellation in either
+ * method is final: the other one is not tried. If the fallback also fails,
+ * the message carries getAuthToken's original text in parentheses.
+ */
+export async function signInWithBestMethod(m: SignInMethods): Promise<AuthUser> {
+  let chromeError: AuthError | null = null;
+  if (m.chrome) {
+    try {
+      return await googleSignIn(m.chrome);
+    } catch (err) {
+      if (!(err instanceof AuthError) || !FALLBACK_REASONS.has(err.reason)) throw err;
+      chromeError = err;
+    }
+  }
+  if (chromeError && !m.web.clientId && m.isGoogleChrome) {
+    // Without the web client there is nothing to fall back to: in Google
+    // Chrome, Chrome's own message (sign in to Chrome, OAuth config…) is the
+    // useful one, not "use Google Chrome".
+    throw chromeError.message.includes(chromeError.detail) ? chromeError : withChromeDetail(chromeError, chromeError);
+  }
+  try {
+    return await webAuthFlowSignIn(m.web);
+  } catch (err) {
+    if (chromeError && err instanceof AuthError && err.reason !== 'cancelled') throw withChromeDetail(err, chromeError);
+    throw err;
+  }
+}
+
 async function chromeAuthToken(interactive: boolean): Promise<string> {
   const res = (await chrome.identity.getAuthToken({ interactive })) as chrome.identity.GetAuthTokenResult | string | undefined;
   return typeof res === 'string' ? res : (res?.token ?? '');
@@ -193,6 +403,7 @@ async function chromeAuthToken(interactive: boolean): Promise<string> {
 
 /** Removes Chrome's cached Google token (sign-out). Never throws. */
 export async function dropCachedGoogleToken(): Promise<void> {
+  if (!hasGetAuthToken()) return;
   try {
     const token = await chromeAuthToken(false);
     if (token) await chrome.identity.removeCachedAuthToken({ token });
@@ -215,13 +426,27 @@ export function createFirebaseAuthService(auth: Auth, functions: Functions): Aut
     },
 
     signInInteractive(): Promise<AuthUser> {
-      return googleSignIn({
-        getAuthToken: chromeAuthToken,
-        removeCachedAuthToken: (token) => chrome.identity.removeCachedAuthToken({ token }),
-        async signInWithToken(accessToken) {
-          const result = await signInWithCredential(auth, GoogleAuthProvider.credential(null, accessToken));
-          return toAuthUser(result.user) as AuthUser;
+      const signIn = async (credential: ReturnType<typeof GoogleAuthProvider.credential>): Promise<AuthUser> =>
+        toAuthUser((await signInWithCredential(auth, credential)).user) as AuthUser;
+      const hasWebFlow = typeof chrome.identity?.launchWebAuthFlow === 'function';
+      return signInWithBestMethod({
+        chrome: hasGetAuthToken()
+          ? {
+              getAuthToken: chromeAuthToken,
+              removeCachedAuthToken: (token) => chrome.identity.removeCachedAuthToken({ token }),
+              signInWithToken: (accessToken) => signIn(GoogleAuthProvider.credential(null, accessToken)),
+            }
+          : null,
+        web: {
+          // Without launchWebAuthFlow there is no way to sign in: same message as a missing client ID.
+          clientId: hasWebFlow ? BUILD_CONFIG.googleWebClientId : '',
+          redirectUri: () => chrome.identity.getRedirectURL(),
+          domains: ALLOWED_DOMAINS,
+          nonce: randomNonce,
+          launchWebAuthFlow: (url) => chrome.identity.launchWebAuthFlow({ url, interactive: true }),
+          signInWithIdToken: (idToken) => signIn(GoogleAuthProvider.credential(idToken)),
         },
+        isGoogleChrome: isGoogleChrome(),
       });
     },
 

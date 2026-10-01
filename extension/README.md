@@ -32,7 +32,7 @@ Los builds prod y QA fallan si su bundle contiene restos dev (login dev, mensaje
 ## Configuración
 
 - `.env.development`: valores del proyecto demo de emuladores; no hay que tocarlo.
-- `.env.production`: configuración web del proyecto Firebase real, con placeholders `REEMPLAZAR_...` (no son secretos). Puedes dejar los valores reales en `.env.production.local` (no se versiona). Mientras queden placeholders el build avisa. `VITE_OAUTH_CLIENT_ID` agrega `oauth2` (scopes `openid email profile`) al manifest: sin él, "Iniciar sesión con Google" muestra que falta configurarlo. `VITE_ALLOWED_DOMAIN` (opcional) es la lista de dominios separados por coma que muestran los mensajes (por defecto `impulseai.cl,compratuparcela.cl`); quien decide qué cuentas entran es el servidor (`config/org.allowedDomains` o `ALLOWED_DOMAIN` de functions).
+- `.env.production`: configuración web del proyecto Firebase real, con placeholders `REEMPLAZAR_...` (no son secretos). Puedes dejar los valores reales en `.env.production.local` (no se versiona). Mientras queden placeholders el build avisa. `VITE_OAUTH_CLIENT_ID` agrega `oauth2` (scopes `openid email profile`) al manifest: sin él, "Iniciar sesión con Google" muestra que falta configurarlo. `VITE_ALLOWED_DOMAIN` (opcional) es la lista de dominios separados por coma que muestran los mensajes (por defecto `impulseai.cl,compratuparcela.cl`); quien decide qué cuentas entran es el servidor (`config/org.allowedDomains` o `ALLOWED_DOMAIN` de functions). `VITE_GOOGLE_WEB_CLIENT_ID` es el client ID del **cliente web** del proveedor Google de Firebase y habilita el login fuera de Chrome ([Otros navegadores](#otros-navegadores-chromium-021)); sin él el build prod avisa y el build QA falla.
 
 ### Login con Google en producción (checklist)
 
@@ -40,18 +40,42 @@ Los builds prod y QA fallan si su bundle contiene restos dev (login dev, mensaje
 2. **Pantalla de consentimiento OAuth** del proyecto de Google Cloud (el mismo proyecto de Firebase): tipo **Externo** y **publicada en producción** (hay usuarios de dos organizaciones de Google Workspace, `@impulseai.cl` y `@compratuparcela.cl`; *Interno* solo admite cuentas de la organización dueña del proyecto). Con solo estos scopes básicos normalmente no hace falta la verificación de Google (ver el README principal, paso 2); scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
 3. **Cliente OAuth de tipo "Extensión de Chrome"** (Google Cloud → APIs y servicios → Credenciales) con el **ID del ítem de la Chrome Web Store**. Créalo **en el mismo proyecto de Google Cloud que Firebase**: así Firebase acepta el access token sin más. Si lo creas en otro proyecto, agrégalo en Firebase Auth → Google → *Safelist client IDs from external projects*; si no, `signInWithCredential` falla con `auth/invalid-credential` (la extensión lo muestra como "Google rechazó el acceso").
 4. Pon ese client ID en `VITE_OAUTH_CLIENT_ID` y haz `npm run build`.
+5. Para Edge, Brave, Opera, Vivaldi y Arc: en el **cliente web** del proveedor Google (Google Cloud → Credenciales → *Web client (auto created by Google Service)*, el mismo que aparece en Firebase Auth → Google → *Configuración del SDK web*) agrega en **URI de redireccionamiento autorizados** `https://egaklokkbnbnccnjicaahaifnkaeobfj.chromiumapp.org/` (ya hecho para el ID de la tienda), y pon su client ID en `VITE_GOOGLE_WEB_CLIENT_ID` de `.env.production.local`. Ver [Otros navegadores](#otros-navegadores-chromium-021).
 
 Notas:
 - El flujo es `chrome.identity.getAuthToken` (access token, no ID token) → `GoogleAuthProvider.credential(null, accessToken)` → `signInWithCredential` de `firebase/auth/web-extension`. Firebase obtiene el perfil con ese token; con el scope `email` el usuario queda con `emailVerified: true` y el ID token de Firebase trae `email_verified: true` (lo exige `joinOrg`). Sin el scope `email` Firebase no recibe el correo y `joinOrg` rechaza con `no-email`.
-- `getAuthToken` usa **siempre la cuenta principal del perfil de Chrome** (no hay selector de cuenta). El colaborador debe usar un perfil de Chrome con su cuenta de la empresa; con una cuenta personal verá "Esta cuenta no es de la empresa". Si el perfil no tiene cuenta, la extensión le pide iniciar sesión en Chrome.
-- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin esperar a la tienda usa el build QA ([QA sin la tienda](#qa-sin-la-tienda)), que tiene el mismo ID que el ítem publicado.
+- `getAuthToken` usa **siempre la cuenta principal del perfil de Chrome** (no hay selector de cuenta). El colaborador debe usar un perfil de Chrome con su cuenta de la empresa; con una cuenta personal verá "Esta cuenta no es de la empresa". Si el perfil no tiene cuenta (o `getAuthToken` falla por otro motivo que no sea una cancelación, p. ej. un paquete sin `oauth2`), desde la 0.2.1 se abre la ventana de Google para elegir la cuenta ([Otros navegadores](#otros-navegadores-chromium-021)); sin `VITE_GOOGLE_WEB_CLIENT_ID`, la extensión le pide iniciar sesión en Chrome.
+- El client ID está atado al ID de la extensión: una copia descomprimida de `dist` tiene otro ID y el login falla. Para probar el build prod sin esperar a la tienda usa el build QA ([QA sin la tienda](#qa-sin-la-tienda)), que tiene el mismo ID que el ítem publicado. Lo mismo vale para la redirect URI del cliente web (`https://<ID>.chromiumapp.org/`).
+
+## Otros navegadores Chromium (0.2.1)
+
+`chrome.identity.getAuthToken` solo funciona en Google Chrome. Desde la 0.2.1, en los demás navegadores Chromium el login usa `chrome.identity.launchWebAuthFlow` ([spec](../docs/specs/2026-10-01-login-otros-navegadores.md)).
+
+| Navegador | Instalar desde Chrome Web Store | Login |
+|---|---|---|
+| Google Chrome | Directo | `getAuthToken` (cuenta del perfil de Chrome) |
+| Microsoft Edge | En la ficha de la tienda, pulsa **"Permitir extensiones de otras tiendas"** → *Permitir* y luego **Agregar a Chrome** (o activa *edge://extensions → Permitir extensiones de otras tiendas*) | Ventana de Google para elegir la cuenta |
+| Brave | Directo | Ventana de Google para elegir la cuenta |
+| Vivaldi | Directo | Ventana de Google para elegir la cuenta |
+| Opera | Primero instala el complemento **"Install Chrome Extensions"** de addons.opera.com; después **Agregar a Opera** en la ficha | Ventana de Google para elegir la cuenta |
+| Arc | Directo | Ventana de Google para elegir la cuenta |
+| Firefox, Safari | No compatibles | — |
+
+Cómo funciona:
+- **Elección del método**: si `getAuthToken` existe y funciona, se usa (Chrome, sin cambios). Si no existe, o falla por **cualquier motivo que no sea una cancelación del usuario**, se usa `launchWebAuthFlow`: "no soportado" (Edge: *"This API is not supported on Microsoft Edge"* o, en versiones antiguas, *"OAuth2 request failed: Connection failed (-2)"*; Brave: *"The user turned off browser signin"*; cualquier *"not supported / is not available"*), perfil sin cuenta Google (*"The user is not signed in"*: Opera, Vivaldi o un perfil de Chrome sin cuenta; la persona elige la cuenta en la ventana de Google), configuración OAuth (*"Invalid OAuth2 Client ID"*, p. ej. un paquete sin `manifest.oauth2`) y errores desconocidos. Los errores después de obtener el token (Firebase, red) no cambian de método. Si el usuario **cancela** en cualquiera de los dos, no se prueba el otro. Si el método alternativo también falla, el mensaje termina con el texto técnico original, p. ej. *"Google no permitió iniciar sesión (invalid_client) (getAuthToken: Invalid OAuth2 Client ID.)."*. Sin `VITE_GOOGLE_WEB_CLIENT_ID`, en Google Chrome (marca de `navigator.userAgentData`) se muestra el error propio de Chrome con ese texto, y en los demás navegadores "Este navegador no es compatible todavía: usa Google Chrome".
+- **Flujo alternativo** (OpenID Connect implícito): `https://accounts.google.com/o/oauth2/v2/auth?client_id=<VITE_GOOGLE_WEB_CLIENT_ID>&response_type=id_token&redirect_uri=<chrome.identity.getRedirectURL()>&scope=openid%20email%20profile&nonce=<aleatorio>&prompt=select_account`, más `hd=<dominio>` si hay **un solo** dominio permitido (con dos no se envía; `joinOrg` sigue rechazando otras cuentas). Del fragmento de la URL de vuelta se lee el `id_token`; `error=access_denied` o cerrar la ventana es una cancelación; otro `error` o la falta de `id_token` dan un mensaje claro.
+- **`nonce`**: 128 bits aleatorios por intento; se compara con el del `id_token` decodificando su payload **sin verificar la firma**: la verifica Firebase Auth en `signInWithCredential` (firma de Google, emisor, audiencia = cliente del proveedor, vencimiento). Luego `GoogleAuthProvider.credential(idToken)` → `signInWithCredential` → `joinOrg`, igual que en Chrome.
+- **Sesión y cierre de sesión**: Firebase Auth (IndexedDB) renueva solo su sesión; el `id_token` de Google solo sirve para entrar y no se guarda. Al cerrar sesión se cierra la de Firebase; `removeCachedAuthToken` solo se llama donde existe `getAuthToken`.
+- **Sin `VITE_GOOGLE_WEB_CLIENT_ID`** (o sin `launchWebAuthFlow`), los navegadores distintos de Chrome muestran "Este navegador no es compatible todavía: usa Google Chrome." Chrome sigue funcionando con `getAuthToken`.
+- El popup tiene el mismo botón; fuera de Chrome agrega "Se abrirá una ventana de Google: elige tu cuenta de la empresa." Al abrirse la ventana de Google el popup se cierra; el login termina en el service worker y al reabrir el popup ya aparece la sesión (o, si se canceló, el botón de nuevo).
+- **Configuración en Google Cloud**: el cliente web del proveedor Google debe tener la redirect URI `https://egaklokkbnbnccnjicaahaifnkaeobfj.chromiumapp.org/` (ID de la tienda; ya agregada). Una copia descomprimida con otro ID necesita su propia `https://<ID>.chromiumapp.org/`. Como es el mismo cliente del proveedor de Firebase, Firebase acepta el `id_token` sin más configuración.
 
 ## QA sin la tienda
 
 Para probar contra **producción** una versión que la tienda todavía está revisando (o antes de subirla):
 
 1. `npm run build:qa -w extension` (o `npm run build:extension:qa` en la raíz) → `extension/dist-qa` (ignorada por git). Usa exactamente el mismo código y configuración que `npm run build` (`.env.production` + `.env.production.local`, incluido `VITE_OAUTH_CLIENT_ID` → `oauth2`) y pasa los mismos chequeos de restos dev. La única diferencia es que el manifest lleva `"key"` con la clave pública del ítem de la tienda (`build/store-key.ts`; no es secreta). El build imprime el ID y falla si no es `egaklokkbnbnccnjicaahaifnkaeobfj`.
-2. A diferencia de `build`, que solo avisa, el build QA **falla** si falta `VITE_OAUTH_CLIENT_ID` o algún valor real de Firebase: un QA sin login no sirve.
+2. A diferencia de `build`, que solo avisa, el build QA **falla** si falta `VITE_OAUTH_CLIENT_ID`, `VITE_GOOGLE_WEB_CLIENT_ID` o algún valor real de Firebase: un QA sin login no sirve.
 3. `chrome://extensions` → **Modo de desarrollador** → **Cargar descomprimida** → `extension/dist-qa`.
 
 Qué tener en cuenta:
@@ -70,7 +94,7 @@ Qué tener en cuenta:
 | `alarms` | Pulso de 30 s de la jornada y alarma exacta en las transiciones del horario (entrada, colación, salida) y los recordatorios. |
 | `storage` | Estado local: jornada, bloques, cola de envíos, horario en caché. |
 | `unlimitedStorage` | Cola de capturas sin conexión (hasta 20 JPEG superan los 10 MB por defecto). |
-| `identity` | Iniciar sesión con la cuenta Google de la empresa (`chrome.identity.getAuthToken`). |
+| `identity` | Iniciar sesión con la cuenta Google de la empresa (`chrome.identity.getAuthToken` en Chrome; `launchWebAuthFlow` en Edge, Brave, Opera, Vivaldi y Arc). |
 | `scripting` | Inyectar el content script en las pestañas ya abiertas al instalar o actualizar. |
 | `notifications` | Recordatorios del horario (0.2.0): "¿Iniciar jornada?" a la hora de entrada y "¿Cerrar jornada?" a la de salida, con un botón que lo hace. |
 | `<all_urls>` | Content script de actividad (solo "hubo input") y captura de la pestaña visible si el admin la activa. |
@@ -116,7 +140,7 @@ icons/                   PNG 16/32/48/128 (normal y "on")
 ```
 
 ### Login y aviso
-- Prod: `chrome.identity.getAuthToken({ interactive: true })` → `GoogleAuthProvider.credential(null, token)` → `signInWithCredential` → `joinOrg`. Si Firebase rechaza el token (revocado/caducado en la caché de Chrome) se quita con `removeCachedAuthToken` y se reintenta una vez. Cancelar el diálogo de Google muestra un aviso, no un error. Los rechazos de `joinOrg` (`details.reason`) se muestran con mensajes claros: sin invitación / revocada ("Pide a tu administrador que te invite"), otro dominio ("Usa tu cuenta @impulseai.cl o @compratuparcela.cl", con la lista configurada), desactivada, correo no verificado.
+- Prod: `chrome.identity.getAuthToken({ interactive: true })` → `GoogleAuthProvider.credential(null, token)` → `signInWithCredential` → `joinOrg`. Si Firebase rechaza el token (revocado/caducado en la caché de Chrome) se quita con `removeCachedAuthToken` y se reintenta una vez. Cancelar el diálogo de Google muestra un aviso, no un error. Los rechazos de `joinOrg` (`details.reason`) se muestran con mensajes claros: sin invitación / revocada ("Pide a tu administrador que te invite"), otro dominio ("Usa tu cuenta @impulseai.cl o @compratuparcela.cl", con la lista configurada), desactivada, correo no verificado. Fuera de Chrome (o si `getAuthToken` no está soportado): `launchWebAuthFlow` con `id_token` y `nonce`, ver [Otros navegadores](#otros-navegadores-chromium-021).
 - Cerrar sesión (solo sin jornada abierta) también quita el token de la caché de Chrome.
 - Si Firebase termina la sesión con la jornada abierta (`onAuthStateChanged` → null, o al despertar con otro usuario), la jornada se cierra localmente y se encola el cierre (sale si ese usuario vuelve a entrar).
 - Aviso (`consent.html`): se abre solo tras iniciar sesión si falta aceptar `CONSENT_VERSION`; "Aceptar" escribe `consentAcceptedAt` + `consentVersion` en `users/{uid}`. `session.start` lo exige.

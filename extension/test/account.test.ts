@@ -3,12 +3,21 @@ import { CONSENT_VERSION, SLOT_MS, dateKey, slotStartOf, type ActivitySlot } fro
 import {
   AuthError,
   JoinError,
+  UNSUPPORTED_BROWSER_MESSAGE,
+  decodeJwtPayload,
+  dropCachedGoogleToken,
   firebaseSignInError,
   googleSignIn,
   identityError,
+  isUnsupportedIdentityError,
   joinErrorMessage,
+  randomNonce,
+  signInWithBestMethod,
   type GoogleSignInDeps,
+  type SignInMethods,
+  type WebAuthFlowDeps,
 } from '../src/background/auth';
+import { hasGetAuthToken, isGoogleChrome, usesGoogleAccountChooser } from '../src/browser';
 import { dailyFromJSON, recordSlots, todayTotals } from '../src/background/daily';
 import { blurRadiusFor, encodeUnderLimit, fitWidth, supportsFilter } from '../src/background/image';
 import { SIGNED_OUT_NOTICE } from '../src/background/session';
@@ -116,6 +125,313 @@ describe('Google sign-in (chrome.identity → Firebase)', () => {
     const err = await googleSignIn(net).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AuthError);
     expect((err as AuthError).message).toMatch(/Sin conexión/);
+  });
+});
+
+/** Unsigned JWT with this payload (the signature is Firebase's business). */
+function jwt(payload: Record<string, unknown>): string {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64(payload)}.firma`;
+}
+
+const REDIRECT = 'https://egaklokkbnbnccnjicaahaifnkaeobfj.chromiumapp.org/';
+
+describe('sign-in in other Chromium browsers (launchWebAuthFlow)', () => {
+  function methods(o: { chrome?: Partial<GoogleSignInDeps> | null; web?: Partial<WebAuthFlowDeps>; isGoogleChrome?: boolean; response?: (url: string) => string | undefined } = {}) {
+    const calls = { getAuthToken: 0, launched: [] as string[], idTokens: [] as string[], accessTokens: [] as string[] };
+    const nonce = 'n-123';
+    const chromeDeps: GoogleSignInDeps = {
+      getAuthToken: async () => {
+        calls.getAuthToken++;
+        return 'access-1';
+      },
+      removeCachedAuthToken: async () => undefined,
+      signInWithToken: async (t) => {
+        calls.accessTokens.push(t);
+        return { uid: 'chrome-user', email: 'ana@compratuparcela.cl', displayName: 'Ana' };
+      },
+      ...(o.chrome ?? {}),
+    };
+    const m: SignInMethods = {
+      chrome: o.chrome === null ? null : chromeDeps,
+      isGoogleChrome: o.isGoogleChrome ?? true,
+      web: {
+        clientId: 'web-client.apps.googleusercontent.com',
+        redirectUri: () => REDIRECT,
+        domains: ['compratuparcela.cl'],
+        nonce: () => nonce,
+        launchWebAuthFlow: async (url) => {
+          calls.launched.push(url);
+          return o.response ? o.response(url) : `${REDIRECT}#id_token=${jwt({ nonce, email: 'ana@compratuparcela.cl' })}&authuser=0`;
+        },
+        signInWithIdToken: async (t) => {
+          calls.idTokens.push(t);
+          return { uid: 'web-user', email: 'ana@compratuparcela.cl', displayName: 'Ana' };
+        },
+        ...(o.web ?? {}),
+      },
+    };
+    return { m, calls, nonce };
+  }
+
+  it('Chrome: getAuthToken works → no web flow (unchanged)', async () => {
+    const { m, calls } = methods();
+    await expect(signInWithBestMethod(m)).resolves.toMatchObject({ uid: 'chrome-user' });
+    expect(calls.accessTokens).toEqual(['access-1']);
+    expect(calls.launched).toEqual([]);
+  });
+
+  it('no getAuthToken → launchWebAuthFlow with the OpenID parameters, nonce checked, id_token to Firebase', async () => {
+    const { m, calls, nonce } = methods({ chrome: null });
+    await expect(signInWithBestMethod(m)).resolves.toMatchObject({ uid: 'web-user' });
+    expect(calls.launched).toHaveLength(1);
+    const url = new URL(calls.launched[0] as string);
+    expect(`${url.origin}${url.pathname}`).toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      client_id: 'web-client.apps.googleusercontent.com',
+      response_type: 'id_token',
+      redirect_uri: REDIRECT,
+      scope: 'openid email profile',
+      nonce,
+      prompt: 'select_account',
+      hd: 'compratuparcela.cl',
+    });
+    expect(calls.launched[0]).toContain('scope=openid%20email%20profile');
+    expect(decodeJwtPayload(calls.idTokens[0] as string)).toMatchObject({ nonce });
+  });
+
+  it('getAuthToken failing with "not supported" (Edge, Brave) → web flow', async () => {
+    for (const message of [
+      'This API is not supported on Microsoft Edge.',
+      'OAuth2 request failed: Connection failed (-2).',
+      'The user turned off browser signin',
+      'chrome.identity.getAuthToken is not available',
+    ]) {
+      expect(isUnsupportedIdentityError(new Error(message))).toBe(true);
+      const { m, calls } = methods({
+        chrome: {
+          getAuthToken: async () => {
+            throw new Error(message);
+          },
+        },
+      });
+      await expect(signInWithBestMethod(m)).resolves.toMatchObject({ uid: 'web-user' });
+      expect(calls.launched).toHaveLength(1);
+    }
+    // Chrome's own messages are not "unsupported".
+    for (const message of ['The user did not approve access.', 'OAuth2 not granted or revoked.', 'Invalid OAuth2 Client ID.', 'The user is not signed in.']) {
+      expect(isUnsupportedIdentityError(new Error(message))).toBe(false);
+    }
+  });
+
+  const failing = (message: string) => ({
+    getAuthToken: async (): Promise<string> => {
+      throw new Error(message);
+    },
+  });
+
+  it('any getAuthToken failure other than a cancellation → web flow (no account, OAuth config, unknown)', async () => {
+    for (const message of [
+      'The user is not signed in.',
+      'Invalid OAuth2 Client ID.',
+      "OAuth2 request failed: Service responded with error: 'bad client id: x'",
+      'Something unexpected',
+    ]) {
+      for (const isGoogleChrome of [true, false]) {
+        const { m, calls } = methods({ chrome: failing(message), isGoogleChrome });
+        await expect(signInWithBestMethod(m)).resolves.toMatchObject({ uid: 'web-user' });
+        expect(calls.launched).toHaveLength(1);
+      }
+    }
+  });
+
+  it('Firebase/network errors after getAuthToken succeeded are final (no web flow)', async () => {
+    const { m, calls } = methods({
+      chrome: {
+        signInWithToken: async () => {
+          throw Object.assign(new Error('x'), { code: 'auth/network-request-failed' });
+        },
+      },
+    });
+    await expect(signInWithBestMethod(m)).rejects.toMatchObject({ reason: 'network' });
+    expect(calls.launched).toEqual([]);
+  });
+
+  it('fallback also failing → final message carries getAuthToken’s original text', async () => {
+    const { m } = methods({ chrome: failing('Invalid OAuth2 Client ID.'), response: () => `${REDIRECT}#error=invalid_client` });
+    const err = (await signInWithBestMethod(m).catch((e: unknown) => e)) as AuthError;
+    expect(err).toBeInstanceOf(AuthError);
+    expect(err.reason).toBe('web-auth-failed');
+    expect(err.message).toBe('Google no permitió iniciar sesión (invalid_client) (getAuthToken: Invalid OAuth2 Client ID.).');
+    // Cancelling the Google window after the fallback stays a plain cancellation.
+    const cancelled = methods({ chrome: failing('Invalid OAuth2 Client ID.'), response: () => `${REDIRECT}#error=access_denied` });
+    await expect(signInWithBestMethod(cancelled.m)).rejects.toMatchObject({ reason: 'cancelled', message: expect.not.stringContaining('getAuthToken') });
+  });
+
+  it('no web client ID after a getAuthToken failure: Chrome shows its own error (with the technical text); other browsers "use Google Chrome"', async () => {
+    const inChrome = methods({ chrome: failing('Invalid OAuth2 Client ID.'), web: { clientId: '' }, isGoogleChrome: true });
+    const e1 = (await signInWithBestMethod(inChrome.m).catch((e: unknown) => e)) as AuthError;
+    expect(e1.reason).toBe('oauth-config');
+    expect(e1.message).toContain('(Invalid OAuth2 Client ID.)');
+    expect(inChrome.calls.launched).toEqual([]);
+    const signedOut = methods({ chrome: failing('The user is not signed in.'), web: { clientId: '' }, isGoogleChrome: true });
+    const e2 = (await signInWithBestMethod(signedOut.m).catch((e: unknown) => e)) as AuthError;
+    expect(e2.reason).toBe('chrome-signed-out');
+    expect(e2.message).toMatch(/Inicia sesión en Chrome.*\(getAuthToken: The user is not signed in\.\)\.$/);
+    const edge = methods({ chrome: failing('This API is not supported on Microsoft Edge.'), web: { clientId: '' }, isGoogleChrome: false });
+    const e3 = (await signInWithBestMethod(edge.m).catch((e: unknown) => e)) as AuthError;
+    expect(e3.reason).toBe('unsupported-browser');
+    expect(e3.message).toBe('Este navegador no es compatible todavía: usa Google Chrome (getAuthToken: This API is not supported on Microsoft Edge.).');
+  });
+
+  it('cancelling in Chrome does not open the other method', async () => {
+    const { m, calls } = methods({
+      chrome: {
+        getAuthToken: async () => {
+          throw new Error('The user did not approve access.');
+        },
+      },
+    });
+    await expect(signInWithBestMethod(m)).rejects.toMatchObject({ reason: 'cancelled' });
+    expect(calls.launched).toEqual([]);
+  });
+
+  it('cancelling the Google window (closed, access_denied or no URL) → "cancelled", no sign-in', async () => {
+    const closed = methods({
+      chrome: null,
+      web: {
+        launchWebAuthFlow: async () => {
+          throw new Error('The user did not approve access.');
+        },
+      },
+    });
+    const denied = methods({ chrome: null, response: () => `${REDIRECT}#error=access_denied` });
+    const empty = methods({ chrome: null, response: () => undefined });
+    for (const { m, calls } of [closed, denied, empty]) {
+      const err = await signInWithBestMethod(m).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AuthError);
+      expect(err).toMatchObject({ reason: 'cancelled', message: expect.stringMatching(/Se canceló/) });
+      expect(calls.idTokens).toEqual([]);
+      expect(calls.getAuthToken).toBe(0);
+    }
+  });
+
+  it('id_token with another nonce → clear error, no sign-in', async () => {
+    const { m, calls } = methods({ chrome: null, response: () => `${REDIRECT}#id_token=${jwt({ nonce: 'otro' })}` });
+    await expect(signInWithBestMethod(m)).rejects.toMatchObject({ reason: 'nonce-mismatch', message: expect.stringMatching(/no corresponde/) });
+    expect(calls.idTokens).toEqual([]);
+    // Not a JWT at all.
+    const bad = methods({ chrome: null, response: () => `${REDIRECT}#id_token=basura` });
+    await expect(signInWithBestMethod(bad.m)).rejects.toMatchObject({ reason: 'nonce-mismatch' });
+  });
+
+  it('response with another error (fragment or query) → message with the code', async () => {
+    const frag = methods({ chrome: null, response: () => `${REDIRECT}#error=invalid_client&error_description=Unauthorized` });
+    await expect(signInWithBestMethod(frag.m)).rejects.toMatchObject({
+      reason: 'web-auth-failed',
+      message: 'Google no permitió iniciar sesión (invalid_client: Unauthorized).',
+    });
+    const query = methods({ chrome: null, response: () => `${REDIRECT}?error=server_error` });
+    await expect(signInWithBestMethod(query.m)).rejects.toMatchObject({ reason: 'web-auth-failed', message: expect.stringContaining('server_error') });
+    expect(frag.calls.idTokens).toEqual([]);
+  });
+
+  it('response without id_token → clear error', async () => {
+    const { m, calls } = methods({ chrome: null, response: () => `${REDIRECT}#authuser=0` });
+    await expect(signInWithBestMethod(m)).rejects.toMatchObject({ reason: 'no-id-token', message: expect.stringMatching(/no devolvió/) });
+    expect(calls.idTokens).toEqual([]);
+  });
+
+  it('no web client ID (or no launchWebAuthFlow) → "use Google Chrome", nothing opened', async () => {
+    const { m, calls } = methods({ chrome: null, web: { clientId: '' } });
+    await expect(signInWithBestMethod(m)).rejects.toMatchObject({ reason: 'unsupported-browser', message: UNSUPPORTED_BROWSER_MESSAGE });
+    expect(UNSUPPORTED_BROWSER_MESSAGE).toBe('Este navegador no es compatible todavía: usa Google Chrome.');
+    expect(calls.launched).toEqual([]);
+  });
+
+  it('hd only with one allowed domain', async () => {
+    const two = methods({ chrome: null, web: { domains: ['impulseai.cl', 'compratuparcela.cl'] } });
+    await signInWithBestMethod(two.m);
+    expect(new URL(two.calls.launched[0] as string).searchParams.has('hd')).toBe(false);
+    const one = methods({ chrome: null, web: { domains: ['impulseai.cl'] } });
+    await signInWithBestMethod(one.m);
+    expect(new URL(one.calls.launched[0] as string).searchParams.get('hd')).toBe('impulseai.cl');
+  });
+
+  it('Firebase rejecting the id_token → clear errors', async () => {
+    const bad = methods({
+      chrome: null,
+      web: {
+        signInWithIdToken: async () => {
+          throw Object.assign(new Error('x'), { code: 'auth/invalid-credential' });
+        },
+      },
+    });
+    await expect(signInWithBestMethod(bad.m)).rejects.toMatchObject({ reason: 'invalid-token' });
+    const net = methods({
+      chrome: null,
+      web: {
+        signInWithIdToken: async () => {
+          throw Object.assign(new Error('x'), { code: 'auth/network-request-failed' });
+        },
+      },
+    });
+    await expect(signInWithBestMethod(net.m)).rejects.toMatchObject({ reason: 'network' });
+  });
+
+  it('random nonce per attempt; JWT payload decoding (base64url, UTF-8)', () => {
+    const a = randomNonce();
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(randomNonce()).not.toBe(a);
+    expect(decodeJwtPayload(jwt({ nonce: 'x', name: 'Íñigo ✓' }))).toEqual({ nonce: 'x', name: 'Íñigo ✓' });
+    expect(decodeJwtPayload('a.b')).toBeNull();
+    expect(decodeJwtPayload('')).toBeNull();
+  });
+});
+
+describe('browser detection and sign-out without getAuthToken', () => {
+  const realChrome = globalThis.chrome;
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  function setNavigator(value: unknown): void {
+    Object.defineProperty(globalThis, 'navigator', { value, configurable: true, writable: true });
+  }
+  afterEach(() => {
+    globalThis.chrome = realChrome;
+    if (realNavigator) Object.defineProperty(globalThis, 'navigator', realNavigator);
+  });
+
+  it('detects Google Chrome by its brand', () => {
+    setNavigator({ userAgentData: { brands: [{ brand: 'Chromium' }, { brand: 'Microsoft Edge' }] } });
+    expect(isGoogleChrome()).toBe(false);
+    setNavigator({ userAgentData: { brands: [{ brand: 'Chromium' }, { brand: 'Google Chrome' }] } });
+    expect(isGoogleChrome()).toBe(true);
+    setNavigator({});
+    expect(isGoogleChrome()).toBe(true);
+  });
+
+  it('popup hint only when the account chooser will open', () => {
+    setNavigator({ userAgentData: { brands: [{ brand: 'Google Chrome' }] } });
+    globalThis.chrome = { identity: { getAuthToken: () => undefined } } as unknown as typeof chrome;
+    expect(hasGetAuthToken()).toBe(true);
+    expect(usesGoogleAccountChooser()).toBe(false);
+    globalThis.chrome = { identity: {} } as unknown as typeof chrome;
+    expect(hasGetAuthToken()).toBe(false);
+    expect(usesGoogleAccountChooser()).toBe(true);
+    setNavigator({ userAgentData: { brands: [{ brand: 'Brave' }] } });
+    globalThis.chrome = { identity: { getAuthToken: () => undefined } } as unknown as typeof chrome;
+    expect(usesGoogleAccountChooser()).toBe(true);
+  });
+
+  it('sign-out: removeCachedAuthToken only where getAuthToken exists', async () => {
+    const removeCachedAuthToken = vi.fn(async () => undefined);
+    globalThis.chrome = { identity: { removeCachedAuthToken } } as unknown as typeof chrome;
+    await expect(dropCachedGoogleToken()).resolves.toBeUndefined();
+    expect(removeCachedAuthToken).not.toHaveBeenCalled();
+    globalThis.chrome = {
+      identity: { getAuthToken: async () => ({ token: 'tok' }), removeCachedAuthToken },
+    } as unknown as typeof chrome;
+    await dropCachedGoogleToken();
+    expect(removeCachedAuthToken).toHaveBeenCalledWith({ token: 'tok' });
   });
 });
 
