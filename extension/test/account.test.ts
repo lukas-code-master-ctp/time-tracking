@@ -13,11 +13,15 @@ import {
   joinErrorMessage,
   randomNonce,
   signInWithBestMethod,
+  webAuthFlowSignIn,
+  withKeepAlive,
   type GoogleSignInDeps,
   type SignInMethods,
   type WebAuthFlowDeps,
 } from '../src/background/auth';
 import { hasGetAuthToken, isGoogleChrome, usesGoogleAccountChooser } from '../src/browser';
+import { App, SIGN_IN_RESULT_KEY } from '../src/background/app';
+import { isPopupRequest } from '../src/messages';
 import { dailyFromJSON, recordSlots, todayTotals } from '../src/background/daily';
 import { blurRadiusFor, encodeUnderLimit, fitWidth, supportsFilter } from '../src/background/image';
 import { SIGNED_OUT_NOTICE } from '../src/background/session';
@@ -379,6 +383,41 @@ describe('sign-in in other Chromium browsers (launchWebAuthFlow)', () => {
     await expect(signInWithBestMethod(net.m)).rejects.toMatchObject({ reason: 'network' });
   });
 
+  it('getAuthToken resolving an empty token (no error) is not a cancellation → web flow', async () => {
+    const { m, calls } = methods({ chrome: { getAuthToken: async () => '' } });
+    await expect(signInWithBestMethod(m)).resolves.toMatchObject({ uid: 'web-user' });
+    expect(calls.launched).toHaveLength(1);
+    // …and if the web flow then fails, the message says why getAuthToken was skipped.
+    const both = methods({ chrome: { getAuthToken: async () => '' }, response: () => `${REDIRECT}#error=server_error` });
+    await expect(signInWithBestMethod(both.m)).rejects.toMatchObject({
+      reason: 'web-auth-failed',
+      message: expect.stringContaining('(getAuthToken: getAuthToken no devolvió un token)'),
+    });
+  });
+
+  it('getRedirectURL throwing → clear AuthError, nothing opened', async () => {
+    const { m, calls } = methods({
+      chrome: null,
+      web: {
+        redirectUri: () => {
+          throw new Error('chrome.identity.getRedirectURL is not a function');
+        },
+      },
+    });
+    const err = await webAuthFlowSignIn(m.web).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AuthError);
+    expect(calls.launched).toEqual([]);
+  });
+
+  it('the id_token never ends up in an error message', async () => {
+    const token = jwt({ nonce: 'otro', email: 'ana@compratuparcela.cl' });
+    const { m } = methods({ chrome: null, response: () => `${REDIRECT}#id_token=${token}` });
+    const err = (await signInWithBestMethod(m).catch((e: unknown) => e)) as AuthError;
+    expect(err).toBeInstanceOf(AuthError);
+    expect(err.message).not.toContain(token);
+    expect(err.detail).not.toContain(token);
+  });
+
   it('random nonce per attempt; JWT payload decoding (base64url, UTF-8)', () => {
     const a = randomNonce();
     expect(a).toMatch(/^[0-9a-f]{32}$/);
@@ -432,6 +471,112 @@ describe('browser detection and sign-out without getAuthToken', () => {
     } as unknown as typeof chrome;
     await dropCachedGoogleToken();
     expect(removeCachedAuthToken).toHaveBeenCalledWith({ token: 'tok' });
+  });
+});
+
+describe('result of the last sign-in attempt (chrome.storage.session, shown when the popup reopens)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('an error is kept with its Spanish message until the popup shows it (cleared with its `at`)', async () => {
+    const h = await createHarness({ joined: false });
+    h.auth.user = null;
+    h.auth.signInInteractive = async () => {
+      throw new AuthError('nonce-mismatch', 'La respuesta de Google no corresponde a este inicio de sesión. Inténtalo de nuevo.');
+    };
+    const res = await h.app.handlePopup({ type: 'auth.signIn' });
+    expect(res).toMatchObject({ ok: false, reason: 'nonce-mismatch' });
+    const stored = h.chrome.session.data[SIGN_IN_RESULT_KEY];
+    expect(stored).toMatchObject({ ok: false, message: expect.stringMatching(/no corresponde/) });
+    // The reopened popup reads it from the status…
+    const status = await h.app.status();
+    expect(status.signInResult).toEqual(stored);
+    const at = status.signInResult!.at;
+    // …another `at` (a newer attempt) is not cleared…
+    await h.app.handlePopup({ type: 'auth.clearSignInResult', at: at - 1 });
+    expect((await h.app.status()).signInResult).not.toBeNull();
+    // …and once shown it is gone.
+    const cleared = await h.app.handlePopup({ type: 'auth.clearSignInResult', at });
+    expect(cleared.ok && cleared.status.signInResult).toBeNull();
+    expect(h.chrome.session.data).not.toHaveProperty(SIGN_IN_RESULT_KEY);
+  });
+
+  it('success is kept too; a new attempt drops the previous result before starting', async () => {
+    const h = await createHarness({ joined: false });
+    h.auth.user = null;
+    h.chrome.session.data[SIGN_IN_RESULT_KEY] = { at: 1, ok: false, message: 'anterior' };
+    let seenDuringAttempt: unknown = 'not called';
+    h.auth.signInInteractive = async () => {
+      seenDuringAttempt = h.chrome.session.data[SIGN_IN_RESULT_KEY];
+      h.auth.setUser({ uid: 'u1', email: 'ana@compratuparcela.cl', displayName: 'Ana' });
+      return h.auth.user!;
+    };
+    const res = await h.app.handlePopup({ type: 'auth.signIn' });
+    expect(res.ok).toBe(true);
+    expect(seenDuringAttempt).toBeUndefined();
+    expect(res.ok && res.status.signInResult).toMatchObject({ ok: true, message: 'Sesión iniciada como ana@compratuparcela.cl.' });
+    expect(res.ok && res.status.profile).not.toBeNull();
+  });
+
+  it('an unexpected (non-Spanish) error is wrapped in a Spanish message; sign-out drops the result', async () => {
+    const h = await createHarness({ joined: false });
+    h.auth.user = null;
+    h.auth.signInInteractive = async () => {
+      throw new TypeError('Failed to fetch');
+    };
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await h.app.handlePopup({ type: 'auth.signIn' });
+    expect((await h.app.status()).signInResult).toMatchObject({
+      ok: false,
+      message: 'No se pudo iniciar sesión. Inténtalo de nuevo (Failed to fetch).',
+    });
+    await h.app.handlePopup({ type: 'auth.signOut' });
+    expect((await h.app.status()).signInResult).toBeNull();
+  });
+
+  it('without chrome.storage.session nothing breaks (no result kept)', async () => {
+    const h = await createHarness({ joined: false });
+    const app = new App({ store: h.app.store, backend: h.backend, auth: h.auth, images: h.images, sessionArea: null });
+    h.auth.signInInteractive = async () => {
+      throw new AuthError('cancelled', 'Se canceló el inicio de sesión.');
+    };
+    await expect(app.handlePopup({ type: 'auth.signIn' })).resolves.toMatchObject({ ok: false, reason: 'cancelled' });
+    expect((await app.status()).signInResult).toBeNull();
+  });
+
+  it('clearSignInResult needs a numeric `at`', () => {
+    expect(isPopupRequest({ type: 'auth.clearSignInResult', at: 5 })).toBe(true);
+    expect(isPopupRequest({ type: 'auth.clearSignInResult' })).toBe(false);
+    expect(isPopupRequest({ type: 'auth.clearSignInResult', at: '5' })).toBe(false);
+  });
+
+  it('the worker is kept alive (an API call every 20 s) while the sign-in is pending, and not after', async () => {
+    vi.useFakeTimers();
+    const ping = vi.fn(async () => undefined);
+    let finish!: (v: string) => void;
+    const done = withKeepAlive(() => new Promise<string>((r) => (finish = r)), ping);
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(ping).toHaveBeenCalledTimes(3);
+    finish('ok');
+    await expect(done).resolves.toBe('ok');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(ping).toHaveBeenCalledTimes(3);
+    // A failing task (or ping) never leaves the interval running.
+    const failing = withKeepAlive(
+      async () => {
+        await new Promise((r) => setTimeout(r, 25_000));
+        throw new Error('x');
+      },
+      () => {
+        throw new Error('no api');
+      },
+    );
+    const settled = expect(failing).rejects.toThrow('x');
+    await vi.advanceTimersByTimeAsync(30_000);
+    await settled;
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

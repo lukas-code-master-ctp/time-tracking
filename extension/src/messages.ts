@@ -33,6 +33,8 @@ export type PopupRequest =
   /** Google login with chrome.identity (prod). */
   | { type: 'auth.signIn' }
   | { type: 'auth.signOut' }
+  /** The popup showed the last sign-in result (`at` of {@link SignInResult}): forget it. */
+  | { type: 'auth.clearSignInResult'; at: number }
   /** Calls `joinOrg` again (e.g. after the admin sent the invitation). */
   | { type: 'auth.refreshProfile' }
   /** Consent page: accept the transparency notice of `version`. */
@@ -52,6 +54,7 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'session.stop',
   'auth.signIn',
   'auth.signOut',
+  'auth.clearSignInResult',
   'auth.refreshProfile',
   'consent.accept',
   'sync.now',
@@ -65,7 +68,22 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
   if (!POPUP_TYPES.includes(m.type as PopupRequestType)) return false;
   if (__APP_ENV__ === 'dev' && m.type === 'auth.devSignIn') return typeof m.email === 'string';
   if (m.type === 'consent.accept') return typeof m.version === 'string';
+  if (m.type === 'auth.clearSignInResult') return typeof (msg as { at?: unknown }).at === 'number';
   return true;
+}
+
+/**
+ * Outcome of the last "Iniciar sesión con Google" attempt, kept in
+ * chrome.storage.session by the service worker: outside Chrome the popup
+ * closes when Google's window opens, so it shows this when reopened. Removed
+ * when a new attempt starts, when the popup shows it and on sign-out.
+ */
+export interface SignInResult {
+  /** When the attempt ended (ms); identifies it for `auth.clearSignInResult`. */
+  at: number;
+  ok: boolean;
+  /** Spanish message for the popup (error, or who signed in). Never a token. */
+  message: string;
 }
 
 export interface StatusView {
@@ -95,6 +113,8 @@ export interface StatusView {
   lastSyncOkAt: number | null;
   /** Last user-facing problem (Spanish), e.g. session closed automatically. */
   notice: string | null;
+  /** Result of the last sign-in attempt not shown yet by the popup. */
+  signInResult: SignInResult | null;
 }
 
 export type PopupResponse =

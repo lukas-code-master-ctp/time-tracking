@@ -9,6 +9,11 @@
  *   and today's schedule, only when configured), today's hours, activity
  *   (excluding meeting time) and time in web meetings, what is being
  *   measured, pending uploads, sign out.
+ *
+ * Outside Chrome the popup closes when Google's window opens, so the result
+ * of "Iniciar sesión con Google" (error or success) is read back from the
+ * status (`signInResult`, kept by the worker in chrome.storage.session),
+ * shown once and then cleared.
  */
 import '../ui/base.css';
 import './popup.css';
@@ -20,6 +25,10 @@ import { ALLOWED_DOMAINS } from '../env';
 const root = document.getElementById('app') as HTMLElement;
 let busy = false;
 let lastError: string | null = null;
+/** Success message (e.g. "Sesión iniciada como …"), shown until the next action. */
+let lastInfo: string | null = null;
+/** `at` of the sign-in result already shown (each one is shown once). */
+let shownSignInAt: number | null = null;
 let lastRendered = '';
 let current: StatusView | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -31,11 +40,15 @@ function openConsent(): void {
 async function act(req: PopupRequest): Promise<void> {
   if (busy) return;
   busy = true;
+  lastInfo = null;
   render();
   const res = await send(req);
   busy = false;
   lastError = res.ok ? null : res.error;
   if (res.status) current = res.status;
+  // Still open after the sign-in (Chrome): this response is the result; just
+  // show it and forget the stored copy (the consent page is opened below).
+  if (req.type === 'auth.signIn') takeSignInResult(res.status, false);
   lastRendered = key();
   render();
   if (!res.status) void refresh();
@@ -47,7 +60,27 @@ async function act(req: PopupRequest): Promise<void> {
 }
 
 function key(): string {
-  return JSON.stringify([current, lastError, busy]);
+  return JSON.stringify([current, lastError, lastInfo, busy]);
+}
+
+/**
+ * Shows the stored result of the last sign-in attempt once and asks the
+ * worker to clear it. `reopened`: the popup was closed during the attempt
+ * (Google's window), so also open the notice the attempt would have opened.
+ */
+function takeSignInResult(s: StatusView | undefined, reopened: boolean): void {
+  const r = s?.signInResult;
+  if (!r || r.at === shownSignInAt) return;
+  shownSignInAt = r.at;
+  if (r.ok) {
+    lastInfo = r.message;
+    lastError = null;
+    if (reopened && s?.consentRequired) openConsent();
+  } else {
+    lastError = r.message;
+    lastInfo = null;
+  }
+  void send({ type: 'auth.clearSignInResult', at: r.at });
 }
 
 /** Re-renders only when something changed (keeps a half-typed email intact). */
@@ -55,6 +88,7 @@ async function refresh(): Promise<void> {
   const res = await send({ type: 'status' });
   if (res.status) current = res.status;
   if (!res.ok) lastError = res.error;
+  takeSignInResult(res.status, true);
   const k = key();
   if (k === lastRendered) return;
   lastRendered = k;
@@ -128,6 +162,7 @@ function draw(): void {
   // No aria-live on the whole popup (the timer would be announced every second): only the banners.
   if (s.notice) root.append(el('div', { className: 'banner warn', role: 'status', textContent: s.notice }));
   if (lastError) root.append(el('div', { className: 'banner error', role: 'alert', textContent: lastError }));
+  if (lastInfo && !lastError) root.append(el('div', { className: 'banner ok', role: 'status', textContent: lastInfo }));
 
   if (!s.user) return renderSignedOut(s);
   if (!s.profile) return renderNotJoined(s);

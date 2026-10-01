@@ -89,6 +89,23 @@ async function main(): Promise<void> {
     await popup.getByRole('button', { name: 'Entrar (emulador)' }).waitFor({ timeout: 15_000 });
     console.log('Popup OK: el SW respondió el estado (login dev visible).');
 
+    // Sign-in result kept by the worker while the popup was closed (Google's
+    // window, other browsers): a reopened popup shows it once and clears it.
+    const resultMsg = 'Google no permitió iniciar sesión (prueba del smoke).';
+    await sw.evaluate((m) => chrome.storage.session.set({ 'tt.signInResult': { at: Date.now(), ok: false, message: m } }), resultMsg);
+    const reopened: Page = await ctx.newPage();
+    reopened.on('pageerror', (e) => errors.push(`popup: ${e.message}`));
+    await reopened.goto(`chrome-extension://${extId}/popup.html`);
+    await reopened.getByRole('alert').filter({ hasText: resultMsg }).waitFor({ timeout: 15_000 });
+    for (let i = 0; ; i++) {
+      const left = await sw.evaluate(() => chrome.storage.session.get('tt.signInResult'));
+      if (!('tt.signInResult' in left)) break;
+      if (i >= 50) fail('el popup mostró el resultado del inicio de sesión pero no lo borró');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await reopened.close();
+    console.log('Popup OK: muestra el resultado del último inicio de sesión al reabrirse y lo borra.');
+
     if (E2E) await e2e(ctx, popup);
     if (errors.length > 0) fail(errors.join('\n'));
     console.log('SMOKE OK');

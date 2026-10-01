@@ -30,9 +30,10 @@ import {
   isPopupRequest,
   type PopupRequest,
   type PopupResponse,
+  type SignInResult,
   type StatusView,
 } from '../messages';
-import { AuthError, JoinError, type AuthService } from './auth';
+import { AuthError, JoinError, withKeepAlive, type AuthService } from './auth';
 import { todayTotals } from './daily';
 import type { ImageProcessor } from './image';
 import { enqueueOp } from './queue';
@@ -59,6 +60,8 @@ import { Tracker } from './tracker';
 export const ORG_CONFIG_REFRESH_MS = 5 * 60_000;
 /** …and when the worker wakes up, if older than this. */
 export const ORG_CONFIG_WAKE_REFRESH_MS = 60_000;
+/** chrome.storage.session key of the last sign-in attempt (see {@link SignInResult}). */
+export const SIGN_IN_RESULT_KEY = 'tt.signInResult';
 
 export interface AppDeps {
   store: StateStore;
@@ -81,12 +84,15 @@ export class App {
   readonly session: SessionManager;
   readonly screenshots: ScreenshotManager;
   private readonly now: () => number;
+  /** chrome.storage.session (null = unavailable: the sign-in result is not kept). */
+  private readonly sessionArea: StorageAreaLike | null;
 
   constructor(deps: AppDeps) {
     this.store = deps.store;
     this.auth = deps.auth;
     this.backend = deps.backend;
     this.now = deps.now ?? Date.now;
+    this.sessionArea = deps.sessionArea !== undefined ? deps.sessionArea : (chrome.storage?.session ?? null);
     this.tracker = new Tracker({
       store: this.store,
       now: this.now,
@@ -438,8 +444,10 @@ export class App {
           await this.session.stop();
           break;
         case 'auth.signIn':
-          await this.auth.signInInteractive();
-          await this.refreshProfile();
+          await this.signIn();
+          break;
+        case 'auth.clearSignInResult':
+          await this.clearSignInResult(req.at);
           break;
         case 'auth.signOut':
           await this.signOut();
@@ -463,6 +471,61 @@ export class App {
       if (!(err instanceof SessionError || err instanceof AuthError)) console.warn('[timetracking] popup', err);
       return { ok: false, error, ...(reason ? { reason } : {}), status: await this.status().catch(() => undefined) } as PopupResponse;
     }
+  }
+
+  /**
+   * "Iniciar sesión con Google": signInInteractive + joinOrg. The outcome is
+   * kept in chrome.storage.session ({@link SIGN_IN_RESULT_KEY}) because
+   * outside Chrome the popup closes when Google's window opens and never gets
+   * this response; the reopened popup shows it (spec
+   * 2026-10-01-login-otros-navegadores). A new attempt first drops the
+   * previous result. The worker is kept alive while Google's window is open.
+   */
+  async signIn(): Promise<void> {
+    await withKeepAlive(async () => {
+      await this.saveSignInResult(null);
+      try {
+        const user = await this.auth.signInInteractive();
+        await this.refreshProfile();
+        const who = user.email ?? this.auth.currentUser()?.email;
+        await this.saveSignInResult({ ok: true, message: who ? `Sesión iniciada como ${who}.` : 'Sesión iniciada.' });
+      } catch (err) {
+        // AuthError messages are already Spanish (and never carry a token).
+        const message =
+          err instanceof AuthError || err instanceof JoinError || err instanceof SessionError
+            ? err.message
+            : `No se pudo iniciar sesión. Inténtalo de nuevo (${err instanceof Error ? err.message : String(err)}).`;
+        await this.saveSignInResult({ ok: false, message });
+        throw err;
+      }
+    });
+  }
+
+  private async saveSignInResult(result: Omit<SignInResult, 'at'> | null): Promise<void> {
+    if (!this.sessionArea) return;
+    try {
+      if (result) await this.sessionArea.set({ [SIGN_IN_RESULT_KEY]: { at: this.now(), ...result } satisfies SignInResult });
+      else await this.sessionArea.remove(SIGN_IN_RESULT_KEY);
+    } catch (err) {
+      console.warn('[timetracking] resultado del inicio de sesión', err);
+    }
+  }
+
+  async readSignInResult(): Promise<SignInResult | null> {
+    if (!this.sessionArea) return null;
+    try {
+      const v = (await this.sessionArea.get(SIGN_IN_RESULT_KEY))[SIGN_IN_RESULT_KEY] as Partial<SignInResult> | undefined;
+      if (!v || typeof v.at !== 'number' || typeof v.ok !== 'boolean' || typeof v.message !== 'string') return null;
+      return { at: v.at, ok: v.ok, message: v.message };
+    } catch {
+      return null;
+    }
+  }
+
+  /** The popup showed the result `at`; a newer attempt's result is kept. */
+  async clearSignInResult(at: number): Promise<void> {
+    const current = await this.readSignInResult();
+    if (current && current.at === at) await this.saveSignInResult(null);
   }
 
   /** joinOrg for the signed-in user; keeps the profile or the rejection reason. */
@@ -553,12 +616,14 @@ export class App {
     });
     await Promise.all([this.sync.kick(true), this.screenshots.drain(true)]).catch(() => undefined);
     await this.auth.signOut();
+    await this.saveSignInResult(null);
     await this.store.run(() => this.session.ensureAlarm());
   }
 
   async status(): Promise<StatusView> {
     await this.auth.ready();
     const user = this.auth.currentUser();
+    const signInResult = await this.readSignInResult();
     return this.store.run(() => {
       const { meta, session, queue, shots, daily } = this.store;
       const profile = user && meta.profileUid === user.uid ? meta.profile : null;
@@ -580,6 +645,7 @@ export class App {
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,
         notice: meta.notice,
+        signInResult,
       };
     });
   }

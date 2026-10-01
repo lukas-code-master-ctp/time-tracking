@@ -25,6 +25,10 @@ Un login alternativo con **`chrome.identity.launchWebAuthFlow`**, que sí existe
 ## Popup
 Mismo botón "Iniciar sesión con Google". Si se usa el método alternativo, se abre la ventana de Google para elegir la cuenta, con la ayuda "Elige tu cuenta de la empresa".
 
+Fuera de Chrome el popup se cierra al abrirse la ventana de Google y no recibe la respuesta. Por eso el service worker guarda el resultado del último intento en `chrome.storage.session` (`tt.signInResult`: `{ at, ok, message }`, con el mensaje en español y nunca un token). El popup lo muestra una vez al reabrirse (error en rojo o "Sesión iniciada como …"), abre el aviso si el ingreso lo pide y pide borrarlo con `auth.clearSignInResult`. Un intento nuevo y cerrar sesión también lo borran. Mientras la ventana de Google está abierta, el worker se mantiene vivo con una llamada trivial a la API cada 20 s (MV3 lo detiene tras 30 s sin eventos).
+
+Nota de seguridad: no se envía `state`. El `nonce` ya liga el `id_token` (firmado por Google) a este intento, y `launchWebAuthFlow` solo devuelve la redirección de la ventana que abrió esta extensión, así que no hay un callback web donde se pueda inyectar una respuesta. Firebase valida firma, emisor, vencimiento y audiencia del `id_token`.
+
 ## Configuración y despliegue
 - Variable nueva `VITE_GOOGLE_WEB_CLIENT_ID`, que va en `.env.production.local` y en la documentación. Si falta, el método alternativo muestra "Este navegador no es compatible todavía: usa Google Chrome".
 - Extensión **0.2.1**. Hay que subirla a la tienda cuando se apruebe la 0.2.0, o cancelar esa revisión y enviar la 0.2.1.

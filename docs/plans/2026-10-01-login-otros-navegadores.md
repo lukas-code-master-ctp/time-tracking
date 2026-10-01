@@ -11,3 +11,4 @@ Spec: `docs/specs/2026-10-01-login-otros-navegadores.md`.
    - README y `extension/README.md`.
 3. **Revisión** (otro subagente).
 4. **Verificación**: typecheck, test, test:emulator, build:qa, build prod con `--out-dir`, e2e:extension. Generar el `.zip` 0.2.1.
+5. **Revisión y mejora** (subagente): resultado del último intento en `chrome.storage.session` mostrado al reabrir el popup, worker vivo durante la ventana de Google, token vacío de `getAuthToken` como fallo (no cancelación), `getRedirectURL` dentro del manejo de errores. Tests y verificación completa.

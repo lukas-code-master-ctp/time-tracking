@@ -217,7 +217,13 @@ export async function googleSignIn(deps: GoogleSignInDeps): Promise<AuthUser> {
     } catch (err) {
       throw identityError(err);
     }
-    if (!token) throw new AuthError('cancelled', 'Se canceló el inicio de sesión.');
+    // Chrome rejects on a cancellation; an empty token without an error only
+    // comes from a browser whose getAuthToken does not really work, so it is
+    // NOT a cancellation (signInWithBestMethod falls back to the web flow).
+    if (!token) {
+      const detail = 'getAuthToken no devolvió un token';
+      throw new AuthError('identity-failed', `No se pudo iniciar sesión con Google (${detail}).`, detail);
+    }
     try {
       return await deps.signInWithToken(token);
     } catch (err) {
@@ -324,6 +330,8 @@ export async function webAuthFlowSignIn(deps: WebAuthFlowDeps): Promise<AuthUser
   const nonce = deps.nonce();
   let redirect: string | undefined;
   try {
+    // getRedirectURL inside the try: a browser where it throws gets a clear
+    // AuthError instead of a raw TypeError.
     redirect = await deps.launchWebAuthFlow(webAuthUrl({ clientId: deps.clientId, redirectUri: deps.redirectUri(), nonce, domains: deps.domains }));
   } catch (err) {
     // Window closed: "The user did not approve access." → cancelled.
@@ -396,6 +404,36 @@ export async function signInWithBestMethod(m: SignInMethods): Promise<AuthUser> 
   }
 }
 
+/** Interval of {@link withKeepAlive}: below the 30 s idle limit of an MV3 service worker. */
+export const KEEP_ALIVE_MS = 20_000;
+
+/**
+ * Runs `task` while calling a trivial extension API every
+ * {@link KEEP_ALIVE_MS}: an MV3 service worker is stopped after 30 s without
+ * events or API calls, and a pending `launchWebAuthFlow` / `getAuthToken`
+ * (the user choosing an account, typing a password, 2-step verification…)
+ * does not count. The popup closes when Google's window opens, so nothing
+ * else keeps the worker alive until the result is saved.
+ */
+export async function withKeepAlive<T>(
+  task: () => Promise<T>,
+  ping: () => unknown = () => chrome.runtime.getPlatformInfo?.(),
+  intervalMs = KEEP_ALIVE_MS,
+): Promise<T> {
+  const timer = setInterval(() => {
+    try {
+      void Promise.resolve(ping()).catch(() => undefined);
+    } catch {
+      // ping unavailable: nothing else to do
+    }
+  }, intervalMs);
+  try {
+    return await task();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 async function chromeAuthToken(interactive: boolean): Promise<string> {
   const res = (await chrome.identity.getAuthToken({ interactive })) as chrome.identity.GetAuthTokenResult | string | undefined;
   return typeof res === 'string' ? res : (res?.token ?? '');
@@ -428,7 +466,8 @@ export function createFirebaseAuthService(auth: Auth, functions: Functions): Aut
     signInInteractive(): Promise<AuthUser> {
       const signIn = async (credential: ReturnType<typeof GoogleAuthProvider.credential>): Promise<AuthUser> =>
         toAuthUser((await signInWithCredential(auth, credential)).user) as AuthUser;
-      const hasWebFlow = typeof chrome.identity?.launchWebAuthFlow === 'function';
+      const hasWebFlow =
+        typeof chrome.identity?.launchWebAuthFlow === 'function' && typeof chrome.identity?.getRedirectURL === 'function';
       return signInWithBestMethod({
         chrome: hasGetAuthToken()
           ? {
