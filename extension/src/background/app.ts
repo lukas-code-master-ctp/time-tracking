@@ -286,9 +286,12 @@ export class App {
    * the read applies when it arrives (from that instant: seconds already
    * attributed are not undone — see the spec, revisión del e2e).
    * `config/org` is read afterwards, as before (screenshots are not taken in
-   * the first seconds anyway).
+   * the first seconds anyway). What would make the start fail (signed out,
+   * notice not accepted, already open…) is checked first, so those answers
+   * (and the notice page opened by a reminder) do not wait for the read.
    */
   async startWorkDay(): Promise<void> {
+    await this.session.checkCanStart();
     const schedule = this.refreshSchedule(0).catch(logError('config/schedule'));
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([

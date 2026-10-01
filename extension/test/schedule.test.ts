@@ -519,6 +519,58 @@ describe('extension with working hours', () => {
       await slow;
       expect(h.app.store.meta.schedule?.config).not.toBeNull();
     });
+
+    it('a newer read that fails does not discard an older one that answers later', async () => {
+      await useSchedule(h, null);
+      h.backend.schedule = CONFIG;
+      h.backend.scheduleDelayMs = 5_000;
+      const slow = h.app.refreshSchedule(0); // sees CONFIG, answers late
+      await vi.advanceTimersByTimeAsync(0);
+      h.backend.scheduleDelayMs = 0;
+      h.backend.scheduleFailures.push('unavailable');
+      await h.app.refreshSchedule(0); // newer, fails: keeps the cache
+      expect(h.app.store.meta.schedule?.config).toBeNull();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await slow;
+      expect(h.app.store.meta.schedule?.config).not.toBeNull();
+    });
+
+    it('two clicks during the read start a single work day', async () => {
+      await useSchedule(h, null);
+      h.backend.schedule = CONFIG;
+      h.backend.scheduleDelayMs = 1_000;
+      const first = h.app.handlePopup({ type: 'session.start' });
+      const second = h.app.handlePopup({ type: 'session.start' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      const answers = await Promise.all([first, second]);
+      h.backend.scheduleDelayMs = 0;
+      expect(answers.filter((r) => r.ok)).toHaveLength(1);
+      expect(answers.find((r) => !r.ok)).toMatchObject({ reason: 'already-open' });
+      await h.settle();
+      expect(h.backend.ops('createSession')).toHaveLength(1);
+      expect(h.app.store.acc!.paused).toBe(true);
+    });
+
+    it('without the current notice: answers at once, without waiting for (or making) the read', async () => {
+      await useSchedule(h, CONFIG);
+      h.app.store.meta.profile = { ...h.app.store.meta.profile!, consentVersion: '2026-09-30' };
+      h.backend.scheduleDelayMs = 10_000;
+      const fetches = h.backend.scheduleFetches;
+      expect(await h.app.handlePopup({ type: 'session.start' })).toMatchObject({ ok: false, reason: 'consent-required' });
+      await h.app.onReminderAction(`tt-reminder:start:${MON}`);
+      expect(h.chrome.world.openedTabs).toEqual(['chrome-extension://test-extension-id/consent.html']);
+      expect(h.backend.scheduleFetches).toBe(fetches);
+      expect(h.app.store.session).toBeNull();
+    });
+
+    it('signed out: answers at once, without reading the schedule', async () => {
+      await useSchedule(h, CONFIG);
+      await h.app.handlePopup({ type: 'auth.signOut' });
+      h.backend.scheduleDelayMs = 10_000;
+      const fetches = h.backend.scheduleFetches;
+      expect(await h.app.handlePopup({ type: 'session.start' })).toMatchObject({ ok: false, reason: 'signed-out' });
+      expect(h.backend.scheduleFetches).toBe(fetches);
+    });
   });
 
   describe('cache and compatibility', () => {

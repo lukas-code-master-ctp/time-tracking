@@ -89,31 +89,50 @@ export class SessionManager {
     this.now = deps.now ?? Date.now;
   }
 
+  /**
+   * Throws the SessionError `start()` would throw (already open, signed out,
+   * not joined, disabled, notice not accepted) without starting anything:
+   * `App.startWorkDay` checks it before waiting for the schedule read, so
+   * those answers (and the notice page of the reminder) are immediate.
+   */
+  async checkCanStart(): Promise<void> {
+    await this.auth.ready();
+    await this.store.run(() => {
+      this.assertCanStart();
+    });
+  }
+
+  /** Inside store.run. Returns the signed-in uid. */
+  private assertCanStart(): string {
+    if (this.store.session) throw new SessionError('already-open', 'Ya tienes una jornada iniciada.');
+    const user = this.auth.currentUser();
+    if (!user) throw new SessionError('signed-out', 'Inicia sesión para iniciar tu jornada.');
+    const { profile, profileUid } = this.store.meta;
+    if (!profile || profileUid !== user.uid) {
+      throw new SessionError('not-joined', 'Tu cuenta aún no está habilitada. Pide a tu admin que te invite.');
+    }
+    if (profile.status !== 'active') {
+      throw new SessionError('user-disabled', 'Tu cuenta está desactivada. Habla con tu administrador.');
+    }
+    if (profile.consentVersion !== CONSENT_VERSION) {
+      throw new SessionError('consent-required', 'Antes de iniciar tu jornada debes leer y aceptar el aviso de medición.');
+    }
+    return user.uid;
+  }
+
   async start(): Promise<void> {
     await this.auth.ready();
     await this.store.run(async () => {
-      if (this.store.session) throw new SessionError('already-open', 'Ya tienes una jornada iniciada.');
-      const user = this.auth.currentUser();
-      if (!user) throw new SessionError('signed-out', 'Inicia sesión para iniciar tu jornada.');
-      const { profile, profileUid } = this.store.meta;
-      if (!profile || profileUid !== user.uid) {
-        throw new SessionError('not-joined', 'Tu cuenta aún no está habilitada. Pide a tu admin que te invite.');
-      }
-      if (profile.status !== 'active') {
-        throw new SessionError('user-disabled', 'Tu cuenta está desactivada. Habla con tu administrador.');
-      }
-      if (profile.consentVersion !== CONSENT_VERSION) {
-        throw new SessionError('consent-required', 'Antes de iniciar tu jornada debes leer y aceptar el aviso de medición.');
-      }
+      const uid = this.assertCanStart();
       const at = this.now();
       const id = newSessionId();
-      await this.tracker.beginMeasuring(id, user.uid, at);
-      this.store.session = { id, uid: user.uid, startedAt: at };
+      await this.tracker.beginMeasuring(id, uid, at);
+      this.store.session = { id, uid, startedAt: at };
       enqueueOp(this.store.queue, {
         kind: 'sessionCreate',
-        uid: user.uid,
+        uid,
         sessionId: id,
-        session: { uid: user.uid, startedAt: at, endedAt: null, endReason: null, lastHeartbeatAt: at },
+        session: { uid, startedAt: at, endedAt: null, endReason: null, lastHeartbeatAt: at },
       });
       this.store.meta.lastCurrentSyncAt = at;
       this.store.meta.notice = null;

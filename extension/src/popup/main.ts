@@ -24,6 +24,8 @@ import { ALLOWED_DOMAINS } from '../env';
 
 const root = document.getElementById('app') as HTMLElement;
 let busy = false;
+/** Request in progress (while `busy`): "Iniciar jornada" can wait up to 3 s for the schedule read. */
+let inFlight: PopupRequest['type'] | null = null;
 let lastError: string | null = null;
 /** Success message (e.g. "Sesión iniciada como …"), shown until the next action. */
 let lastInfo: string | null = null;
@@ -40,10 +42,12 @@ function openConsent(): void {
 async function act(req: PopupRequest): Promise<void> {
   if (busy) return;
   busy = true;
+  inFlight = req.type;
   lastInfo = null;
   render();
   const res = await send(req);
   busy = false;
+  inFlight = null;
   lastError = res.ok ? null : res.error;
   if (res.status) current = res.status;
   // Still open after the sign-in (Chrome): this response is the result; just
@@ -60,7 +64,7 @@ async function act(req: PopupRequest): Promise<void> {
 }
 
 function key(): string {
-  return JSON.stringify([current, lastError, lastInfo, busy]);
+  return JSON.stringify([current, lastError, lastInfo, busy, inFlight]);
 }
 
 /**
@@ -263,7 +267,7 @@ function renderReady(s: StatusView): void {
     el('div', { className: 'label small muted', textContent: on ? 'Jornada en curso' : 'Jornada no iniciada' }),
     on
       ? button('Cerrar jornada', 'stop big', () => void act({ type: 'session.stop' }))
-      : button('Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
+      : button(inFlight === 'session.start' ? 'Iniciando…' : 'Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
   ]);
   if (on) {
     const startedAt = s.session!.startedAt;
