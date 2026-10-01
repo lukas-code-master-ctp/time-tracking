@@ -20,7 +20,8 @@ import {
 } from '../src/background/schedule';
 import { PULSE_ALARM } from '../src/background/session';
 import { STORAGE_KEYS } from '../src/background/state';
-import { createHarness, type Harness } from './fakes';
+import { START_SCHEDULE_TIMEOUT_MS } from '../src/background/app';
+import { activity, createHarness, hello, type Harness } from './fakes';
 
 // Monday 2026-10-05 (Chile on summer time, UTC-3). 2026-10-12 is a holiday.
 const MON = '2026-10-05';
@@ -422,6 +423,101 @@ describe('extension with working hours', () => {
       expect(h.chrome.world.openedTabs).toEqual(['chrome-extension://test-extension-id/popup.html']);
       await h.app.onReminderClicked('other-notification');
       expect(h.chrome.world.openedTabs).toHaveLength(1);
+    });
+  });
+
+  describe('starting the work day reads the schedule first (race of the e2e)', () => {
+    /** Everything measured so far: uploaded blocks plus the one in progress. */
+    const measured = (): number => uploadedTracked(h) + (current(h)?.trackedSeconds ?? 0);
+
+    it('a schedule saved after the last read pauses from the very instant of the start (slow read)', async () => {
+      // Fresh cache without a schedule (read at 08:00), then the admin saves one
+      // that excludes now: the next start must not measure a single second.
+      await useSchedule(h, null);
+      await hello(h, 11);
+      h.backend.schedule = CONFIG;
+      h.backend.scheduleDelayMs = 1_500;
+      const started = h.app.handlePopup({ type: 'session.start' });
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(await started).toMatchObject({ ok: true });
+      h.backend.scheduleDelayMs = 0; // later reads (pulse, alarm) answer at once
+      expect(h.app.store.acc!.paused).toBe(true);
+      expect(h.app.store.session!.startedAt).toBe(at(MON, '08:00', 1.5));
+      await activity(h, 11);
+      vi.setSystemTime(at(MON, '08:00', 4));
+      await activity(h, 11);
+      await runUntil(h, at(MON, '08:12'));
+      expect(measured()).toBe(0);
+      expect((await h.app.status()).schedule).toMatchObject({ label: 'Fuera de horario: no se mide' });
+    });
+
+    it('the same with an instant read: paused before the first second', async () => {
+      await useSchedule(h, null);
+      h.backend.schedule = CONFIG;
+      expect(await h.app.handlePopup({ type: 'session.start' })).toMatchObject({ ok: true });
+      expect(h.app.store.acc!.paused).toBe(true);
+      vi.setSystemTime(at(MON, '08:00', 1));
+      await activity(h, 11);
+      await runUntil(h, at(MON, '08:12'));
+      expect(measured()).toBe(0);
+    });
+
+    it('also from the "Iniciar jornada" button of a reminder', async () => {
+      await useSchedule(h, null);
+      h.backend.schedule = CONFIG;
+      h.backend.scheduleDelayMs = 800;
+      const started = h.app.onReminderAction(`tt-reminder:start:${MON}`);
+      await vi.advanceTimersByTimeAsync(800);
+      await started;
+      h.backend.scheduleDelayMs = 0;
+      expect(h.app.store.session).not.toBeNull();
+      expect(h.app.store.acc!.paused).toBe(true);
+      await runUntil(h, at(MON, '08:12'));
+      expect(measured()).toBe(0);
+    });
+
+    it('a read that does not answer in time: starts with the cache, the schedule applies on arrival', async () => {
+      await useSchedule(h, null);
+      h.backend.schedule = CONFIG;
+      h.backend.scheduleDelayMs = 10_000;
+      const fetches = h.backend.scheduleFetches;
+      const started = h.app.handlePopup({ type: 'session.start' });
+      await vi.advanceTimersByTimeAsync(START_SCHEDULE_TIMEOUT_MS);
+      expect(await started).toMatchObject({ ok: true });
+      expect(h.app.store.session!.startedAt).toBe(at(MON, '08:00') + START_SCHEDULE_TIMEOUT_MS);
+      expect(h.app.store.acc!.paused).toBe(false); // cached: no schedule
+      await vi.advanceTimersByTimeAsync(10_000 - START_SCHEDULE_TIMEOUT_MS);
+      await h.settle();
+      h.backend.scheduleDelayMs = 0;
+      expect(h.app.store.acc!.paused).toBe(true);
+      expect(h.backend.scheduleFetches).toBe(fetches + 1); // read once for the start (not again after it)
+      await runUntil(h, at(MON, '08:12'));
+      // Only the seconds before the answer (documented limitation): 08:00:03–08:00:09.
+      expect(measured()).toBe(10 - START_SCHEDULE_TIMEOUT_MS / 1000);
+    });
+
+    it('offline: starts right away with the cached schedule (paused)', async () => {
+      await useSchedule(h, CONFIG);
+      h.backend.offline = true;
+      expect(await h.app.handlePopup({ type: 'session.start' })).toMatchObject({ ok: true });
+      expect(h.app.store.session!.startedAt).toBe(at(MON, '08:00'));
+      expect(h.app.store.acc!.paused).toBe(true);
+    });
+
+    it('an older read that answers late never overwrites a newer one', async () => {
+      await useSchedule(h, null);
+      h.backend.scheduleDelayMs = 5_000;
+      const fetches = h.backend.scheduleFetches;
+      const slow = h.app.refreshSchedule(0); // sees "no schedule"
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.backend.scheduleFetches).toBe(fetches + 1);
+      h.backend.schedule = CONFIG;
+      h.backend.scheduleDelayMs = 0;
+      await h.app.refreshSchedule(0); // sees CONFIG
+      expect(h.app.store.meta.schedule?.config).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await slow;
+      expect(h.app.store.meta.schedule?.config).not.toBeNull();
     });
   });
 

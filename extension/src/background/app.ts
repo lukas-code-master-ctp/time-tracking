@@ -10,7 +10,9 @@
  *
  * Working hours (spec 2026-09-30-horarios): `config/schedule` and
  * `schedules/{uid}` are read at the same moments as `config/org` and cached
- * in `tt.meta.schedule`. The "schedule tick" (every pulse, every wake-up and
+ * in `tt.meta.schedule`; starting a work day reads the schedule first (with
+ * a short timeout) so the pause applies from its first instant (see
+ * `startWorkDay`). The "schedule tick" (every pulse, every wake-up and
  * the one-shot `SCHEDULE_ALARM` set at the next transition, reminder or
  * midnight) applies the pause of the measurement, shows the start/end
  * reminders (chrome.notifications, one per event and day) and re-arms the
@@ -60,6 +62,12 @@ import { Tracker } from './tracker';
 export const ORG_CONFIG_REFRESH_MS = 5 * 60_000;
 /** …and when the worker wakes up, if older than this. */
 export const ORG_CONFIG_WAKE_REFRESH_MS = 60_000;
+/**
+ * Starting a work day first re-reads the schedule (spec 2026-09-30-horarios,
+ * revisión del e2e): it waits at most this long, then starts with the cached
+ * one (offline, slow network) and the read applies when it arrives.
+ */
+export const START_SCHEDULE_TIMEOUT_MS = 3_000;
 /** chrome.storage.session key of the last sign-in attempt (see {@link SignInResult}). */
 export const SIGN_IN_RESULT_KEY = 'tt.signInResult';
 
@@ -86,6 +94,9 @@ export class App {
   private readonly now: () => number;
   /** chrome.storage.session (null = unavailable: the sign-in result is not kept). */
   private readonly sessionArea: StorageAreaLike | null;
+  /** Order of the schedule reads: an older read that answers late never overwrites a newer one. */
+  private scheduleReads = 0;
+  private scheduleWritten = 0;
 
   constructor(deps: AppDeps) {
     this.store = deps.store;
@@ -242,6 +253,7 @@ export class App {
       return !schedule || schedule.uid !== user.uid || this.now() - schedule.fetchedAt >= maxAgeMs;
     });
     if (!user || !due) return;
+    const seq = ++this.scheduleReads;
     let raw: { config: unknown; person: unknown };
     try {
       raw = await this.backend.fetchSchedule(user.uid);
@@ -255,11 +267,41 @@ export class App {
     if (raw.person != null && !person) console.warn('[timetracking] schedules/{uid} no es válido: se ignora');
     await this.store.run(async () => {
       if (this.store.meta.profileUid !== user.uid) return; // signed out meanwhile
+      if (seq < this.scheduleWritten) return; // a newer read already answered
+      this.scheduleWritten = seq;
       const at = this.now();
       this.store.meta.schedule = { uid: user.uid, config, person, fetchedAt: at };
       this.tracker.applySchedule(at);
       await this.store.save(...(this.store.acc ? (['acc', 'meta'] as const) : (['meta'] as const)));
     });
+  }
+
+  /**
+   * "Iniciar jornada" (popup or reminder). The schedule is re-read BEFORE the
+   * accumulator opens, so the pause is applied at the very instant of the
+   * start: a schedule saved by the admin since the last read (the cache lives
+   * up to 5 min) must not measure a single second outside the working hours.
+   * The read waits at most START_SCHEDULE_TIMEOUT_MS; without an answer
+   * (offline, slow network) the work day starts with the cached schedule and
+   * the read applies when it arrives (from that instant: seconds already
+   * attributed are not undone — see the spec, revisión del e2e).
+   * `config/org` is read afterwards, as before (screenshots are not taken in
+   * the first seconds anyway).
+   */
+  async startWorkDay(): Promise<void> {
+    const schedule = this.refreshSchedule(0).catch(logError('config/schedule'));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      schedule,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, START_SCHEDULE_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+    await this.session.start();
+    void Promise.all([this.refreshOrgConfig(0).catch(logError('config/org')), schedule])
+      .then(() => this.scheduleTick())
+      .catch(logError('horario'));
   }
 
   /** Effective schedule of the signed-in, joined, active user (inside store.run). */
@@ -351,10 +393,7 @@ export class App {
     }
     try {
       if (reminder.kind === 'start') {
-        await this.session.start();
-        void this.refreshConfig(0)
-          .then(() => this.scheduleTick())
-          .catch(logError('horario'));
+        await this.startWorkDay();
       } else {
         await this.session.stop();
       }
@@ -435,10 +474,7 @@ export class App {
         case 'status':
           break;
         case 'session.start':
-          await this.session.start();
-          void this.refreshConfig(0)
-            .then(() => this.scheduleTick())
-            .catch(logError('horario'));
+          await this.startWorkDay();
           break;
         case 'session.stop':
           await this.session.stop();

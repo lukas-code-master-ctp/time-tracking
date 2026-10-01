@@ -53,6 +53,8 @@ export class FakeBackend implements Remote {
   scheduleFetches = 0;
   /** Errors of the next schedule reads (apart from `failures`, which other ops consume). */
   scheduleFailures: string[] = [];
+  /** Network latency of the schedule reads (setTimeout: fake timers advance it). The answer is the data at request time. */
+  scheduleDelayMs = 0;
   /** Behave like firestore.rules before 2026-09-30 (no `meetingSeconds`). */
   legacyActivityRules = false;
   /** storage.rules refuse every upload (e.g. user disabled). */
@@ -110,7 +112,9 @@ export class FakeBackend implements Remote {
     const code = this.scheduleFailures.shift();
     if (code) throw new BackendError(code);
     this.scheduleFetches++;
-    return { config: structuredClone(this.schedule), person: structuredClone(this.personSchedules.get(uid) ?? null) };
+    const answer = { config: structuredClone(this.schedule), person: structuredClone(this.personSchedules.get(uid) ?? null) };
+    if (this.scheduleDelayMs > 0) await new Promise((r) => setTimeout(r, this.scheduleDelayMs));
+    return answer;
   }
   async acceptConsent(uid: string, at: number, version: string): Promise<void> {
     this.check();
