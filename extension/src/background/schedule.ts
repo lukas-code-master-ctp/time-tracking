@@ -202,6 +202,13 @@ export function remindersForDay(schedule: EffectiveSchedule | null, date: string
   return out;
 }
 
+/**
+ * The lunch reminders without a button (lunch start, and lunch end with the
+ * work day open) are only informative: evaluated later than this after
+ * their time (late wake-up), they are handled without a notification.
+ */
+export const INFO_REMINDER_WINDOW_MS = 15 * 60_000;
+
 export interface ReminderDecision {
   /** Log to persist (today's, with the events handled now). */
   log: ReminderLog;
@@ -232,7 +239,8 @@ function variantFor(r: Reminder, workDayOpen: boolean): Reminder | null {
  * row in the spec (entry and "¿Retomar la jornada?" without an open work
  * day; lunch start, lunch end and exit with it open) and only if the next
  * event of the day has not happened yet: a late wake-up after the exit shows
- * no lunch reminder, nor the entry one.
+ * no lunch reminder, nor the entry one. The informative lunch reminders
+ * (without a button) also need to be within INFO_REMINDER_WINDOW_MS of their time.
  */
 export function decideReminders(
   schedule: EffectiveSchedule | null,
@@ -253,7 +261,10 @@ export function decideReminders(
     const following = reminders.slice(i + 1).find((f) => f.at > r.at);
     if (following && now >= following.at) return;
     const shown = variantFor(r, workDayOpen);
-    if (shown) notify.push(shown);
+    if (!shown) return;
+    const informative = shown.kind === 'lunchStart' || (shown.kind === 'lunchEnd' && !shown.resume);
+    if (informative && now > r.at + INFO_REMINDER_WINDOW_MS) return; // stale: not worth a notification
+    notify.push(shown);
   });
   const changed = fresh ? log !== null || next.done.length > 0 : next.done.length !== log.done.length;
   return { log: next, notify, changed };

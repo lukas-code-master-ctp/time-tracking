@@ -233,11 +233,20 @@ describe('schedule helpers (pure)', () => {
     expect(late.log.done).toEqual(['start', 'lunchStart', 'lunchEnd', 'end']);
     // Opened Chrome after the exit without a work day: nothing at all.
     expect(decideReminders(EFFECTIVE, at(MON, '18:40'), false, null).notify).toEqual([]);
-    // Woke up during the lunch (13:30): lunch start yes (its end did not happen yet), entry no.
-    expect(decideReminders(EFFECTIVE, at(MON, '13:30'), true, null).notify.map((r) => r.kind)).toEqual(['lunchStart']);
+    // Woke up during the lunch: lunch start only within 15 min of 13:00 (informative, no button); entry no.
+    expect(decideReminders(EFFECTIVE, at(MON, '13:10'), true, null).notify.map((r) => r.kind)).toEqual(['lunchStart']);
+    expect(decideReminders(EFFECTIVE, at(MON, '13:15'), true, null).notify.map((r) => r.kind)).toEqual(['lunchStart']);
+    const lateLunch = decideReminders(EFFECTIVE, at(MON, '13:15', 1), true, null);
+    expect(lateLunch).toMatchObject({ notify: [], log: { done: ['start', 'lunchStart'] } });
     expect(decideReminders(EFFECTIVE, at(MON, '13:30'), false, null).notify).toEqual([]);
-    // Woke up at 15:00 with the work day open: only the lunch end.
-    expect(decideReminders(EFFECTIVE, at(MON, '15:00'), true, { date: MON, done: ['start'] }).notify.map((r) => r.kind)).toEqual(['lunchEnd']);
+    // Work day open: lunch end at 14:10 yes; at 16:00 it is handled without a notification.
+    expect(decideReminders(EFFECTIVE, at(MON, '14:10'), true, { date: MON, done: ['start'] }).notify.map((r) => r.kind)).toEqual(['lunchEnd']);
+    const stale = decideReminders(EFFECTIVE, at(MON, '16:00'), true, { date: MON, done: ['start'] });
+    expect(stale).toMatchObject({ notify: [], changed: true, log: { done: ['start', 'lunchStart', 'lunchEnd'] } });
+    // "¿Retomar la jornada?" (with a button) keeps the rule: until the exit.
+    expect(decideReminders(EFFECTIVE, at(MON, '16:00'), false, { date: MON, done: ['start'] }).notify).toEqual([
+      { kind: 'lunchEnd', date: MON, at: at(MON, '14:00'), time: '14:00', resume: true },
+    ]);
     // Late entry before the lunch still reminds; on Friday (no lunch) until the exit.
     expect(decideReminders(EFFECTIVE, at(MON, '12:00'), false, null).notify.map((r) => r.kind)).toEqual(['start']);
     expect(decideReminders(EFFECTIVE, at(FRI, '13:30'), false, null).notify.map((r) => r.kind)).toEqual(['start']);
