@@ -356,7 +356,8 @@ export function ScheduleConfigForm({ initial, isNew, today, onSave, onCancel, on
             aria-describedby={`${id}-tol-help${toleranceErrors.length > 0 ? ` ${id}-tol-err` : ''}`}
           />
           <p id={`${id}-tol-help`} className="muted small">
-            Margen antes de contar un atraso o una salida anticipada (0 a {MAX_TOLERANCE_MINUTES}).
+            Margen antes de contar un atraso o una salida anticipada (0 a {MAX_TOLERANCE_MINUTES}). No retrasa los
+            recordatorios.
           </p>
           {toleranceErrors.length > 0 ? (
             <p id={`${id}-tol-err`} className="field-error" role="alert">
@@ -374,7 +375,8 @@ export function ScheduleConfigForm({ initial, isNew, today, onSave, onCancel, on
           <span>
             <span className="strong">Recordatorios</span>
             <span className="muted small block">
-              La extensión avisa al comienzo del horario si la jornada no está iniciada, y al final si sigue abierta.
+              Recordatorios de inicio, colación y cierre, a la hora exacta: al comienzo del horario si la jornada
+              no está iniciada, al inicio y al término de la colación, y al final si sigue abierta.
             </span>
           </span>
         </label>

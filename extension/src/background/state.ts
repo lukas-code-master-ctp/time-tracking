@@ -71,7 +71,7 @@ export interface Meta {
   org: OrgConfigCache | null;
   /** Last `config/schedule` + `schedules/{uid}` read (schedule.ts); null = none read (no schedule). Missing before 0.2.0. */
   schedule: ScheduleCache | null;
-  /** Start/end reminders already handled today. Missing before 0.2.0. */
+  /** Entry/lunch/exit reminders already handled today (0.2.1 only has start/end). Missing before 0.2.0. */
   reminders: ReminderLog | null;
 }
 

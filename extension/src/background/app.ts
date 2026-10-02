@@ -14,7 +14,7 @@
  * a short timeout) so the pause applies from its first instant (see
  * `startWorkDay`). The "schedule tick" (every pulse, every wake-up and
  * the one-shot `SCHEDULE_ALARM` set at the next transition, reminder or
- * midnight) applies the pause of the measurement, shows the start/end
+ * midnight) applies the pause of the measurement, shows the entry, lunch and exit
  * reminders (chrome.notifications, one per event and day) and re-arms the
  * alarm.
  */
@@ -362,16 +362,16 @@ export class App {
   }
 
   private async showReminder(r: Reminder): Promise<void> {
-    const { message, button } = reminderText(r);
+    const { message, button, requireInteraction } = reminderText(r);
     try {
       await chrome.notifications.create(reminderNotificationId(r), {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
         title: 'Registro de jornada',
         message,
-        buttons: [{ title: button }],
+        ...(button ? { buttons: [{ title: button }] } : {}),
         priority: 2,
-        requireInteraction: true,
+        requireInteraction,
       });
     } catch (err) {
       console.warn('[timetracking] no se pudo mostrar el recordatorio', err);
@@ -379,9 +379,10 @@ export class App {
   }
 
   /**
-   * Button of a reminder: "Iniciar jornada" starts the work day (the notice
-   * must be accepted: otherwise it opens the notice) and "Cerrar jornada"
-   * closes it. Any other problem, or a reminder of another day, opens the
+   * Button of a reminder: "Iniciar jornada" (entry, and the lunch end
+   * without an open work day: "¿Retomar la jornada?") starts the work day
+   * (the notice must be accepted: otherwise it opens the notice) and
+   * "Cerrar jornada" closes it. Any other problem, or a reminder of another day, opens the
    * popup, which explains it.
    */
   async onReminderAction(notificationId: string): Promise<void> {
@@ -395,10 +396,13 @@ export class App {
       return;
     }
     try {
-      if (reminder.kind === 'start') {
+      if (reminder.kind === 'start' || reminder.kind === 'lunchEnd') {
+        // lunchEnd only has a button in its "¿Retomar la jornada?" variant.
         await this.startWorkDay();
-      } else {
+      } else if (reminder.kind === 'end') {
         await this.session.stop();
+      } else {
+        await this.openPopup(); // lunchStart has no button
       }
     } catch (err) {
       const reason = err instanceof SessionError ? err.reason : '';

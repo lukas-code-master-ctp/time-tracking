@@ -125,8 +125,9 @@ export function PrivacyPage() {
             </li>
           </ul>
           <p>
-            <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte una notificación de
-            Chrome para que inicies tu jornada a la hora de entrada o la cierres a la hora de salida. Son{' '}
+            <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte recordatorios de
+            inicio, colación y cierre: notificaciones de Chrome a la hora exacta de entrada (para que inicies tu
+            jornada), al inicio y al término de la colación, y a la hora de salida (para que la cierres). Son{' '}
             <strong>notificaciones locales</strong>, generadas en tu computador: para mostrarlas no se envía ningún dato,
             y solo se guarda en tu computador que ya se mostraron ese día.
           </p>

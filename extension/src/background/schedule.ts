@@ -138,7 +138,18 @@ export function scheduleView(schedule: EffectiveSchedule | null, now: number): S
 
 // ---------- reminders ----------
 
-export type ReminderKind = 'start' | 'end';
+/**
+ * Events with a reminder, in the order they happen in a day (spec
+ * 2026-10-02-notificaciones-hora-exacta-colacion.md): entry, lunch start,
+ * lunch end, exit. 0.2.1 only had `start` and `end`; a log it saved
+ * (`tt.meta.reminders`) is read as is, with the same keys.
+ */
+export const REMINDER_KINDS = ['start', 'lunchStart', 'lunchEnd', 'end'] as const;
+export type ReminderKind = (typeof REMINDER_KINDS)[number];
+
+function isReminderKind(k: unknown): k is ReminderKind {
+  return typeof k === 'string' && (REMINDER_KINDS as readonly string[]).includes(k);
+}
 
 /** Reminders already handled today (`tt.meta.reminders`): one per event and day. */
 export interface ReminderLog {
@@ -151,28 +162,43 @@ export function reminderLogFromJSON(raw: unknown): ReminderLog | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Partial<ReminderLog>;
   if (typeof r.date !== 'string' || !Array.isArray(r.done)) return null;
-  return { date: r.date, done: r.done.filter((k): k is ReminderKind => k === 'start' || k === 'end') };
+  return { date: r.date, done: r.done.filter(isReminderKind) };
 }
 
 export interface Reminder {
   kind: ReminderKind;
   date: string;
-  /** Instant of the reminder: entry/exit + tolerance. */
+  /** Instant of the reminder: the exact time of the event (no tolerance). */
   at: number;
-  /** Wall-clock entry/exit time (`HH:MM`) for the text. */
+  /** Wall-clock time of the event (`HH:MM`) for the text. */
   time: string;
+  /** Only `lunchStart`: wall-clock end of the lunch, for "(14:00–15:00)". */
+  until?: string;
+  /**
+   * Only `lunchEnd`: there was no open work day at that instant (it was
+   * closed for the lunch), so the reminder offers to resume it.
+   */
+  resume?: true;
 }
 
-/** Reminders of `date`: none on a holiday, a day off or with reminders disabled. */
+/**
+ * Reminders of `date`, in order, at the exact times of the schedule (the
+ * tolerance only counts for late arrivals and early exits in the reports):
+ * none on a holiday, a day off or with reminders disabled; no lunch
+ * reminders on a day without lunch.
+ */
 export function remindersForDay(schedule: EffectiveSchedule | null, date: string): Reminder[] {
   if (!schedule || !schedule.remindersEnabled) return [];
   const plan = planOf(schedule, date);
-  if (!plan.span || !plan.schedule || plan.work.length === 0) return [];
-  const tol = Math.max(0, schedule.toleranceMinutes) * 60_000;
-  return [
-    { kind: 'start', date, at: plan.span.start + tol, time: plan.schedule.start },
-    { kind: 'end', date, at: plan.span.end + tol, time: plan.schedule.end },
-  ];
+  const day = plan.schedule;
+  if (!plan.span || !day || plan.work.length === 0) return [];
+  const out: Reminder[] = [{ kind: 'start', date, at: plan.span.start, time: day.start }];
+  if (plan.lunch && day.lunchStart !== null && day.lunchEnd !== null) {
+    out.push({ kind: 'lunchStart', date, at: plan.lunch.start, time: day.lunchStart, until: day.lunchEnd });
+    out.push({ kind: 'lunchEnd', date, at: plan.lunch.end, time: day.lunchEnd });
+  }
+  out.push({ kind: 'end', date, at: plan.span.end, time: day.end });
+  return out;
 }
 
 export interface ReminderDecision {
@@ -184,11 +210,28 @@ export interface ReminderDecision {
   changed: boolean;
 }
 
+/** The notification of `r` with this state of the work day, or null (none). */
+function variantFor(r: Reminder, workDayOpen: boolean): Reminder | null {
+  switch (r.kind) {
+    case 'start':
+      return workDayOpen ? null : r;
+    case 'lunchStart':
+    case 'end':
+      return workDayOpen ? r : null;
+    case 'lunchEnd':
+      return workDayOpen ? r : { ...r, resume: true };
+  }
+}
+
 /**
- * Which reminders are due at `now`. An event is handled once, the first
- * time it is evaluated after its instant, whether or not a notification is
- * shown: "start" only notifies without an open work day and before the exit
- * (after that it is pointless); "end" only with the work day still open.
+ * Which reminders are due at `now`. Each event is handled once per day, the
+ * first time it is evaluated at or after its exact instant (pulse, alarm or
+ * a late wake-up, e.g. after a suspended computer), whether or not a
+ * notification is shown. It notifies with the state of the work day of its
+ * row in the spec (entry and "¿Retomar la jornada?" without an open work
+ * day; lunch start, lunch end and exit with it open) and only if the next
+ * event of the day has not happened yet: a late wake-up after the exit shows
+ * no lunch reminder, nor the entry one.
  */
 export function decideReminders(
   schedule: EffectiveSchedule | null,
@@ -201,22 +244,44 @@ export function decideReminders(
   const next: ReminderLog = fresh ? { date, done: [] } : { date, done: [...log.done] };
   const notify: Reminder[] = [];
   const reminders = remindersForDay(schedule, date);
-  const exit = reminders.find((r) => r.kind === 'end');
-  for (const r of reminders) {
-    if (now < r.at || next.done.includes(r.kind)) continue;
+  reminders.forEach((r, i) => {
+    if (now < r.at || next.done.includes(r.kind)) return;
     next.done.push(r.kind);
-    if (r.kind === 'start' && !workDayOpen && exit && now < exit.at - schedule!.toleranceMinutes * 60_000) notify.push(r);
-    if (r.kind === 'end' && workDayOpen) notify.push(r);
-  }
+    const following = reminders[i + 1];
+    if (following && now >= following.at) return; // too late: the next event already happened
+    const shown = variantFor(r, workDayOpen);
+    if (shown) notify.push(shown);
+  });
   const changed = fresh ? log !== null || next.done.length > 0 : next.done.length !== log.done.length;
   return { log: next, notify, changed };
 }
 
+export interface ReminderContent {
+  message: string;
+  /** Title of the only button, or null (no button). */
+  button: string | null;
+  /** Entry and exit stay until the person acts; the lunch ones go away by themselves. */
+  requireInteraction: boolean;
+}
+
 /** Notification texts (Spanish). */
-export function reminderText(r: Reminder): { message: string; button: string } {
-  return r.kind === 'start'
-    ? { message: `Tu jornada empezó a las ${r.time}. ¿Iniciar jornada?`, button: 'Iniciar jornada' }
-    : { message: `Tu horario terminó a las ${r.time}. ¿Cerrar jornada?`, button: 'Cerrar jornada' };
+export function reminderText(r: Reminder): ReminderContent {
+  switch (r.kind) {
+    case 'start':
+      return { message: `Tu jornada empieza a las ${r.time}. ¿Iniciar jornada?`, button: 'Iniciar jornada', requireInteraction: true };
+    case 'lunchStart':
+      return {
+        message: `Es hora de tu colación (${r.time}–${r.until ?? ''}). Durante la colación no se mide.`,
+        button: null,
+        requireInteraction: false,
+      };
+    case 'lunchEnd':
+      return r.resume
+        ? { message: 'Terminó tu colación. ¿Retomar la jornada?', button: 'Iniciar jornada', requireInteraction: false }
+        : { message: `Terminó tu colación. Se vuelve a medir desde las ${r.time}.`, button: null, requireInteraction: false };
+    case 'end':
+      return { message: `Tu horario terminó a las ${r.time}. ¿Cerrar jornada?`, button: 'Cerrar jornada', requireInteraction: true };
+  }
 }
 
 const NOTIFICATION_PREFIX = 'tt-reminder';
@@ -226,7 +291,7 @@ export function reminderNotificationId(r: Pick<Reminder, 'kind' | 'date'>): stri
 }
 
 export function parseReminderNotificationId(id: string): { kind: ReminderKind; date: string } | null {
-  const m = /^tt-reminder:(start|end):(\d{4}-\d{2}-\d{2})$/.exec(id);
+  const m = /^tt-reminder:(start|lunchStart|lunchEnd|end):(\d{4}-\d{2}-\d{2})$/.exec(id);
   return m ? { kind: m[1] as ReminderKind, date: m[2]! } : null;
 }
 
