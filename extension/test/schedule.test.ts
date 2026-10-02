@@ -243,6 +243,20 @@ describe('schedule helpers (pure)', () => {
     expect(decideReminders(EFFECTIVE, at(FRI, '13:30'), false, null).notify.map((r) => r.kind)).toEqual(['start']);
   });
 
+  it('a lunch at the edge of the schedule: the entry is not hidden, and no "Se vuelve a medir" at the exit', () => {
+    const edges: EffectiveSchedule = {
+      ...EFFECTIVE,
+      week: { ...WEEK, mon: { start: '09:00', end: '18:30', lunchStart: '09:00', lunchEnd: '10:00' }, tue: { start: '09:00', end: '18:30', lunchStart: '17:30', lunchEnd: '18:30' } },
+    };
+    const TUE = '2026-10-06';
+    // Lunch from the entry: without a work day, the entry reminder still shows at 09:00; with it open, the lunch one.
+    expect(decideReminders(edges, at(MON, '09:00'), false, null).notify.map((r) => r.kind)).toEqual(['start']);
+    expect(decideReminders(edges, at(MON, '09:00'), true, null).notify.map((r) => r.kind)).toEqual(['lunchStart']);
+    // Lunch until the exit: no lunch-end reminder, only the exit.
+    expect(remindersForDay(edges, TUE).map((r) => r.kind)).toEqual(['start', 'lunchStart', 'end']);
+    expect(decideReminders(edges, at(TUE, '18:30'), true, { date: TUE, done: ['start', 'lunchStart'] }).notify.map((r) => r.kind)).toEqual(['end']);
+  });
+
   it('a reminder log saved by 0.2.1 (only start/end) is read with the same keys', () => {
     expect(reminderLogFromJSON({ date: MON, done: ['start', 'end', 'other'] })).toEqual({ date: MON, done: ['start', 'end'] });
     expect(reminderLogFromJSON({ date: MON, done: ['lunchStart', 'lunchEnd'] })).toEqual({ date: MON, done: ['lunchStart', 'lunchEnd'] });

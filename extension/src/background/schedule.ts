@@ -195,7 +195,8 @@ export function remindersForDay(schedule: EffectiveSchedule | null, date: string
   const out: Reminder[] = [{ kind: 'start', date, at: plan.span.start, time: day.start }];
   if (plan.lunch && day.lunchStart !== null && day.lunchEnd !== null) {
     out.push({ kind: 'lunchStart', date, at: plan.lunch.start, time: day.lunchStart, until: day.lunchEnd });
-    out.push({ kind: 'lunchEnd', date, at: plan.lunch.end, time: day.lunchEnd });
+    // A lunch that ends with the schedule has no "Se vuelve a medir" (nothing is measured after it): only the exit.
+    if (plan.lunch.end < plan.span.end) out.push({ kind: 'lunchEnd', date, at: plan.lunch.end, time: day.lunchEnd });
   }
   out.push({ kind: 'end', date, at: plan.span.end, time: day.end });
   return out;
@@ -247,8 +248,10 @@ export function decideReminders(
   reminders.forEach((r, i) => {
     if (now < r.at || next.done.includes(r.kind)) return;
     next.done.push(r.kind);
-    const following = reminders[i + 1];
-    if (following && now >= following.at) return; // too late: the next event already happened
+    // Too late: the next event of the day (strictly later; e.g. a lunch that
+    // starts with the schedule does not hide the entry) already happened.
+    const following = reminders.slice(i + 1).find((f) => f.at > r.at);
+    if (following && now >= following.at) return;
     const shown = variantFor(r, workDayOpen);
     if (shown) notify.push(shown);
   });
