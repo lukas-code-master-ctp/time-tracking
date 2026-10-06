@@ -1,0 +1,119 @@
+# Publishes the extension to Chrome Web Store on every push to main that
+# touches it (or by hand from the Actions tab). Version: package.json's plus
+# the run number as a 4th part (0.2.2 → 0.2.2.37), always higher than the last
+# upload. Bump package.json (e.g. 0.2.3) for a new minor/patch line.
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN  OAuth client of the
+#     Chrome Web Store API (https://developer.chrome.com/docs/webstore/using-api)
+#   CWS_PUBLISHER_ID  Developer Dashboard → Publisher → Settings
+#   EXTENSION_ENV_PRODUCTION  full content of extension/.env.production.local
+#     (the real VITE_* values; not secret, but they are not in git)
+name: Extension → Chrome Web Store
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extension/**'
+      - 'packages/shared/**'
+      - 'package-lock.json'
+      - '.github/workflows/extension-store.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: extension-store
+  cancel-in-progress: false
+
+env:
+  # Store item ID (extension/build/store-key.ts).
+  EXTENSION_ID: egaklokkbnbnccnjicaahaifnkaeobfj
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Tests
+        run: |
+          npm run build:shared
+          npm test -w @timetracking/shared
+          npm test -w @timetracking/extension
+
+      - name: Production config
+        env:
+          EXTENSION_ENV_PRODUCTION: ${{ secrets.EXTENSION_ENV_PRODUCTION }}
+        run: |
+          if [ -z "$EXTENSION_ENV_PRODUCTION" ]; then
+            echo "::error::Falta el secreto EXTENSION_ENV_PRODUCTION (contenido de extension/.env.production.local)"
+            exit 1
+          fi
+          printf '%s\n' "$EXTENSION_ENV_PRODUCTION" > extension/.env.production.local
+          # The QA build fails when a production value is missing: use it as the check.
+          npm run build:qa -w @timetracking/extension
+
+      - name: Build store package
+        env:
+          EXTENSION_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          npm run build -w @timetracking/extension
+          VERSION=$(jq -r .version extension/dist/manifest.json)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          (cd extension/dist && zip -qr ../../extension.zip .)
+          echo "Paquete $VERSION listo"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-${{ env.VERSION }}
+          path: extension.zip
+
+      - name: Upload and publish
+        env:
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+        run: |
+          set -euo pipefail
+          for v in CLIENT_ID CLIENT_SECRET REFRESH_TOKEN PUBLISHER_ID; do
+            if [ -z "${!v}" ]; then echo "::error::Falta el secreto CWS_$v"; exit 1; fi
+          done
+          TOKEN=$(curl -sfS https://oauth2.googleapis.com/token \
+            -d "client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET&refresh_token=$REFRESH_TOKEN&grant_type=refresh_token" \
+            | jq -r .access_token)
+          API=https://chromewebstore.googleapis.com
+          ITEM="publishers/$PUBLISHER_ID/items/$EXTENSION_ID"
+
+          echo "Subiendo $VERSION…"
+          UPLOAD=$(curl -sS -H "Authorization: Bearer $TOKEN" -X POST -T extension.zip "$API/upload/v2/$ITEM:upload")
+          echo "$UPLOAD"
+          STATE=$(echo "$UPLOAD" | jq -r '.uploadState // empty')
+          # A large upload may still be processing: wait for it.
+          for _ in $(seq 1 30); do
+            case "$STATE" in IN_PROGRESS|UPLOAD_IN_PROGRESS) ;; *) break ;; esac
+            sleep 10
+            STATUS=$(curl -sS -H "Authorization: Bearer $TOKEN" "$API/v2/$ITEM:fetchStatus")
+            STATE=$(echo "$STATUS" | jq -r '.lastAsyncUploadState // empty')
+          done
+          if [ "$STATE" != "SUCCEEDED" ] && [ "$STATE" != "UPLOAD_SUCCEEDED" ]; then
+            echo "::error::La subida a Chrome Web Store no terminó bien (estado: ${STATE:-desconocido})"
+            exit 1
+          fi
+
+          echo "Enviando $VERSION a revisión y publicación…"
+          PUBLISH=$(curl -sS -H "Authorization: Bearer $TOKEN" -X POST "$API/v2/$ITEM:publish")
+          echo "$PUBLISH"
+          if echo "$PUBLISH" | jq -e '.error' >/dev/null; then
+            echo "::error::Chrome Web Store rechazó la publicación"
+            exit 1
+          fi
+          echo "### Extensión $VERSION enviada a Chrome Web Store" >> "$GITHUB_STEP_SUMMARY"

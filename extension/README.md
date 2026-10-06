@@ -85,6 +85,18 @@ Qué tener en cuenta:
 - La política de Google Workspace puede bloquear las extensiones descomprimidas (o el Modo de desarrollador) en perfiles administrados; en ese caso usa un perfil donde esté permitido.
 - **Nunca** subas `dist-qa` a la tienda: el paquete para Chrome Web Store es siempre `dist` (`npm run build`), que no lleva `key`.
 
+## Publicación automática en Chrome Web Store
+
+`.github/workflows/extension-store.yml` corre en cada push a `main` que toca `extension/`, `packages/shared/` o `package-lock.json` (y a mano desde *Actions → Extension → Chrome Web Store → Run workflow*): tests, build prod, sube `dist` a la tienda (API v2) y la envía a revisión. La versión es la de `package.json` más el número de corrida como cuarta parte (`0.2.2` → `0.2.2.37`), así cada subida es mayor que la anterior sin commits; sube `package.json` (p. ej. `0.2.3`) para una versión nueva. El zip queda además como artefacto de la corrida.
+
+Secretos del repo (*Settings → Secrets and variables → Actions*):
+
+| Secreto | Qué es |
+| --- | --- |
+| `EXTENSION_ENV_PRODUCTION` | Contenido completo de `extension/.env.production.local` (los `VITE_*` reales). Si falta un valor el workflow falla antes de subir (usa el build QA como chequeo). |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | Cliente OAuth y refresh token de la Chrome Web Store API ([guía](https://developer.chrome.com/docs/webstore/using-api)). |
+| `CWS_PUBLISHER_ID` | Developer Dashboard → Publisher → Settings. |
+
 ## Permisos (justificación para Chrome Web Store)
 
 | Permiso | Para qué |
