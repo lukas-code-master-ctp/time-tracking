@@ -50,6 +50,14 @@ export const MAX_URLS_PER_SLOT = 20;
 export const STALE_SESSION_MS = 30 * 60_000;
 /** A session open for longer than this is closed automatically. */
 export const MAX_SESSION_MS = 16 * 60 * 60_000;
+/**
+ * No pulse for longer than this with the work day open means the computer
+ * slept (lid closed, e.g. at lunch) or Chrome was closed: the extension
+ * treats the gap as a pause (see extension session.ts).
+ */
+export const SUSPEND_GAP_MS = 5 * 60_000;
+/** Longest such pause after which the work day continues on its own (same day only). */
+export const MAX_RESUME_GAP_MS = 4 * 60 * 60_000;
 
 export const SCREENSHOT_MAX_WIDTH = 1280;
 export const SCREENSHOT_MAX_BYTES = 1024 * 1024;

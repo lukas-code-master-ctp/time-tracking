@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SLOT_MS, activityDocId, slotStartOf, type ActivitySlot } from '@timetracking/shared';
 import { backoffMs, emptyQueue, enqueueOp, opKey } from '../src/background/queue';
-import { AUTO_CLOSED_NOTICE, PULSE_ALARM } from '../src/background/session';
+import { AUTO_CLOSED_NOTICE, PULSE_ALARM, RESUME_EXPIRED_NOTICE } from '../src/background/session';
 import { STORAGE_KEYS, StateStore } from '../src/background/state';
 import { storageErrorCode } from '../src/background/firebase';
 import { classify, errorCode, toActivityDoc, toNewSessionDoc } from '../src/background/sync';
@@ -292,6 +292,77 @@ describe('SyncEngine + SessionManager', () => {
     expect(h.app.store.queue.items).toEqual([]);
     expect(h.app.store.queue.failures).toBe(0);
     expect(h.backend.sessions.get(sessionId)?.endReason).toBe('auto');
+  });
+
+  it('lid closed at lunch (server auto-closed meanwhile): the work day continues in a new session, the gap is not counted', async () => {
+    await h.app.session.start();
+    await h.settle();
+    const first = h.app.store.session!.id;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pulse(); // heartbeat at +60 s
+    const lastAlive = Date.now();
+
+    // Asleep for 70 min: no pulses; the hourly job closes the session.
+    vi.setSystemTime(lastAlive + 70 * 60_000);
+    h.backend.autoClose(first);
+    await pulse();
+
+    const second = h.app.store.session!.id;
+    expect(second).not.toBe(first);
+    expect(h.app.store.session!.startedAt).toBe(Date.now());
+    expect(h.app.store.meta.notice).toBeNull();
+    expect(h.chrome.world.badgeText).toBe('ON');
+    expect(h.backend.sessions.get(first)?.endReason).toBe('auto');
+    expect(h.backend.sessions.get(second)).toMatchObject({ endedAt: null, startedAt: Date.now() });
+    expect(h.app.store.queue.items).toEqual([]);
+
+    // Keeps working normally afterwards.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pulse();
+    expect(h.app.store.session?.id).toBe(second);
+    expect(h.backend.ops('heartbeat').at(-1)).toMatchObject({ sessionId: second });
+  });
+
+  it('short sleep (server still open): the old session is closed at the last heartbeat, a new one starts', async () => {
+    await h.app.session.start();
+    await h.settle();
+    const first = h.app.store.session!.id;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pulse();
+    const lastAlive = Date.now();
+
+    vi.setSystemTime(lastAlive + 20 * 60_000);
+    await pulse();
+    expect(h.backend.sessions.get(first)).toMatchObject({ endedAt: lastAlive, endReason: 'manual' });
+    expect(h.app.store.session?.id).not.toBe(first);
+    expect(h.app.store.meta.notice).toBeNull();
+  });
+
+  it('a pulse a bit late (under 5 min) keeps the same session', async () => {
+    await h.app.session.start();
+    await h.settle();
+    const first = h.app.store.session!.id;
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    await pulse();
+    expect(h.app.store.session?.id).toBe(first);
+    expect(h.backend.ops('closeSession')).toHaveLength(0);
+  });
+
+  it('asleep for too long (or overnight): the work day is closed at the last heartbeat with a notice', async () => {
+    await h.app.session.start();
+    await h.settle();
+    const first = h.app.store.session!.id;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pulse();
+    const lastAlive = Date.now();
+
+    vi.setSystemTime(lastAlive + 5 * 60 * 60_000);
+    await pulse();
+    expect(h.app.store.session).toBeNull();
+    expect(h.app.store.meta.notice).toBe(RESUME_EXPIRED_NOTICE);
+    expect(h.chrome.world.badgeText).toBe('');
+    expect(h.backend.sessions.get(first)).toMatchObject({ endedAt: lastAlive });
+    expect(h.backend.ops('createSession')).toHaveLength(1);
   });
 
   it('transient errors keep the operation; permanent ones drop it and continue', async () => {

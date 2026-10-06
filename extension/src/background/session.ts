@@ -20,11 +20,28 @@
  *   on the server at the last heartbeat).
  * - rehydrate: on every service-worker start (including a browser restart
  *   with an open work day, which simply continues; the gap is not counted).
+ * - resume after a gap (resumeAfterGapLocked, on rehydrate and every pulse):
+ *   no pulse for more than SUSPEND_GAP_MS (lid closed at lunch, Chrome
+ *   closed) is a pause, not work. The session is closed at the last pulse
+ *   and, on the same day and within MAX_RESUME_GAP_MS, a new one starts
+ *   right away, so the work day continues without the gap. If the server
+ *   already auto-closed the old session (no heartbeat for 30 min), that
+ *   close is refused and simply dropped. A longer gap closes the work day
+ *   at the last pulse with RESUME_EXPIRED_NOTICE.
  * - start requires a joined, active profile that accepted the current
  *   transparency notice (`consentVersion === CONSENT_VERSION`, spec 4).
  * - Every snapshot of a block also feeds the local daily summary (daily.ts).
  */
-import { ALARM_PERIOD_MS, CONSENT_VERSION, SYNC_INTERVAL_MS, type ActivitySlot } from '@timetracking/shared';
+import {
+  ALARM_PERIOD_MS,
+  CONSENT_VERSION,
+  DEFAULT_TIME_ZONE,
+  MAX_RESUME_GAP_MS,
+  SUSPEND_GAP_MS,
+  SYNC_INTERVAL_MS,
+  dateKey,
+  type ActivitySlot,
+} from '@timetracking/shared';
 import type { AuthService } from './auth';
 import { recordSlots } from './daily';
 import { enqueueOp, type SyncOp } from './queue';
@@ -45,6 +62,9 @@ export const ICONS_ON = { 16: 'icons/icon-on-16.png', 32: 'icons/icon-on-32.png'
 
 export const AUTO_CLOSED_NOTICE =
   'Tu jornada se cerró automáticamente (sin conexión con el servidor por mucho tiempo o jornada muy larga). Puedes iniciar una nueva.';
+
+export const RESUME_EXPIRED_NOTICE =
+  'Tu jornada se cerró porque el equipo estuvo suspendido o apagado por mucho tiempo. El tiempo sin conexión no se contó. Puedes iniciar una nueva.';
 
 export class SessionError extends Error {
   constructor(
@@ -105,6 +125,11 @@ export class SessionManager {
   /** Inside store.run. Returns the signed-in uid. */
   private assertCanStart(): string {
     if (this.store.session) throw new SessionError('already-open', 'Ya tienes una jornada iniciada.');
+    return this.assertCanWork();
+  }
+
+  /** Inside store.run: everything `start` requires except "no open work day". */
+  private assertCanWork(): string {
     const user = this.auth.currentUser();
     if (!user) throw new SessionError('signed-out', 'Inicia sesión para iniciar tu jornada.');
     const { profile, profileUid } = this.store.meta;
@@ -124,17 +149,7 @@ export class SessionManager {
     await this.auth.ready();
     await this.store.run(async () => {
       const uid = this.assertCanStart();
-      const at = this.now();
-      const id = newSessionId();
-      await this.tracker.beginMeasuring(id, uid, at);
-      this.store.session = { id, uid, startedAt: at };
-      enqueueOp(this.store.queue, {
-        kind: 'sessionCreate',
-        uid,
-        sessionId: id,
-        session: { uid, startedAt: at, endedAt: null, endReason: null, lastHeartbeatAt: at },
-      });
-      this.store.meta.lastCurrentSyncAt = at;
+      await this.openLocked(uid, this.now());
       this.store.meta.notice = null;
       await this.store.save('queue');
       await this.store.save('acc', 'session', 'meta');
@@ -203,8 +218,11 @@ export class SessionManager {
 
   /** chrome.alarms pulse. */
   async pulse(): Promise<void> {
+    // The gap check needs the signed-in user (the worker may have just started).
+    await this.auth.ready();
     await this.store.run(async () => {
       const at = this.now();
+      await this.resumeAfterGapLocked(at);
       const result = await this.tracker.pulse(at);
       const session = this.store.session;
       if (result) {
@@ -233,7 +251,9 @@ export class SessionManager {
    * locally (nobody to attribute the time to).
    */
   async rehydrate(): Promise<void> {
+    await this.auth.ready();
     await this.store.run(async () => {
+      await this.resumeAfterGapLocked(this.now());
       await this.applyBadge();
       await this.ensureAlarm();
     });
@@ -242,6 +262,57 @@ export class SessionManager {
   }
 
   // ---------- helpers (inside store.run) ----------
+
+  /** Opens a work day for `uid` at `at`: accumulator, local session and queued create. */
+  private async openLocked(uid: string, at: number): Promise<void> {
+    const id = newSessionId();
+    await this.tracker.beginMeasuring(id, uid, at);
+    this.store.session = { id, uid, startedAt: at };
+    enqueueOp(this.store.queue, {
+      kind: 'sessionCreate',
+      uid,
+      sessionId: id,
+      session: { uid, startedAt: at, endedAt: null, endReason: null, lastHeartbeatAt: at },
+    });
+    this.store.meta.lastCurrentSyncAt = at;
+  }
+
+  /**
+   * The open work day had no pulse for more than SUSPEND_GAP_MS (computer
+   * asleep, Chrome closed): closes its session at the last pulse, so the gap
+   * is neither worked nor connected time, and continues in a new session
+   * when the gap is short enough, on the same day and the user can still
+   * work. Otherwise the work day stays closed.
+   */
+  private async resumeAfterGapLocked(at: number): Promise<void> {
+    const session = this.store.session;
+    // Another user (or nobody) signed in: checkUser closes it.
+    if (!session || this.auth.currentUser()?.uid !== session.uid) return;
+    const lastAlive = Math.max(session.startedAt, this.store.meta.lastCurrentSyncAt);
+    const gap = at - lastAlive;
+    if (gap <= SUSPEND_GAP_MS) return;
+
+    this.finishLocked(at, session.uid);
+    enqueueOp(this.store.queue, { kind: 'sessionClose', uid: session.uid, sessionId: session.id, endedAt: lastAlive });
+    this.store.session = null;
+
+    let canWork = false;
+    try {
+      this.assertCanWork();
+      canWork = true;
+    } catch {
+      // Disabled, notice not accepted…: the work day stays closed.
+    }
+    const sameDay = dateKey(lastAlive, DEFAULT_TIME_ZONE) === dateKey(at, DEFAULT_TIME_ZONE);
+    if (canWork && sameDay && gap <= MAX_RESUME_GAP_MS) {
+      await this.openLocked(session.uid, at);
+    } else {
+      this.store.meta.notice = RESUME_EXPIRED_NOTICE;
+    }
+    await this.store.save('queue');
+    await this.store.save('acc', 'session', 'meta', 'daily');
+    await this.applyBadge();
+  }
 
   /** Stops measuring at `at` and queues every block still held (closed and partial). */
   private finishLocked(at: number, uid: string): void {
