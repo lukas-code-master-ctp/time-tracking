@@ -56,9 +56,19 @@ export function outDirOf(target: BuildTarget): string {
   return { dev: 'dist-dev', prod: 'dist', qa: 'dist-qa' }[target];
 }
 
+/**
+ * Manifest version: `package.json`'s, plus `EXTENSION_BUILD_NUMBER` as a 4th
+ * part when set (the store workflow passes the run number, so every
+ * automatic upload is higher than the previous one without a commit).
+ */
 export function packageVersion(): string {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
-  return pkg.version;
+  const build = process.env.EXTENSION_BUILD_NUMBER?.trim();
+  if (!build) return pkg.version;
+  if (!/^\d+$/.test(build) || Number(build) > 65535 || pkg.version.split('.').length !== 3) {
+    throw new Error(`EXTENSION_BUILD_NUMBER inválido (${build}) o versión de package.json sin 3 partes (${pkg.version}).`);
+  }
+  return `${pkg.version}.${Number(build)}`;
 }
 
 /** Reads `.env`, `.env.<mode>` and `.env.<mode>.local` (only `VITE_*`). */
