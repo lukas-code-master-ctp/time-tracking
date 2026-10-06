@@ -75,7 +75,7 @@ Todo se agrupa en **bloques de 10 minutos** (`slot`, alineados al reloj: 09:00, 
 ### 3.6 Robustez
 - El service worker MV3 puede dormirse: estado en `chrome.storage.local`, `chrome.alarms` cada 30 s como pulso; al despertar reconstruye el estado.
 - Sin conexión: los bloques cerrados y capturas quedan en cola local y se suben al volver.
-- Si el navegador se cierra con la jornada abierta, al reabrir la jornada sigue abierta; los minutos sin datos quedan como "sin datos" (no se inventan). Jornada abierta más de 16 h se cierra automáticamente en el último latido.
+- Si el navegador se cierra o el equipo se suspende (p. ej. se baja la tapa en la colación) con la jornada abierta, al volver la jornada sigue abierta; los minutos sin datos quedan como "sin datos" (no se inventan). Si pasaron más de 5 min sin pulso, la sesión se cierra en el último latido y se abre otra al instante, así el hueco no cuenta como conectado ni choca con el cierre automático del servidor (si ya la cerró, ese cierre se descarta). Si el hueco supera 4 h o cruza la medianoche, la jornada queda cerrada en el último latido con un aviso. Jornada abierta más de 16 h se cierra automáticamente en el último latido.
 
 ## 4. Transparencia (Chile)
 - Primera vez: pantalla en la extensión que explica qué se mide y qué no; el colaborador debe aceptar (se guarda `consentAcceptedAt` y versión).

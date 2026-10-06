@@ -115,7 +115,7 @@ describe('StateStore', () => {
       expect(area.data[STORAGE_KEYS.acc]).toMatchObject({ uid: 'u1' });
     });
 
-    it('browser restart with an open work day: continues, badge ON, pulse alarm, gap not counted', async () => {
+    it('browser restart with an open work day: continues in a new session, badge ON, pulse alarm, gap not counted', async () => {
       vi.setSystemTime(SLOT0 + 10_000);
       const h = await createHarness();
       await hello(h, 11);
@@ -124,6 +124,7 @@ describe('StateStore', () => {
       await h.app.session.pulse();
       await h.settle();
       const sessionId = h.app.store.session!.id;
+      const startedAt = h.app.store.session!.startedAt;
 
       // Browser closed for 2 h: badge and alarms are gone, storage survives.
       h.chrome.world.badgeText = '';
@@ -131,7 +132,11 @@ describe('StateStore', () => {
       vi.setSystemTime(Date.now() + 2 * 60 * 60_000);
       const app = await h.restart();
       await h.settle();
-      expect(app.store.session?.id).toBe(sessionId);
+      // The old session ends at its last heartbeat; a new one starts now.
+      expect(h.backend.sessions.get(sessionId)).toMatchObject({ endedAt: startedAt });
+      expect(app.store.session?.id).not.toBe(sessionId);
+      expect(app.store.session?.startedAt).toBe(Date.now());
+      expect(app.store.meta.notice).toBeNull();
       expect(h.chrome.world.badgeText).toBe('ON');
       expect(h.chrome.world.alarms.has(PULSE_ALARM)).toBe(true);
 
@@ -144,7 +149,7 @@ describe('StateStore', () => {
       expect(uploaded[0]!.trackedSeconds).toBe(30);
       const last = uploaded[uploaded.length - 1]!;
       expect(last.trackedSeconds).toBe(30);
-      expect(h.backend.ops('heartbeat').length).toBeGreaterThan(0);
+      expect(h.backend.sessions.get(app.store.session!.id)).toMatchObject({ endedAt: null });
     });
 
     it('restart with an open work day but the user signed out closes it locally', async () => {
