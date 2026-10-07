@@ -455,7 +455,7 @@ describe('SettingsForm', () => {
 });
 
 describe('Configuración page', () => {
-  it('writes the 7 fields with the admin uid', async () => {
+  it('writes the 6 fields with the admin uid (pauseTimerAtLunch only when on)', async () => {
     const db = seededDb();
     const backend = backendOf(db, ADMIN);
     renderApp(backend, '/configuracion');
@@ -467,7 +467,6 @@ describe('Configuración page', () => {
       screenshotsEnabled: true,
       blurScreenshots: false,
       screenshotRetentionDays: 90,
-      pauseTimerAtLunch: false,
       updatedAt: NOW,
       updatedBy: ADMIN.id,
     });

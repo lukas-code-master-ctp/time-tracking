@@ -79,7 +79,11 @@ export function validateOrgConfig(form: OrgConfigForm, adminEmail?: string | nul
   return errors;
 }
 
-/** `config/org` with the 6 fields the rules require plus `pauseTimerAtLunch` (`updatedBy` = caller). */
+/**
+ * `config/org` with the 6 fields the rules require (`updatedBy` = caller), plus
+ * `pauseTimerAtLunch` only when on: a full `setDoc` without it means off, and
+ * saving with it off still works with the rules before 0.2.4.
+ */
 export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, adminEmail?: string | null): OrgConfig {
   const errors = validateOrgConfig(form, adminEmail);
   if (Object.keys(errors).length > 0) throw new Error(Object.values(errors).join(' '));
@@ -88,7 +92,7 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
     screenshotsEnabled: form.screenshotsEnabled,
     blurScreenshots: form.blurScreenshots,
     screenshotRetentionDays: Number(form.screenshotRetentionDays.trim()),
-    pauseTimerAtLunch: form.pauseTimerAtLunch,
+    ...(form.pauseTimerAtLunch ? { pauseTimerAtLunch: true } : {}),
     updatedAt: Math.floor(now),
     updatedBy: uid,
   };

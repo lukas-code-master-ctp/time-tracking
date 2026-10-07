@@ -26,7 +26,7 @@ describe('org config', () => {
     pauseTimerAtLunch: true,
   };
 
-  it('builds the 6 fields the rules require plus pauseTimerAtLunch', () => {
+  it('builds the 6 fields the rules require, plus pauseTimerAtLunch only when on', () => {
     const cfg = buildOrgConfig({ ...form, allowedDomains: [' ImpulseAI.cl ', '@compratuparcela.cl', 'impulseai.cl'] }, 'uid-admin', NOW + 0.7);
     expect(cfg).toEqual({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -48,6 +48,7 @@ describe('org config', () => {
     ]
     );
     expect(Number.isInteger(cfg.updatedAt)).toBe(true);
+    expect('pauseTimerAtLunch' in buildOrgConfig({ ...form, pauseTimerAtLunch: false }, 'uid-admin', NOW)).toBe(false);
   });
 
   it('validates retention (integer 1..3650)', () => {
