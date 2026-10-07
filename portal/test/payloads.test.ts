@@ -23,20 +23,29 @@ describe('org config', () => {
     screenshotsEnabled: true,
     blurScreenshots: false,
     screenshotRetentionDays: '30',
+    pauseTimerAtLunch: true,
   };
 
-  it('builds exactly the 6 fields the rules require', () => {
+  it('builds the 6 fields the rules require plus pauseTimerAtLunch', () => {
     const cfg = buildOrgConfig({ ...form, allowedDomains: [' ImpulseAI.cl ', '@compratuparcela.cl', 'impulseai.cl'] }, 'uid-admin', NOW + 0.7);
     expect(cfg).toEqual({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
       screenshotsEnabled: true,
       blurScreenshots: false,
       screenshotRetentionDays: 30,
+      pauseTimerAtLunch: true,
       updatedAt: NOW,
       updatedBy: 'uid-admin',
     });
-    expect(Object.keys(cfg).sort()).toEqual(
-      ['allowedDomains', 'blurScreenshots', 'screenshotRetentionDays', 'screenshotsEnabled', 'updatedAt', 'updatedBy'],
+    expect(Object.keys(cfg).sort()).toEqual([
+      'allowedDomains',
+      'blurScreenshots',
+      'pauseTimerAtLunch',
+      'screenshotRetentionDays',
+      'screenshotsEnabled',
+      'updatedAt',
+      'updatedBy',
+    ]
     );
     expect(Number.isInteger(cfg.updatedAt)).toBe(true);
   });
@@ -102,6 +111,7 @@ describe('org config', () => {
       screenshotsEnabled: false,
       blurScreenshots: true,
       screenshotRetentionDays: '90',
+      pauseTimerAtLunch: false,
     });
   });
 
@@ -119,7 +129,9 @@ describe('org config', () => {
       screenshotsEnabled: true,
       blurScreenshots: false,
       screenshotRetentionDays: '30',
+      pauseTimerAtLunch: false,
     });
+    expect(orgConfigToForm({ ...legacy, pauseTimerAtLunch: true }, ['x.cl']).pauseTimerAtLunch).toBe(true);
   });
 });
 

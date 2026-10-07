@@ -103,6 +103,23 @@ export function pauseBoundaries(schedule: EffectiveSchedule | null, from: number
 
 // ---------- popup ----------
 
+/**
+ * Lunches of the schedule that overlap a work day open since `startedAt`, up
+ * to the end of the day of `now` (so a lunch still ahead today is included
+ * and the popup clock stops at its start without asking again). The popup
+ * clock leaves them out when `config/org.pauseTimerAtLunch` is on.
+ */
+export function lunchPauses(schedule: EffectiveSchedule | null, startedAt: number, now: number): { start: number; end: number }[] {
+  if (!schedule || !(now >= startedAt)) return [];
+  const out: { start: number; end: number }[] = [];
+  const last = dateKey(now, DEFAULT_TIME_ZONE);
+  for (let d = dateKey(Math.max(startedAt, now - 2 * DAY_MS), DEFAULT_TIME_ZONE); d <= last; d = addDaysToDateKey(d, 1)) {
+    const lunch = planOf(schedule, d).lunch;
+    if (lunch && lunch.end > startedAt) out.push({ start: Math.max(lunch.start, startedAt), end: lunch.end });
+  }
+  return out;
+}
+
 export type ScheduleViewState = 'work' | 'lunch' | 'off' | 'holiday' | 'dayOff';
 
 /** Schedule state for the popup (null = no schedule: the popup shows nothing new). */

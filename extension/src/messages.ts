@@ -98,8 +98,11 @@ export interface StatusView {
   consentRequired: boolean;
   /** Version the consent page accepts. */
   consentVersion: string;
-  /** Open work day, if any. */
-  session: { id: string; startedAt: number } | null;
+  /**
+   * Open work day, if any. `pauses`: lunches of the schedule the popup clock
+   * leaves out (`config/org.pauseTimerAtLunch`); [] = the clock never stops.
+   */
+  session: { id: string; startedAt: number; pauses: { start: number; end: number }[] } | null;
   /** Today's totals (America/Santiago) from the blocks measured on this device. */
   today: { trackedSeconds: number; activeSeconds: number; meetingSeconds: number };
   /** What is measured, from the cached `config/org` (null = not read yet). */

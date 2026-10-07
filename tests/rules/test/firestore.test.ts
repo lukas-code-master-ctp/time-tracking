@@ -141,6 +141,16 @@ describe('config/org', () => {
     await assertFails(admin.doc('config/org').set(orgConfig({ screenshotRetentionDays: 0 })));
   });
 
+  it('pauseTimerAtLunch is optional and must be a bool', async () => {
+    const admin = db('admin');
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ pauseTimerAtLunch: true })));
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ pauseTimerAtLunch: false, updatedAt: NOW + 1 })));
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ updatedAt: NOW + 2 })));
+    await assertFails(
+      admin.doc('config/org').set({ ...orgConfig(), pauseTimerAtLunch: 'true' } as unknown as OrgConfig),
+    );
+  });
+
   it('accepts valid domain lists (1 to 10 domains)', async () => {
     const admin = db('admin');
     await assertSucceeds(admin.doc('config/org').set(orgConfig({ allowedDomains: ['compratuparcela.cl'] })));

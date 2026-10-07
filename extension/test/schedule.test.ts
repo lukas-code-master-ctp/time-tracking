@@ -12,6 +12,7 @@ import {
   SCHEDULE_ALARM,
   decideReminders,
   effectiveSchedule,
+  lunchPauses,
   nextScheduleWake,
   parseReminderNotificationId,
   pauseBoundaries,
@@ -25,6 +26,7 @@ import {
 import { PULSE_ALARM } from '../src/background/session';
 import { STORAGE_KEYS } from '../src/background/state';
 import { START_SCHEDULE_TIMEOUT_MS } from '../src/background/app';
+import { workDayElapsed } from '../src/ui/dom';
 import { activity, createHarness, hello, type Harness } from './fakes';
 
 // Monday 2026-10-05 (Chile on summer time, UTC-3). 2026-10-12 is a holiday.
@@ -266,6 +268,28 @@ describe('schedule helpers (pure)', () => {
     expect(decideReminders(edges, at(TUE, '18:30'), true, { date: TUE, done: ['start', 'lunchStart'] }).notify.map((r) => r.kind)).toEqual(['end']);
   });
 
+  it('lunchPauses: the lunches since the work day started, today\'s included even if still ahead', () => {
+    expect(lunchPauses(null, at(MON, '08:00'), at(MON, '10:00'))).toEqual([]);
+    const lunch = { start: at(MON, '13:00'), end: at(MON, '14:00') };
+    expect(lunchPauses(EFFECTIVE, at(MON, '08:00'), at(MON, '10:00'))).toEqual([lunch]);
+    expect(lunchPauses(EFFECTIVE, at(MON, '08:00'), at(MON, '15:00'))).toEqual([lunch]);
+    // Started during the lunch: only the rest of it; started after it: none.
+    expect(lunchPauses(EFFECTIVE, at(MON, '13:20'), at(MON, '15:00'))).toEqual([{ start: at(MON, '13:20'), end: at(MON, '14:00') }]);
+    expect(lunchPauses(EFFECTIVE, at(MON, '14:00'), at(MON, '15:00'))).toEqual([]);
+    // No lunch on Friday, nothing on a holiday.
+    expect(lunchPauses(EFFECTIVE, at(FRI, '08:00'), at(FRI, '15:00'))).toEqual([]);
+    expect(lunchPauses(EFFECTIVE, at(HOLIDAY, '08:00'), at(HOLIDAY, '15:00'))).toEqual([]);
+  });
+
+  it('workDayElapsed leaves out the elapsed part of the pauses', () => {
+    const start = at(MON, '09:00');
+    const pauses = [{ start: at(MON, '13:00'), end: at(MON, '14:00') }];
+    expect(workDayElapsed(start, at(MON, '12:00'), pauses)).toBe(3 * 3600_000);
+    expect(workDayElapsed(start, at(MON, '13:30'), pauses)).toBe(4 * 3600_000);
+    expect(workDayElapsed(start, at(MON, '15:00'), pauses)).toBe(5 * 3600_000);
+    expect(workDayElapsed(start, at(MON, '15:00'), [])).toBe(6 * 3600_000);
+  });
+
   it('a reminder log saved by 0.2.1 (only start/end) is read with the same keys', () => {
     expect(reminderLogFromJSON({ date: MON, done: ['start', 'end', 'other'] })).toEqual({ date: MON, done: ['start', 'end'] });
     expect(reminderLogFromJSON({ date: MON, done: ['lunchStart', 'lunchEnd'] })).toEqual({ date: MON, done: ['lunchStart', 'lunchEnd'] });
@@ -300,6 +324,15 @@ describe('extension with working hours', () => {
     expect(h.app.store.acc!.paused).toBe(false);
     expect(uploadedTracked(h) + (current(h)?.trackedSeconds ?? 0)).toBe(630);
     expect(h.chrome.world.notificationLog).toEqual([]);
+  });
+
+  it('the popup clock pauses at lunch only with config/org.pauseTimerAtLunch', async () => {
+    await useSchedule(h, CONFIG);
+    await h.app.session.start();
+    expect((await h.app.status()).session?.pauses).toEqual([]);
+    h.backend.org = { ...h.backend.org!, pauseTimerAtLunch: true };
+    await h.app.refreshOrgConfig(0);
+    expect((await h.app.status()).session?.pauses).toEqual([{ start: at(MON, '13:00'), end: at(MON, '14:00') }]);
   });
 
   it('work day open 08:00–19:00: full session, measured only 09:00–13:00 and 14:00–18:30, no captures in pause', async () => {
