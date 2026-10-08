@@ -15,6 +15,7 @@
     "e2e": "node e2e/portal.e2e.ts"
   },
   "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "firebase": "^12.19.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

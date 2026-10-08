@@ -5,7 +5,7 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   padding: 14px;
   min-height: 160px;
 }
@@ -22,9 +22,14 @@ body {
   gap: 10px;
 }
 
+.top {
+  padding: 2px 2px 4px;
+}
+
 .top img {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
 }
 
 .top .who {
@@ -35,6 +40,8 @@ body {
 .top .who strong {
   display: block;
   font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .top .who span {
@@ -45,40 +52,77 @@ body {
 }
 
 .pill {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  padding: 4px 9px;
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--muted);
+  border: 1px solid var(--border);
   white-space: nowrap;
+}
+
+.pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
 }
 
 .pill.on {
   background: var(--ok-soft);
   color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
+}
+
+/* Live dot while the work day is open. */
+.pill.on::before {
+  opacity: 1;
+  animation: live 2s ease-in-out infinite;
+}
+
+@keyframes live {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 25%, transparent);
+  }
 }
 
 .timer {
   text-align: center;
-  padding: 18px 14px 14px;
+  padding: 22px 16px 16px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
+    var(--surface);
+}
+
+/* Work day open: the card turns green-tinted (the pill and the label say it too). */
+.timer:has(.stop) {
+  background:
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--ok) 12%, transparent), transparent 70%),
+    var(--surface);
 }
 
 .timer .value {
-  font-size: 38px;
-  font-weight: 700;
+  font-size: 44px;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
 }
 
 .timer .label {
-  margin-top: 2px;
+  margin-top: 4px;
+  font-weight: 550;
 }
 
 .timer .btn {
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .stats {
@@ -88,7 +132,16 @@ body {
 }
 
 .stat {
-  padding: 10px 12px;
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+}
+
+.stat > .small.muted:first-child {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .stat.wide {
@@ -96,13 +149,14 @@ body {
 }
 
 .stat .value {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .measure h2 {
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
@@ -115,23 +169,40 @@ body {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 0;
 }
 
 .measure li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.measure li:first-child {
+  border-top: none;
+}
+
+.measure .yes,
+.measure .no {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .measure .yes {
   color: var(--ok);
-  font-weight: 600;
+  background: var(--ok-soft);
 }
 
 .measure .no {
   color: var(--muted);
-  font-weight: 600;
+  background: var(--surface-2);
 }
 
 .measure .foot {
@@ -139,6 +210,7 @@ body {
 }
 
 .footer {
+  padding: 2px 2px 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -164,18 +236,24 @@ body {
 .hero {
   text-align: center;
   display: grid;
-  gap: 10px;
-  padding: 18px 14px;
+  gap: 12px;
+  padding: 24px 18px 20px;
+  background:
+    radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+    var(--surface);
 }
 
 .hero img {
-  width: 48px;
-  height: 48px;
-  margin: 0 auto;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 2px;
+  border-radius: 14px;
 }
 
 .hero h1 {
-  font-size: 17px;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
 }
 
 .stack {
@@ -194,12 +272,17 @@ form.stack label {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 14px;
+  padding: 10px 14px 10px 16px;
+  border-left: 3px solid var(--ok);
 }
 
 .schedule .state {
   font-weight: 700;
   color: var(--ok);
+}
+
+.schedule.paused {
+  border-left-color: var(--warn-text);
 }
 
 .schedule.paused .state {

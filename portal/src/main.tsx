@@ -5,6 +5,7 @@ import { createFirebaseBackend } from './data/firebase';
 import type { Backend } from './data/types';
 import { applyTheme, readTheme } from './lib/theme';
 import { Root } from './Root';
+import '@fontsource-variable/plus-jakarta-sans/wght.css';
 import './styles.css';
 
 applyTheme(readTheme());
