@@ -44,6 +44,7 @@ import {
   SCHEDULE_ALARM,
   decideReminders,
   effectiveSchedule,
+  lunchPauses,
   nextScheduleWake,
   parseReminderNotificationId,
   reminderNotificationId,
@@ -223,6 +224,7 @@ export class App {
         // Missing doc or fields: the safe defaults (no screenshots).
         screenshotsEnabled: config?.screenshotsEnabled === true,
         blurScreenshots: config?.blurScreenshots !== false,
+        pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
         fetchedAt: this.now(),
       };
       await this.store.save('meta');
@@ -680,7 +682,16 @@ export class App {
         joinError: user ? meta.joinError : null,
         consentRequired: profile !== null && profile.consentVersion !== CONSENT_VERSION,
         consentVersion: CONSENT_VERSION,
-        session: session ? { id: session.id, startedAt: session.startedAt } : null,
+        session: session
+          ? {
+              id: session.id,
+              startedAt: session.startedAt,
+              pauses:
+                profile && org?.pauseTimerAtLunch === true
+                  ? lunchPauses(this.scheduleOf(user?.uid), session.startedAt, this.now())
+                  : [],
+            }
+          : null,
         today: todayTotals(daily, user?.uid ?? null, this.now()),
         capture: org ? { screenshots: org.screenshotsEnabled, blur: org.blurScreenshots } : null,
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,

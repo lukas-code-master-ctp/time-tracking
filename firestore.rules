@@ -94,7 +94,8 @@ service cloud.firestore {
 
     function validOrgConfig(d) {
       return d.keys().hasOnly(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
-                                'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
+                                'screenshotRetentionDays', 'pauseTimerAtLunch',
+                                'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
         && validDomainList(d.allowedDomains)
@@ -103,6 +104,8 @@ service cloud.firestore {
         && me().email.lower().split('@')[1] in d.allowedDomains
         && d.screenshotsEnabled is bool
         && d.blurScreenshots is bool
+        // Optional (older documents don't have it).
+        && (!('pauseTimerAtLunch' in d) || d.pauseTimerAtLunch is bool)
         && d.screenshotRetentionDays is int
         && d.screenshotRetentionDays >= 1 && d.screenshotRetentionDays <= 3650
         && d.updatedAt is int

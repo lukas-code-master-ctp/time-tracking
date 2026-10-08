@@ -152,6 +152,26 @@ export function SettingsForm({ config, adminEmail = null, onSave }: FormProps) {
         </div>
       </fieldset>
 
+      <fieldset>
+        <legend>Jornada</legend>
+        <label className="switch-row" htmlFor={`${id}-lunch`}>
+          <input
+            id={`${id}-lunch`}
+            type="checkbox"
+            checked={form.pauseTimerAtLunch}
+            onChange={(e) => set('pauseTimerAtLunch', e.target.checked)}
+          />
+          <span>
+            <span className="strong">Pausar el reloj en la colación</span>
+            <span className="muted small block">
+              El reloj de la jornada en la extensión se detiene durante la colación del horario y sigue al terminarla. Si
+              está apagado, el reloj cuenta todo el tiempo desde que se inició la jornada. Las horas medidas no cambian:
+              la colación nunca se mide.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+
       <fieldset aria-describedby={`${id}-domains-help${errors.allowedDomains ? ` ${id}-domains-err` : ''}`}>
         <legend>Dominios permitidos</legend>
         <p id={`${id}-domains-help`} className="muted small">

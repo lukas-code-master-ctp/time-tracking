@@ -384,12 +384,14 @@ describe('SettingsForm', () => {
     await userEvent.clear(days);
     await userEvent.type(days, '30');
     await userEvent.click(screen.getByLabelText(/Tomar capturas/));
+    await userEvent.click(screen.getByLabelText(/Pausar el reloj en la colación/));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(onSave).toHaveBeenCalledWith({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
       screenshotsEnabled: true,
       blurScreenshots: true,
       screenshotRetentionDays: '30',
+      pauseTimerAtLunch: true,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });
@@ -453,7 +455,7 @@ describe('SettingsForm', () => {
 });
 
 describe('Configuración page', () => {
-  it('writes the 6 fields with the admin uid', async () => {
+  it('writes the 6 fields with the admin uid (pauseTimerAtLunch only when on)', async () => {
     const db = seededDb();
     const backend = backendOf(db, ADMIN);
     renderApp(backend, '/configuracion');

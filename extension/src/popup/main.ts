@@ -18,7 +18,7 @@
 import '../ui/base.css';
 import './popup.css';
 import type { PopupRequest, StatusView } from '../messages';
-import { clock, el, hoursMinutes, percent, send } from '../ui/dom';
+import { clock, el, hoursMinutes, percent, send, workDayElapsed } from '../ui/dom';
 import { usesGoogleAccountChooser } from '../browser';
 import { ALLOWED_DOMAINS } from '../env';
 
@@ -261,10 +261,14 @@ function renderReady(s: StatusView): void {
   );
 
   // Timer + big button
-  const value = el('div', { className: 'value', textContent: on ? clock(Date.now() - s.session!.startedAt) : '0:00:00' });
+  const pauses = s.session?.pauses ?? [];
+  const paused = (now: number): boolean => pauses.some((p) => now >= p.start && now < p.end);
+  const value = el('div', { className: 'value', textContent: on ? clock(workDayElapsed(s.session!.startedAt, Date.now(), pauses)) : '0:00:00' });
+  const timerLabel = (now: number): string => (!on ? 'Jornada no iniciada' : paused(now) ? 'Jornada en pausa (colación)' : 'Jornada en curso');
+  const label = el('div', { className: 'label small muted', textContent: timerLabel(Date.now()) });
   const card = el('section', { className: 'card timer' }, [
     value,
-    el('div', { className: 'label small muted', textContent: on ? 'Jornada en curso' : 'Jornada no iniciada' }),
+    label,
     on
       ? button('Cerrar jornada', 'stop big', () => void act({ type: 'session.stop' }))
       : button(inFlight === 'session.start' ? 'Iniciando…' : 'Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
@@ -272,7 +276,9 @@ function renderReady(s: StatusView): void {
   if (on) {
     const startedAt = s.session!.startedAt;
     timer = setInterval(() => {
-      value.textContent = clock(Date.now() - startedAt);
+      const now = Date.now();
+      value.textContent = clock(workDayElapsed(startedAt, now, pauses));
+      label.textContent = timerLabel(now);
     }, 1000);
   }
   root.append(card);

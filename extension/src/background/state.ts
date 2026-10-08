@@ -53,6 +53,8 @@ export interface OrgConfigCache {
   uid: string;
   screenshotsEnabled: boolean;
   blurScreenshots: boolean;
+  /** Popup clock stops during the lunch. Missing in caches before 0.2.4 (= false). */
+  pauseTimerAtLunch?: boolean;
   fetchedAt: number;
 }
 

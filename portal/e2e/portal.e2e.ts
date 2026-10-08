@@ -580,7 +580,7 @@ async function main(): Promise<void> {
     ok('"Volver al general": schedules/colab-ana borrado.');
     await page.getByRole('button', { name: 'Cerrar horario de Ana Rojas' }).click();
 
-    // 6. Settings: exact 6 fields.
+    // 6. Settings: exact 6 fields (pauseTimerAtLunch is off).
     await navTo(page, 'Configuración');
     await page.getByLabel(/Difuminar capturas/).uncheck();
     await page.getByLabel('Conservar capturas (días)').fill('30');

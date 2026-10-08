@@ -31,6 +31,16 @@ export function clock(ms: number): string {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+/**
+ * Time of the work day clock: `now - startedAt` minus the part of `pauses`
+ * (lunches, when the organization pauses the clock) already elapsed.
+ */
+export function workDayElapsed(startedAt: number, now: number, pauses: readonly { start: number; end: number }[] = []): number {
+  let ms = now - startedAt;
+  for (const p of pauses) ms -= Math.max(0, Math.min(p.end, now) - Math.max(p.start, startedAt));
+  return Math.max(0, ms);
+}
+
 /** `3 h 05 min` / `12 min` */
 export function hoursMinutes(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds / 60));

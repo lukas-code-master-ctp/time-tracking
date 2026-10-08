@@ -28,6 +28,12 @@ export interface OrgConfig {
   screenshotsEnabled: boolean;
   blurScreenshots: boolean;
   screenshotRetentionDays: number;
+  /**
+   * The work day clock in the extension popup stops during the lunch of the
+   * schedule. Optional: missing in older documents (= false, the clock keeps
+   * running). It only changes what the popup shows, never what is measured.
+   */
+  pauseTimerAtLunch?: boolean;
   updatedAt: EpochMs;
   /** uid of the admin who last changed it (or 'system'). */
   updatedBy: string;
