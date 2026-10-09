@@ -157,11 +157,11 @@ export function scheduleView(schedule: EffectiveSchedule | null, now: number): S
 
 /**
  * Events with a reminder, in the order they happen in a day (spec
- * 2026-10-02-notificaciones-hora-exacta-colacion.md): entry, lunch start,
- * lunch end, exit. 0.2.1 only had `start` and `end`; a log it saved
- * (`tt.meta.reminders`) is read as is, with the same keys.
+ * 2026-10-02-notificaciones-hora-exacta-colacion.md): entry, second entry
+ * reminder (0.2.5), lunch start, lunch end, exit. 0.2.1 only had `start` and
+ * `end`; a log it saved (`tt.meta.reminders`) is read as is, with the same keys.
  */
-export const REMINDER_KINDS = ['start', 'lunchStart', 'lunchEnd', 'end'] as const;
+export const REMINDER_KINDS = ['start', 'startAgain', 'lunchStart', 'lunchEnd', 'end'] as const;
 export type ReminderKind = (typeof REMINDER_KINDS)[number];
 
 function isReminderKind(k: unknown): k is ReminderKind {
@@ -181,6 +181,9 @@ export function reminderLogFromJSON(raw: unknown): ReminderLog | null {
   if (typeof r.date !== 'string' || !Array.isArray(r.done)) return null;
   return { date: r.date, done: r.done.filter(isReminderKind) };
 }
+
+/** The entry reminder is repeated this long after the entry while no work day was started. */
+export const START_AGAIN_DELAY_MS = 10 * 60_000;
 
 export interface Reminder {
   kind: ReminderKind;
@@ -210,6 +213,10 @@ export function remindersForDay(schedule: EffectiveSchedule | null, date: string
   const day = plan.schedule;
   if (!plan.span || !day || plan.work.length === 0) return [];
   const out: Reminder[] = [{ kind: 'start', date, at: plan.span.start, time: day.start }];
+  // Second entry reminder, only when nothing else of the day (lunch, exit) happens before it.
+  const again = plan.span.start + START_AGAIN_DELAY_MS;
+  const firstOther = Math.min(plan.span.end, plan.lunch?.start ?? Infinity);
+  if (again < firstOther) out.push({ kind: 'startAgain', date, at: again, time: day.start });
   if (plan.lunch && day.lunchStart !== null && day.lunchEnd !== null) {
     out.push({ kind: 'lunchStart', date, at: plan.lunch.start, time: day.lunchStart, until: day.lunchEnd });
     // A lunch that ends with the schedule has no "Se vuelve a medir" (nothing is measured after it): only the exit.
@@ -239,6 +246,7 @@ export interface ReminderDecision {
 function variantFor(r: Reminder, workDayOpen: boolean): Reminder | null {
   switch (r.kind) {
     case 'start':
+    case 'startAgain':
       return workDayOpen ? null : r;
     case 'lunchStart':
     case 'end':
@@ -255,9 +263,12 @@ function variantFor(r: Reminder, workDayOpen: boolean): Reminder | null {
  * notification is shown. It notifies with the state of the work day of its
  * row in the spec (entry and "¿Retomar la jornada?" without an open work
  * day; lunch start, lunch end and exit with it open) and only if the next
- * event of the day has not happened yet: a late wake-up after the exit shows
+ * event of the day has not happened yet (the second entry reminder does not
+ * count as one): a late wake-up after the exit shows
  * no lunch reminder, nor the entry one. The informative lunch reminders
- * (without a button) also need to be within INFO_REMINDER_WINDOW_MS of their time.
+ * (without a button) also need to be within INFO_REMINDER_WINDOW_MS of their time,
+ * and so does the second entry reminder, which is not shown together with the
+ * first one.
  */
 export function decideReminders(
   schedule: EffectiveSchedule | null,
@@ -274,13 +285,17 @@ export function decideReminders(
     if (now < r.at || next.done.includes(r.kind)) return;
     next.done.push(r.kind);
     // Too late: the next event of the day (strictly later; e.g. a lunch that
-    // starts with the schedule does not hide the entry) already happened.
-    const following = reminders.slice(i + 1).find((f) => f.at > r.at);
+    // starts with the schedule does not hide the entry; nor does the second
+    // entry reminder, which only repeats it) already happened.
+    const following = reminders.slice(i + 1).find((f) => f.at > r.at && f.kind !== 'startAgain');
     if (following && now >= following.at) return;
     const shown = variantFor(r, workDayOpen);
     if (!shown) return;
     const informative = shown.kind === 'lunchStart' || (shown.kind === 'lunchEnd' && !shown.resume);
     if (informative && now > r.at + INFO_REMINDER_WINDOW_MS) return; // stale: not worth a notification
+    // The second entry reminder is a nudge just after the first: not on a late
+    // wake-up (that one already shows the entry, which stays until acted on).
+    if (shown.kind === 'startAgain' && (now > r.at + INFO_REMINDER_WINDOW_MS || notify.some((n) => n.kind === 'start'))) return;
     notify.push(shown);
   });
   const changed = fresh ? log !== null || next.done.length > 0 : next.done.length !== log.done.length;
@@ -300,6 +315,12 @@ export function reminderText(r: Reminder): ReminderContent {
   switch (r.kind) {
     case 'start':
       return { message: `Tu jornada empieza a las ${r.time}. ¿Iniciar jornada?`, button: 'Iniciar jornada', requireInteraction: true };
+    case 'startAgain':
+      return {
+        message: `Aún no inicias tu jornada (empezaba a las ${r.time}). ¿Iniciar jornada?`,
+        button: 'Iniciar jornada',
+        requireInteraction: true,
+      };
     case 'lunchStart':
       return {
         message: `Es hora de tu colación (${r.time}–${r.until ?? ''}). Durante la colación no se mide.`,
@@ -322,7 +343,7 @@ export function reminderNotificationId(r: Pick<Reminder, 'kind' | 'date'>): stri
 }
 
 export function parseReminderNotificationId(id: string): { kind: ReminderKind; date: string } | null {
-  const m = /^tt-reminder:(start|lunchStart|lunchEnd|end):(\d{4}-\d{2}-\d{2})$/.exec(id);
+  const m = /^tt-reminder:(start|startAgain|lunchStart|lunchEnd|end):(\d{4}-\d{2}-\d{2})$/.exec(id);
   return m ? { kind: m[1] as ReminderKind, date: m[2]! } : null;
 }
 

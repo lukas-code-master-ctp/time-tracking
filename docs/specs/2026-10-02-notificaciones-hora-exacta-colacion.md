@@ -35,6 +35,18 @@ Extensión **0.2.2**. La 0.2.1 está en revisión en la tienda: se sube la 0.2.2
 4. Una vez por evento y día.
 5. Tests, typecheck, build:qa y e2e en verde.
 
+## Segundo aviso de entrada (extensión 0.2.5, 2026-10-09)
+Pedido del usuario: el aviso de entrada llega a la hora en punto (09:00) y, si la persona no inició la jornada, llega otro 10 minutos después.
+
+| Evento | Hora | Condición | Texto | Botón |
+|---|---|---|---|---|
+| Entrada (repetición) | `start` + 10 min | Sin jornada abierta | "Aún no inicias tu jornada (empezaba a las 09:00). ¿Iniciar jornada?" | Iniciar jornada |
+
+- Reemplaza la notificación del primer aviso (se borra) y queda hasta que la persona la atiende.
+- No existe si la colación o la salida caen antes de ese minuto.
+- Un despertar tardío muestra solo el primer aviso: el segundo no sale junto con el primero ni más de 15 minutos después de su hora. El segundo aviso no cuenta como "siguiente evento" para ocultar el primero.
+- Solo cambia la extensión; no hay campos nuevos en Firestore ni reglas.
+
 ## Decisiones de implementación
 - **Hora exacta**: `remindersForDay` (`extension/src/background/schedule.ts`) devuelve los eventos del día en orden (`start`, `lunchStart`, `lunchEnd`, `end`) con `at` = la hora exacta del horario (`planForDay`: `span.start`, `lunch.start`, `lunch.end`, `span.end`). La tolerancia ya no se usa en la extensión para los avisos; `EffectiveSchedule.toleranceMinutes` se mantiene (es parte del horario efectivo) y el portal la sigue usando para atrasos y salidas anticipadas.
 - **Alarma `tt-schedule`**: `nextScheduleWake` ya tomaba el mínimo entre transiciones, recordatorios y medianoche; como ahora los recordatorios coinciden con las transiciones, la alarma queda a la hora exacta (09:00, 13:00, 14:00, 18:30). Hay tests de que no se programa 09:05 ni 18:35 y de que el aviso de salida sale a las 18:30:00 y no a las 18:29:59.

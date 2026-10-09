@@ -365,6 +365,10 @@ export class App {
 
   private async showReminder(r: Reminder): Promise<void> {
     const { message, button, requireInteraction } = reminderText(r);
+    // The second entry reminder replaces the first one (not two "Iniciar jornada" in the notification center).
+    if (r.kind === 'startAgain') {
+      await chrome.notifications.clear(reminderNotificationId({ kind: 'start', date: r.date })).catch(() => undefined);
+    }
     try {
       await chrome.notifications.create(reminderNotificationId(r), {
         type: 'basic',
@@ -381,7 +385,7 @@ export class App {
   }
 
   /**
-   * Button of a reminder: "Iniciar jornada" (entry, and the lunch end
+   * Button of a reminder: "Iniciar jornada" (entry, its repetition, and the lunch end
    * without an open work day: "¿Retomar la jornada?") starts the work day
    * (the notice must be accepted: otherwise it opens the notice) and
    * "Cerrar jornada" closes it. Any other problem, or a reminder of another day, opens the
@@ -398,7 +402,7 @@ export class App {
       return;
     }
     try {
-      if (reminder.kind === 'start' || reminder.kind === 'lunchEnd') {
+      if (reminder.kind === 'start' || reminder.kind === 'startAgain' || reminder.kind === 'lunchEnd') {
         // lunchEnd only has a button in its "¿Retomar la jornada?" variant.
         await this.startWorkDay();
       } else if (reminder.kind === 'end') {
