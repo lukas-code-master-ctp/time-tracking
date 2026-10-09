@@ -68,6 +68,7 @@ Desde la **extensión 0.2.0** ([spec](docs/specs/2026-09-30-horarios.md)). Sin h
 - El popup muestra el estado: "En horario hasta 18:30" (antes de la colación, "hasta 13:00"), "Colación hasta 14:00", "Fuera de horario: no se mide", "Hoy es feriado" o "Día libre", y el horario de hoy ("Hoy (miércoles): 09:00–18:30 · colación 13:00–14:00").
 - **Recordatorios de inicio, colación y cierre** (si están activados en el horario general y hay sesión iniciada en la extensión), **a la hora exacta** del horario (desde la 0.2.2; la tolerancia solo cuenta para atrasos y salidas anticipadas en los reportes):
   - Entrada, si no hay jornada abierta: "Tu jornada empieza a las 09:00. ¿Iniciar jornada?", con botón **Iniciar jornada**.
+  - 10 minutos después de la entrada, si sigue sin jornada abierta (desde la 0.2.5): "Aún no inicias tu jornada (empezaba a las 09:00). ¿Iniciar jornada?", con botón **Iniciar jornada**. Reemplaza al primer aviso.
   - Inicio de colación, con la jornada abierta: "Es hora de tu colación (14:00–15:00). Durante la colación no se mide."
   - Término de colación, con la jornada abierta: "Terminó tu colación. Se vuelve a medir desde las 15:00."; sin jornada abierta (la cerraron para almorzar): "Terminó tu colación. ¿Retomar la jornada?", con botón **Iniciar jornada**.
   - Salida, si sigue abierta: "Tu horario terminó a las 18:30. ¿Cerrar jornada?", con botón **Cerrar jornada**.
