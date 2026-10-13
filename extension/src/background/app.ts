@@ -689,11 +689,13 @@ export class App {
         session: session
           ? {
               id: session.id,
-              startedAt: session.startedAt,
-              pauses:
-                profile && org?.pauseTimerAtLunch === true
-                  ? lunchPauses(this.scheduleOf(user?.uid), session.startedAt, this.now())
-                  : [],
+              startedAt: session.dayStartedAt ?? session.startedAt,
+              pauses: [
+                ...(session.gaps ?? []),
+                ...(profile && org?.pauseTimerAtLunch === true
+                  ? lunchPauses(this.scheduleOf(user?.uid), session.dayStartedAt ?? session.startedAt, this.now())
+                  : []),
+              ],
             }
           : null,
         today: todayTotals(daily, user?.uid ?? null, this.now()),

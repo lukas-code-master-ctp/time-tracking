@@ -310,6 +310,12 @@ describe('SyncEngine + SessionManager', () => {
     const second = h.app.store.session!.id;
     expect(second).not.toBe(first);
     expect(h.app.store.session!.startedAt).toBe(Date.now());
+    // The popup clock continues from the first start, without the gap.
+    const firstStart = lastAlive - 60_000;
+    expect((await h.app.status()).session).toMatchObject({
+      startedAt: firstStart,
+      pauses: [{ start: lastAlive, end: Date.now() }],
+    });
     expect(h.app.store.meta.notice).toBeNull();
     expect(h.chrome.world.badgeText).toBe('ON');
     expect(h.backend.sessions.get(first)?.endReason).toBe('auto');
@@ -336,6 +342,20 @@ describe('SyncEngine + SessionManager', () => {
     expect(h.backend.sessions.get(first)).toMatchObject({ endedAt: lastAlive, endReason: 'manual' });
     expect(h.app.store.session?.id).not.toBe(first);
     expect(h.app.store.meta.notice).toBeNull();
+
+    // A second sleep keeps the first start and both gaps.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pulse();
+    const lastAlive2 = Date.now();
+    vi.setSystemTime(lastAlive2 + 10 * 60_000);
+    await pulse();
+    expect(h.app.store.session).toMatchObject({
+      dayStartedAt: lastAlive - 60_000,
+      gaps: [
+        { start: lastAlive, end: lastAlive + 20 * 60_000 },
+        { start: lastAlive2, end: Date.now() },
+      ],
+    });
   });
 
   it('a pulse a bit late (under 5 min) keeps the same session', async () => {

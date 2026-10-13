@@ -317,6 +317,16 @@ describe('schedule helpers (pure)', () => {
     expect(workDayElapsed(start, at(MON, '15:00'), [])).toBe(6 * 3600_000);
   });
 
+  it('workDayElapsed counts overlapping pauses once (computer asleep during the lunch)', () => {
+    const start = at(MON, '09:00');
+    const pauses = [
+      { start: at(MON, '13:00'), end: at(MON, '14:00') },
+      { start: at(MON, '12:30'), end: at(MON, '13:30') },
+    ];
+    expect(workDayElapsed(start, at(MON, '15:00'), pauses)).toBe(4.5 * 3600_000);
+    expect(workDayElapsed(start, at(MON, '13:15'), pauses)).toBe(3.5 * 3600_000);
+  });
+
   it('a reminder log saved by 0.2.1 (only start/end) is read with the same keys', () => {
     expect(reminderLogFromJSON({ date: MON, done: ['start', 'end', 'other'] })).toEqual({ date: MON, done: ['start', 'end'] });
     expect(reminderLogFromJSON({ date: MON, done: ['lunchStart', 'lunchEnd'] })).toEqual({ date: MON, done: ['lunchStart', 'lunchEnd'] });

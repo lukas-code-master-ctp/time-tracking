@@ -40,6 +40,14 @@ export interface LocalSession {
   id: string;
   uid: string;
   startedAt: number;
+  /**
+   * Start of the work day this session continues after a gap (computer
+   * asleep, Chrome closed); missing = the work day started with this session.
+   * Only for the popup clock: Firestore sessions are not affected.
+   */
+  dayStartedAt?: number;
+  /** Gaps (no pulse) between `dayStartedAt` and `startedAt`, left out of the popup clock. */
+  gaps?: { start: number; end: number }[];
 }
 
 export interface JoinErrorInfo {
