@@ -24,7 +24,8 @@
  *   no pulse for more than SUSPEND_GAP_MS (lid closed at lunch, Chrome
  *   closed) is a pause, not work. The session is closed at the last pulse
  *   and, on the same day and within MAX_RESUME_GAP_MS, a new one starts
- *   right away, so the work day continues without the gap. If the server
+ *   right away, so the work day continues without the gap (the popup clock
+ *   keeps counting from the first start, minus the gaps). If the server
  *   already auto-closed the old session (no heartbeat for 30 min), that
  *   close is refused and simply dropped. A longer gap closes the work day
  *   at the last pulse with RESUME_EXPIRED_NOTICE.
@@ -45,7 +46,7 @@ import {
 import type { AuthService } from './auth';
 import { recordSlots } from './daily';
 import { enqueueOp, type SyncOp } from './queue';
-import type { StateStore } from './state';
+import type { LocalSession, StateStore } from './state';
 import type { SyncEngine } from './sync';
 import type { Tracker } from './tracker';
 
@@ -264,10 +265,10 @@ export class SessionManager {
   // ---------- helpers (inside store.run) ----------
 
   /** Opens a work day for `uid` at `at`: accumulator, local session and queued create. */
-  private async openLocked(uid: string, at: number): Promise<void> {
+  private async openLocked(uid: string, at: number, continues?: Pick<LocalSession, 'dayStartedAt' | 'gaps'>): Promise<void> {
     const id = newSessionId();
     await this.tracker.beginMeasuring(id, uid, at);
-    this.store.session = { id, uid, startedAt: at };
+    this.store.session = { id, uid, startedAt: at, ...continues };
     enqueueOp(this.store.queue, {
       kind: 'sessionCreate',
       uid,
@@ -305,7 +306,12 @@ export class SessionManager {
     }
     const sameDay = dateKey(lastAlive, DEFAULT_TIME_ZONE) === dateKey(at, DEFAULT_TIME_ZONE);
     if (canWork && sameDay && gap <= MAX_RESUME_GAP_MS) {
-      await this.openLocked(session.uid, at);
+      // Same work day for the popup clock: it keeps counting from the first
+      // start, without the gap (otherwise it would restart at 0:00:00).
+      await this.openLocked(session.uid, at, {
+        dayStartedAt: session.dayStartedAt ?? session.startedAt,
+        gaps: [...(session.gaps ?? []), { start: lastAlive, end: at }],
+      });
     } else {
       this.store.meta.notice = RESUME_EXPIRED_NOTICE;
     }

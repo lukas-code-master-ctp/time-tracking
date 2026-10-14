@@ -33,11 +33,18 @@ export function clock(ms: number): string {
 
 /**
  * Time of the work day clock: `now - startedAt` minus the part of `pauses`
- * (lunches, when the organization pauses the clock) already elapsed.
+ * (sleep gaps, lunches when the organization pauses the clock) already
+ * elapsed. Overlapping pauses (a sleep during the lunch) count once.
  */
 export function workDayElapsed(startedAt: number, now: number, pauses: readonly { start: number; end: number }[] = []): number {
   let ms = now - startedAt;
-  for (const p of pauses) ms -= Math.max(0, Math.min(p.end, now) - Math.max(p.start, startedAt));
+  let covered = startedAt;
+  for (const p of [...pauses].sort((a, b) => a.start - b.start)) {
+    const start = Math.max(p.start, covered);
+    const end = Math.min(p.end, now);
+    if (end > start) ms -= end - start;
+    covered = Math.max(covered, Math.min(p.end, now));
+  }
   return Math.max(0, ms);
 }
 

@@ -99,8 +99,10 @@ export interface StatusView {
   /** Version the consent page accepts. */
   consentVersion: string;
   /**
-   * Open work day, if any. `pauses`: lunches of the schedule the popup clock
-   * leaves out (`config/org.pauseTimerAtLunch`); [] = the clock never stops.
+   * Open work day, if any. `startedAt`: start of the work day (the first
+   * session when it continued after a sleep). `pauses`: what the popup clock
+   * leaves out: gaps while the computer slept or Chrome was closed, and the
+   * lunches of the schedule (`config/org.pauseTimerAtLunch`); they may overlap.
    */
   session: { id: string; startedAt: number; pauses: { start: number; end: number }[] } | null;
   /** Today's totals (America/Santiago) from the blocks measured on this device. */
