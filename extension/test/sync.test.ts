@@ -98,6 +98,15 @@ describe('queue', () => {
     expect(classify('permission-denied', act, 0)).toBe('retry');
     expect(classify('permission-denied', act, 2)).toBe('drop');
     expect(classify('invalid-argument', act, 0)).toBe('drop');
+    // An active break refused by the rules (e.g. not deployed yet) never closes the work day.
+    const brk = {
+      kind: 'break',
+      uid: 'u1',
+      data: { uid: 'u1', sessionId: 's1', status: 'taken', promptedAt: 1, answeredAt: 2, start: 1, end: 2, exercise: 'cuello' },
+    } as const;
+    expect(classify('permission-denied', brk, 0)).toBe('retry');
+    expect(classify('permission-denied', brk, 2)).toBe('drop');
+    expect(opKey(brk)).toBe('break:u1_1');
     expect(errorCode({ code: 'firestore/unavailable' })).toBe('unavailable');
     expect(errorCode(new TypeError('Failed to fetch'))).toBe('unavailable');
   });

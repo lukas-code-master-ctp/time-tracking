@@ -115,6 +115,7 @@ export function createChromeMock() {
     startup: new MockEvent<() => void>(),
     notificationButton: new MockEvent<(id: string, buttonIndex: number) => void>(),
     notificationClicked: new MockEvent<(id: string) => void>(),
+    notificationClosed: new MockEvent<(id: string, byUser: boolean) => void>(),
   };
 
   const local = new MockStorageArea();
@@ -190,6 +191,7 @@ export function createChromeMock() {
       clear: async (id: string) => world.notifications.delete(id),
       onButtonClicked: events.notificationButton,
       onClicked: events.notificationClicked,
+      onClosed: events.notificationClosed,
     },
     runtime: {
       id: 'test-extension-id',

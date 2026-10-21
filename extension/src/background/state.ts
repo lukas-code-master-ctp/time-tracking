@@ -7,7 +7,8 @@
  * Chrome events (idle, tabs, alarms, messages) never interleave half-applied
  * changes or overwrite each other's writes.
  */
-import { SlotAccumulator, type UserProfile } from '@timetracking/shared';
+import { SlotAccumulator, type ActiveBreakSettings, type UserProfile } from '@timetracking/shared';
+import { breakStateFromJSON, type BreakState } from './breaks';
 import { dailyFromJSON, type DailySummary } from './daily';
 import { emptyQueue, queueFromJSON, type QueueState } from './queue';
 import { reminderLogFromJSON, scheduleCacheFromJSON, type ReminderLog, type ScheduleCache } from './schedule';
@@ -63,6 +64,8 @@ export interface OrgConfigCache {
   blurScreenshots: boolean;
   /** Popup clock stops during the lunch. Missing in caches before 0.2.4 (= false). */
   pauseTimerAtLunch?: boolean;
+  /** Active breaks of the organization. Missing in caches before 0.2.7 (= off). */
+  activeBreaks?: ActiveBreakSettings;
   fetchedAt: number;
 }
 
@@ -83,6 +86,10 @@ export interface Meta {
   schedule: ScheduleCache | null;
   /** Entry/lunch/exit reminders already handled today (0.2.1 only has start/end). Missing before 0.2.0. */
   reminders: ReminderLog | null;
+  /** Active breaks of the signed-in user (breaks.ts). Missing before 0.2.7. */
+  breaks: BreakState | null;
+  /** Users who turned the active break reminders off on this device (kept across sign-outs). */
+  breakOptOut: string[];
 }
 
 export function defaultMeta(): Meta {
@@ -96,6 +103,8 @@ export function defaultMeta(): Meta {
     org: null,
     schedule: null,
     reminders: null,
+    breaks: null,
+    breakOptOut: [],
   };
 }
 
@@ -188,6 +197,10 @@ export class StateStore {
     this.meta = { ...defaultMeta(), ...(rawMeta && typeof rawMeta === 'object' ? (rawMeta as Partial<Meta>) : {}) };
     this.meta.schedule = scheduleCacheFromJSON(this.meta.schedule);
     this.meta.reminders = reminderLogFromJSON(this.meta.reminders);
+    this.meta.breaks = breakStateFromJSON(this.meta.breaks);
+    this.meta.breakOptOut = Array.isArray(this.meta.breakOptOut)
+      ? this.meta.breakOptOut.filter((u): u is string => typeof u === 'string')
+      : [];
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);

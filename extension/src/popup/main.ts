@@ -7,7 +7,9 @@
  * - notice not accepted → link to the consent page (opened automatically after signing in)
  * - ready → start/stop the work day, live timer, working hours (state now
  *   and today's schedule, only when configured), today's hours, activity
- *   (excluding meeting time) and time in web meetings, what is being
+ *   (excluding meeting time) and time in web meetings, active breaks (when
+ *   the organization turned them on: pending reminder, next one, on/off for
+ *   this person), what is being
  *   measured, pending uploads, sign out.
  *
  * Outside Chrome the popup closes when Google's window opens, so the result
@@ -293,6 +295,8 @@ function renderReady(s: StatusView): void {
     );
   }
 
+  if (s.breaks) root.append(renderBreaks(s.breaks, on));
+
   // Today
   root.append(
     el('section', { className: 'stats' }, [
@@ -368,6 +372,39 @@ function renderReady(s: StatusView): void {
     sync.title = 'Se enviarán automáticamente cuando haya conexión';
   }
   root.append(el('footer', { className: 'footer muted' }, [sync, out]));
+}
+
+/** "Pausa activa" (spec 2026-10-21-pausa-activa). */
+function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLElement {
+  const toggle = el('input', { type: 'checkbox', id: 'breaks-enabled', checked: b.enabled, disabled: busy });
+  toggle.addEventListener('change', () => void act({ type: 'breaks.setEnabled', enabled: toggle.checked }));
+  const every = `Cada ${b.intervalMinutes} min de trabajo continuo, una pausa de ${b.durationMinutes} min.`;
+  let body: (HTMLElement | string)[];
+  if (b.pending) {
+    body = [
+      el('div', { className: 'state', textContent: b.pending.title }),
+      el('p', { className: 'small', textContent: b.pending.text }),
+      el('div', { className: 'row' }, [
+        button('Tomé la pausa', 'primary', () => void act({ type: 'breaks.answer', answer: 'taken' })),
+        button('En 10 min', '', () => void act({ type: 'breaks.answer', answer: 'postponed' })),
+      ]),
+    ];
+  } else if (!b.enabled) {
+    body = [el('p', { className: 'small muted', textContent: 'Desactivaste los recordatorios de pausa activa en este equipo.' })];
+  } else {
+    const next = on && b.nextAt !== null ? `Próxima pausa cerca de las ${timeOfDay(b.nextAt)}. ` : '';
+    body = [el('p', { className: 'small muted', textContent: `${next}${every}` })];
+  }
+  return el('section', { className: `card breaks${b.pending ? ' due' : ''}` }, [
+    el('h2', { textContent: 'Pausa activa' }),
+    ...body,
+    el('label', { className: 'switch small', htmlFor: 'breaks-enabled' }, [toggle, ' Recordarme las pausas activas']),
+  ]);
+}
+
+/** `14:35` (local time of the computer). */
+function timeOfDay(ms: number): string {
+  return new Date(ms).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 void refresh();

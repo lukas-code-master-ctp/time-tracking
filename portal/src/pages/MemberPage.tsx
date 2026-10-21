@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { formatDuration, summarizeMember } from '@timetracking/shared';
+import { formatDuration, readActiveBreakSettings, summarizeMember, type ActiveBreak } from '@timetracking/shared';
 import { ScreenshotGallery } from '../components/Screenshots';
 import { Timeline } from '../components/Timeline';
 import { ActivityMeter, BarList, Empty, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
@@ -22,7 +22,7 @@ export function MemberPage() {
   const [openShot, setOpenShot] = useState<string | null>(null);
 
   const load = useLoad(async () => {
-    const [user, config, slots, sessions, shots, general, personal] = await Promise.all([
+    const [user, config, slots, sessions, shots, general, personal, breaks] = await Promise.all([
       data.getUser(uid),
       data.getOrgConfig(),
       data.listActivity(day, uid),
@@ -30,19 +30,22 @@ export function MemberPage() {
       data.listScreenshots(uid, day),
       data.getScheduleConfig(),
       data.getPersonSchedule(uid),
+      data.listBreaks(uid, day),
     ]);
-    return { user, config, slots, sessions, shots, general, personal, now: Date.now() };
+    return { user, config, slots, sessions, shots, general, personal, breaks, now: Date.now() };
   }, [data, uid, day.from, day.to]);
 
   const view = useMemo(() => {
     if (!load.data) return null;
-    const { slots, sessions, shots, general, personal, now } = load.data;
+    const { config, slots, sessions, shots, general, personal, breaks, now } = load.data;
     const eff = scheduleFor({ config: general, persons: new Map(personal ? [[uid, personal]] : []) }, uid);
     const schedule = dayScheduleView(date, sessions, eff, now);
     return {
       schedule,
       summary: summarizeMember(slots, sessions, { from: day.from, to: day.to, now, topN: 10 }),
-      timeline: buildTimeline(day.from, day.to, slots, shots, { plan: schedule?.plan ?? null }),
+      timeline: buildTimeline(day.from, day.to, slots, shots, { plan: schedule?.plan ?? null, breaks }),
+      // Shown while the organization has them on, or for a day that has some.
+      breaks: readActiveBreakSettings(config).enabled || breaks.length > 0 ? breakCounts(breaks) : null,
       sessions: sessionViews(sessions, day, now),
       shots: [...shots].sort((a, b) => a.takenAt - b.takenAt),
     };
@@ -120,6 +123,13 @@ export function MemberPage() {
             <Stat label="En reunión" value={formatDuration(view.summary.meetingSeconds)} hint="no cuenta en la actividad" />
             <Stat label="Fuera de Chrome" value={formatDuration(view.summary.outsideChromeSeconds)} />
             <Stat label="Jornadas" value={String(view.sessions.length)} />
+            {view.breaks ? (
+              <Stat
+                label="Pausas activas"
+                value={String(view.breaks.taken)}
+                hint={`tomadas · ${view.breaks.postponed} pospuestas · ${view.breaks.skipped} omitidas`}
+              />
+            ) : null}
           </section>
 
           {view.schedule ? <DayComplianceCards view={view.schedule} /> : null}
@@ -213,6 +223,12 @@ export function MemberPage() {
       )}
     </>
   );
+}
+
+/** Answers of the day by status. */
+export function breakCounts(breaks: readonly ActiveBreak[]): { taken: number; postponed: number; skipped: number } {
+  const count = (status: ActiveBreak['status']): number => breaks.filter((b) => b.status === status).length;
+  return { taken: count('taken'), postponed: count('postponed'), skipped: count('skipped') };
 }
 
 function OutsideCell({ part }: { part: { outsideScheduleSeconds: number; lunchSeconds: number } | undefined }) {

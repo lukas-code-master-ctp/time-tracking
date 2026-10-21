@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ScreenshotMeta, WithId } from '@timetracking/shared';
+import type { ActiveBreak, ScreenshotMeta, WithId } from '@timetracking/shared';
 import { dayBounds } from '../src/lib/dates';
 import { activityLevel, buildTimeline } from '../src/lib/timeline';
 import { slot } from './fakes';
@@ -87,6 +87,21 @@ describe('buildTimeline', () => {
     const t = buildTimeline(day.from, day.to, [], [shot(at(13, 5))]);
     expect(t.rows.map((r) => r.hourLabel)).toEqual(['13:00']);
     expect(t.blocksWithData).toBe(0);
+  });
+
+  it('draws the active breaks taken over the minutes of each block they cover', () => {
+    const brk = (status: ActiveBreak['status'], start: number, end: number): ActiveBreak => ({
+      uid: 'u1', sessionId: 's', status, promptedAt: start, answeredAt: end, start, end, exercise: 'cuello',
+    });
+    const t = buildTimeline(day.from, day.to, [slot('u1', at(10), 600, 300)], [], {
+      breaks: [brk('taken', at(10, 58), at(11, 3)), brk('postponed', at(10, 20), at(10, 20)), brk('skipped', at(10, 30), at(10, 30))],
+    });
+    expect(t.rows.map((r) => r.hourLabel)).toEqual(['10:00', '11:00']);
+    const blocks = t.rows.flatMap((r) => r.blocks).filter((b) => b.breaks.length > 0);
+    expect(blocks.map((b) => [b.label, b.breaks])).toEqual([
+      ['10:50', [{ rangeLabel: '10:58–11:03', exercise: 'Estira el cuello', from: 0.8, to: 1 }]],
+      ['11:00', [{ rangeLabel: '10:58–11:03', exercise: 'Estira el cuello', from: 0, to: 0.3 }]],
+    ]);
   });
 
   it('empty day → no rows (compact) or 24 rows (full)', () => {

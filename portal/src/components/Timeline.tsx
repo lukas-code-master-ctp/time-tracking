@@ -17,7 +17,7 @@ function percentText(b: TimelineBlock): string {
 export function cellClass(b: TimelineBlock): string {
   const color = b.mostlyMeeting ? 'lvl-meeting' : `lvl-${b.level}`;
   const sch = b.schedule === 'off' ? ' sch-off' : b.schedule === 'lunch' ? ' sch-lunch' : '';
-  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}${sch}`;
+  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}${b.breaks.length > 0 ? ' has-break' : ''}${sch}`;
 }
 
 /** ", fuera de horario" / ", en colación" and the scheduled entry/exit, for the accessible label. */
@@ -26,6 +26,7 @@ function scheduleText(b: TimelineBlock): string {
   if (b.schedule === 'off') parts.push('fuera de horario');
   if (b.schedule === 'lunch') parts.push('en colación');
   for (const m of b.marks) parts.push(`${m.kind === 'start' ? 'entrada' : 'salida'} programada a las ${m.time}`);
+  for (const p of b.breaks) parts.push(`pausa activa ${p.rangeLabel}`);
   return parts.length > 0 ? `, ${parts.join(', ')}` : '';
 }
 
@@ -46,6 +47,7 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
   const [pinned, setPinned] = useState<number | null>(null);
   const shown = active ?? timeline.rows.flatMap((r) => r.blocks).find((b) => b.slotStart === pinned) ?? null;
   const withSchedule = timeline.rows.some((r) => r.blocks.some((b) => b.schedule !== null));
+  const withBreaks = timeline.rows.some((r) => r.blocks.some((b) => b.breaks.length > 0));
 
   return (
     <div className="timeline">
@@ -73,6 +75,14 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
                       className={`sch-mark sch-mark-${m.kind}`}
                       aria-hidden="true"
                       style={{ left: `clamp(0px, calc(${(m.at * 100).toFixed(2)}% - 1.5px), calc(100% - 3px))` }}
+                    />
+                  ))}
+                  {b.breaks.map((p) => (
+                    <span
+                      key={p.rangeLabel}
+                      className="brk-mark"
+                      aria-hidden="true"
+                      style={{ left: `${(p.from * 100).toFixed(2)}%`, width: `max(4px, ${((p.to - p.from) * 100).toFixed(2)}%)` }}
                     />
                   ))}
                   {b.percent !== null ? (
@@ -120,6 +130,14 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
           <span className="swatch lvl-none has-shot" aria-hidden="true" />
           Con captura
         </li>
+        {withBreaks ? (
+          <li>
+            <span className="swatch lvl-none sch-marks" aria-hidden="true">
+              <span className="brk-mark" />
+            </span>
+            Pausa activa tomada
+          </li>
+        ) : null}
         {withSchedule ? (
           <>
             <li>
@@ -163,6 +181,12 @@ function BlockDetail({ block, onOpenScreenshot }: { block: TimelineBlock; onOpen
         {block.marks.map((m) => (
           <span key={m.kind} className="chip">
             {m.kind === 'start' ? 'Entrada' : 'Salida'} programada {m.time}
+          </span>
+        ))}
+        {block.breaks.map((p) => (
+          <span key={p.rangeLabel} className="chip ok">
+            Pausa activa {p.rangeLabel}
+            {p.exercise ? ` · ${p.exercise}` : ''}
           </span>
         ))}
       </p>

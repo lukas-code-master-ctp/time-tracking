@@ -41,6 +41,7 @@ import {
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
+  type ActiveBreak,
   type ActivitySlot,
   type OrgConfig,
   type ScreenshotMeta,
@@ -110,6 +111,9 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
         endReason: 'manual',
         lastHeartbeatAt: endedAt,
       });
+    },
+    async putBreak(docId: string, data: ActiveBreak) {
+      await setDoc(doc(db, COLLECTIONS.breaks, docId), data);
     },
     async fetchOrgConfig() {
       const snap = await getDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID));

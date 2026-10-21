@@ -9,6 +9,8 @@ export const COLLECTIONS = {
   screenshots: 'screenshots',
   /** `schedules/{uid}`: per-person exception to the working hours. */
   schedules: 'schedules',
+  /** `breaks/{uid_promptedAt}`: answered active break reminders. */
+  breaks: 'breaks',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
@@ -34,6 +36,15 @@ export function activityDocId(uid: string, slotStart: number): string {
     throw new Error(`activityDocId: invalid slotStart ${String(slotStart)}`);
   }
   return `${uid}_${slotStart}`;
+}
+
+/** Deterministic id of an active break: `uid_promptedAtMs` (one answer per reminder). */
+export function breakDocId(uid: string, promptedAt: number): string {
+  if (!uid) throw new Error('breakDocId: uid is required');
+  if (!Number.isSafeInteger(promptedAt) || promptedAt < 0) {
+    throw new Error(`breakDocId: invalid promptedAt ${String(promptedAt)}`);
+  }
+  return `${uid}_${promptedAt}`;
 }
 
 /** Inverse of {@link activityDocId}. Returns null when the id is malformed. */

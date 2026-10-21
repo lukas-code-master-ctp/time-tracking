@@ -48,6 +48,7 @@ import {
   readAllowedDomains,
   readPersonSchedule,
   readScheduleConfig,
+  type ActiveBreak,
   type ActivitySlot,
   type Invitation,
   type OrgConfig,
@@ -199,6 +200,24 @@ export function createFirebaseBackend(): Backend {
         where('takenAt', '>=', range.from),
         where('takenAt', '<', range.to),
       ]);
+    },
+    async listBreaks(uid, range) {
+      try {
+        const docs = await readAll<ActiveBreak>(COLLECTIONS.breaks, 'start', [
+          where('uid', '==', uid),
+          where('start', '>=', range.from),
+          where('start', '<', range.to),
+        ]);
+        return docs.map(({ id: _id, ...b }) => b);
+      } catch (err) {
+        // Rules or index of the active breaks not deployed yet: the page works without them.
+        const code = (err as { code?: unknown } | null)?.code;
+        if (code === 'permission-denied' || code === 'failed-precondition') {
+          console.warn('[timetracking] no se pudieron leer las pausas activas', err);
+          return [];
+        }
+        throw err;
+      }
     },
     screenshotUrl(storagePath) {
       return getDownloadURL(ref(storage, storagePath));

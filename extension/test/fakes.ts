@@ -1,6 +1,7 @@
 /** Fakes for the Remote (Firestore/Storage), AuthService, capture and image processing, plus an App factory. */
 import {
   CONSENT_VERSION,
+  type ActiveBreak,
   type ActivitySlot,
   type OrgConfig,
   type ScreenshotMeta,
@@ -24,7 +25,8 @@ export type BackendCall =
   | { op: 'acceptConsent'; uid: string; at: number; version: string }
   | { op: 'uploadScreenshot'; path: string; size: number }
   | { op: 'screenshotExists'; path: string }
-  | { op: 'putScreenshotMeta'; id: string; meta: ScreenshotMeta };
+  | { op: 'putScreenshotMeta'; id: string; meta: ScreenshotMeta }
+  | { op: 'putBreak'; docId: string; data: ActiveBreak };
 
 export const ORG: OrgConfig = {
   allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -62,6 +64,7 @@ export class FakeBackend implements Remote {
   users = new Map<string, Partial<UserProfile>>();
   files = new Map<string, number>();
   screenshots = new Map<string, ScreenshotMeta>();
+  breaks = new Map<string, ActiveBreak>();
 
   async currentUid(): Promise<string | null> {
     return this.uid;
@@ -100,6 +103,14 @@ export class FakeBackend implements Remote {
     if (!s || s.endedAt !== null) throw new BackendError('permission-denied');
     this.calls.push({ op: 'closeSession', sessionId, endedAt });
     Object.assign(s, { endedAt, endReason: 'manual', lastHeartbeatAt: endedAt });
+  }
+  async putBreak(docId: string, data: ActiveBreak): Promise<void> {
+    this.check();
+    const existing = this.breaks.get(docId);
+    // Written once (a retry with the same data is fine).
+    if (existing && JSON.stringify(existing) !== JSON.stringify(data)) throw new BackendError('permission-denied');
+    this.calls.push({ op: 'putBreak', docId, data });
+    this.breaks.set(docId, data);
   }
   async fetchOrgConfig(): Promise<OrgConfig | null> {
     this.check();

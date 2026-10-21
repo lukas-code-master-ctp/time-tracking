@@ -31,6 +31,14 @@
         { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "takenAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "breaks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "start", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

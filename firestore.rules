@@ -9,6 +9,8 @@ rules_version = '2';
 // - Nothing is deleted from clients, except invitations, the general
 //   schedule (`config/schedule`, "Eliminar horario") and per-person
 //   schedules (`schedules/{uid}`, "Volver al general") by an admin.
+// - `breaks` (active breaks, spec 2026-10-21-pausa-activa) are written once
+//   by their owner and never changed.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -95,7 +97,8 @@ service cloud.firestore {
     function validOrgConfig(d) {
       return d.keys().hasOnly(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                                 'screenshotRetentionDays', 'pauseTimerAtLunch',
-                                'updatedAt', 'updatedBy'])
+                                'activeBreaksEnabled', 'activeBreakIntervalMinutes',
+                                'activeBreakMinutes', 'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
         && validDomainList(d.allowedDomains)
@@ -106,6 +109,14 @@ service cloud.firestore {
         && d.blurScreenshots is bool
         // Optional (older documents don't have it).
         && (!('pauseTimerAtLunch' in d) || d.pauseTimerAtLunch is bool)
+        // Active breaks (optional; bounds of packages/shared/src/breaks.ts).
+        && (!('activeBreaksEnabled' in d) || d.activeBreaksEnabled is bool)
+        && (!('activeBreakIntervalMinutes' in d)
+            || (d.activeBreakIntervalMinutes is int
+                && d.activeBreakIntervalMinutes >= 15 && d.activeBreakIntervalMinutes <= 240))
+        && (!('activeBreakMinutes' in d)
+            || (d.activeBreakMinutes is int
+                && d.activeBreakMinutes >= 1 && d.activeBreakMinutes <= 15))
         && d.screenshotRetentionDays is int
         && d.screenshotRetentionDays >= 1 && d.screenshotRetentionDays <= 3650
         && d.updatedAt is int
@@ -371,6 +382,43 @@ service cloud.firestore {
       allow update: if isActive()
         && ownsExisting()
         && validScreenshot(incoming())
+        && changedKeys().size() == 0;
+
+      allow delete: if false;
+    }
+
+    // ---------- breaks/{uid_promptedAt} (active breaks) ----------
+
+    // One answer per reminder. `taken`: the break [start, end] lasts at most
+    // 15 min and starts after the reminder; otherwise start = end = answeredAt.
+    function validBreak(d, docId) {
+      return d.keys().hasOnly(['uid', 'sessionId', 'status', 'promptedAt', 'answeredAt',
+                                'start', 'end', 'exercise'])
+        && d.keys().hasAll(['uid', 'sessionId', 'status', 'promptedAt', 'answeredAt',
+                            'start', 'end', 'exercise'])
+        && d.uid == request.auth.uid
+        && d.sessionId is string && d.sessionId.size() > 0 && d.sessionId.size() <= 64
+        && d.status in ['taken', 'postponed', 'skipped']
+        && d.promptedAt is int && d.promptedAt >= 0 && notFuture(d.promptedAt)
+        && docId == d.uid + '_' + string(d.promptedAt)
+        && d.answeredAt is int && d.answeredAt >= d.promptedAt && notFuture(d.answeredAt)
+        && d.start is int && d.end is int
+        && d.start >= d.promptedAt && d.end >= d.start
+        && d.end - d.start <= 15 * 60 * 1000 && notFuture(d.end)
+        && (d.status == 'taken' || (d.start == d.answeredAt && d.end == d.answeredAt))
+        && d.exercise is string && d.exercise.size() <= 40;
+    }
+
+    match /breaks/{docId} {
+      allow read: if isAdmin() || ownsExisting();
+
+      allow create: if isActive() && validBreak(incoming(), docId);
+
+      // Re-uploading the same answer (offline queue retry) is allowed; it
+      // cannot be changed afterwards.
+      allow update: if isActive()
+        && ownsExisting()
+        && validBreak(incoming(), docId)
         && changedKeys().size() == 0;
 
       allow delete: if false;

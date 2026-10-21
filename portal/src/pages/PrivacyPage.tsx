@@ -123,6 +123,12 @@ export function PrivacyPage() {
               pantalla completa ni de otras aplicaciones). Si el administrador activa el difuminado, la imagen se
               difumina <strong>en tu computador antes de enviarse</strong>.
             </li>
+            <li>
+              <strong>Pausas activas, solo si tu empresa las activa:</strong> la extensión te recuerda tomar una pausa
+              breve con un ejercicio después de un rato de trabajo continuo. Cuando respondes el recordatorio se guarda
+              la hora y tu respuesta (pausa tomada, pospuesta u omitida); las pausas tomadas se ven en tu línea de
+              tiempo. Puedes desactivar estos recordatorios desde la extensión.
+            </li>
           </ul>
           <p>
             <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte recordatorios de
