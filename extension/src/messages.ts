@@ -41,6 +41,10 @@ export type PopupRequest =
   | { type: 'consent.accept'; version: string }
   /** Try to upload the pending queue now. */
   | { type: 'sync.now' }
+  /** Answer the pending active break reminder ("Tomé la pausa" / "En 10 min"). */
+  | { type: 'breaks.answer'; answer: 'taken' | 'postponed' }
+  /** Turn the active break reminders on/off for the signed-in user on this device. */
+  | { type: 'breaks.setEnabled'; enabled: boolean }
   /** Dev build only (e2e): run the 30-second pulse now. */
   | { type: 'debug.forcePulse' }
   /** Dev build only (e2e): refresh config/org and take this block's screenshot now. */
@@ -58,6 +62,8 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'auth.refreshProfile',
   'consent.accept',
   'sync.now',
+  'breaks.answer',
+  'breaks.setEnabled',
   // Dropped from the prod bundle (`__APP_ENV__` is replaced literally).
   ...(__APP_ENV__ === 'dev' ? (['auth.devSignIn', 'debug.forcePulse', 'debug.forceScreenshot'] as const) : []),
 ];
@@ -69,6 +75,11 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
   if (__APP_ENV__ === 'dev' && m.type === 'auth.devSignIn') return typeof m.email === 'string';
   if (m.type === 'consent.accept') return typeof m.version === 'string';
   if (m.type === 'auth.clearSignInResult') return typeof (msg as { at?: unknown }).at === 'number';
+  if (m.type === 'breaks.answer') {
+    const answer = (msg as { answer?: unknown }).answer;
+    return answer === 'taken' || answer === 'postponed';
+  }
+  if (m.type === 'breaks.setEnabled') return typeof (msg as { enabled?: unknown }).enabled === 'boolean';
   return true;
 }
 
@@ -111,6 +122,19 @@ export interface StatusView {
   capture: { screenshots: boolean; blur: boolean } | null;
   /** Working hours now and today (spec 2026-09-30-horarios); null = no schedule (nothing new is shown). */
   schedule: ScheduleView | null;
+  /**
+   * Active breaks (spec 2026-10-21-pausa-activa); null = the organization has
+   * them off. `enabled`: the person did not turn them off on this device.
+   * `pending`: reminder waiting for an answer. `nextAt`: estimate of the next
+   * reminder (null when not counting: no work day, away, lunch…).
+   */
+  breaks: {
+    intervalMinutes: number;
+    durationMinutes: number;
+    enabled: boolean;
+    pending: { at: number; title: string; text: string } | null;
+    nextAt: number | null;
+  } | null;
   /** Operations waiting to be uploaded. */
   pendingOps: number;
   /** Screenshots waiting to be uploaded. */

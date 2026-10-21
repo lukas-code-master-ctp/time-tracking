@@ -24,6 +24,9 @@ describe('org config', () => {
     blurScreenshots: false,
     screenshotRetentionDays: '30',
     pauseTimerAtLunch: true,
+    activeBreaksEnabled: false,
+    activeBreakIntervalMinutes: 60,
+    activeBreakMinutes: 5,
   };
 
   it('builds the 6 fields the rules require, plus pauseTimerAtLunch only when on', () => {
@@ -113,6 +116,9 @@ describe('org config', () => {
       blurScreenshots: true,
       screenshotRetentionDays: '90',
       pauseTimerAtLunch: false,
+      activeBreaksEnabled: false,
+      activeBreakIntervalMinutes: 60,
+      activeBreakMinutes: 5,
     });
   });
 
@@ -131,8 +137,19 @@ describe('org config', () => {
       blurScreenshots: false,
       screenshotRetentionDays: '30',
       pauseTimerAtLunch: false,
+      activeBreaksEnabled: false,
+      activeBreakIntervalMinutes: 60,
+      activeBreakMinutes: 5,
     });
     expect(orgConfigToForm({ ...legacy, pauseTimerAtLunch: true }, ['x.cl']).pauseTimerAtLunch).toBe(true);
+  });
+
+  it('active breaks: their three fields only when on, and back into the form', () => {
+    const on = buildOrgConfig({ ...form, activeBreaksEnabled: true, activeBreakIntervalMinutes: 90, activeBreakMinutes: 3 }, 'uid-admin', NOW);
+    expect(on).toMatchObject({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 90, activeBreakMinutes: 3 });
+    expect(orgConfigToForm(on, ['x.cl'])).toMatchObject({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 90, activeBreakMinutes: 3 });
+    const off = buildOrgConfig({ ...form, activeBreakIntervalMinutes: 90 }, 'uid-admin', NOW);
+    expect(Object.keys(off).filter((k) => k.startsWith('activeBreak'))).toEqual([]);
   });
 });
 

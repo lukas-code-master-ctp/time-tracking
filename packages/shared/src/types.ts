@@ -34,6 +34,15 @@ export interface OrgConfig {
    * running). It only changes what the popup shows, never what is measured.
    */
   pauseTimerAtLunch?: boolean;
+  /**
+   * "Pausa activa" (spec 2026-10-21-pausa-activa): the extension reminds the
+   * person to take a short break with an exercise after `activeBreakIntervalMinutes`
+   * of continuous work; the break lasts `activeBreakMinutes`. All three are
+   * optional (missing = off / defaults): read them with `readActiveBreakSettings`.
+   */
+  activeBreaksEnabled?: boolean;
+  activeBreakIntervalMinutes?: number;
+  activeBreakMinutes?: number;
   updatedAt: EpochMs;
   /** uid of the admin who last changed it (or 'system'). */
   updatedBy: string;
@@ -113,6 +122,33 @@ export interface ScreenshotMeta {
   blurred: boolean;
   width: number;
   height: number;
+}
+
+/**
+ * Answer to an active break reminder: done ("Tomé la pausa"), postponed
+ * ("En 10 min") or skipped (closed, or replaced by the next reminder
+ * without an answer).
+ */
+export type ActiveBreakStatus = 'taken' | 'postponed' | 'skipped';
+
+/** `breaks/{uid_promptedAt}` — one answered active break reminder. */
+export interface ActiveBreak {
+  uid: string;
+  /** Work day open when the reminder was shown. */
+  sessionId: string;
+  status: ActiveBreakStatus;
+  /** When the reminder was shown (part of the document id). */
+  promptedAt: EpochMs;
+  /** When the person answered. */
+  answeredAt: EpochMs;
+  /**
+   * `taken`: the break (`end - start` = the configured duration), shown in
+   * the portal timeline. Otherwise both equal `answeredAt`.
+   */
+  start: EpochMs;
+  end: EpochMs;
+  /** Id of the suggested exercise (`ACTIVE_BREAK_EXERCISES`). */
+  exercise: string;
 }
 
 /** Day of the week, as used by the keys of `WeekSchedule`. */

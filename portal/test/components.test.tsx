@@ -385,6 +385,11 @@ describe('SettingsForm', () => {
     await userEvent.type(days, '30');
     await userEvent.click(screen.getByLabelText(/Tomar capturas/));
     await userEvent.click(screen.getByLabelText(/Pausar el reloj en la colación/));
+    // Active breaks: the selects only work once turned on.
+    expect(screen.getByLabelText('Cada cuánto')).toBeDisabled();
+    await userEvent.click(screen.getByLabelText(/Recordar pausas activas/));
+    await userEvent.selectOptions(screen.getByLabelText('Cada cuánto'), '90');
+    await userEvent.selectOptions(screen.getByLabelText('Duración de la pausa'), '3');
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(onSave).toHaveBeenCalledWith({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -392,6 +397,9 @@ describe('SettingsForm', () => {
       blurScreenshots: true,
       screenshotRetentionDays: '30',
       pauseTimerAtLunch: true,
+      activeBreaksEnabled: true,
+      activeBreakIntervalMinutes: 90,
+      activeBreakMinutes: 3,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });

@@ -1,13 +1,16 @@
 /**
  * Day timeline of one collaborator: 10-minute blocks laid out in hour rows.
- * Pure: receives the day bounds, the activity docs and the screenshots.
+ * Pure: receives the day bounds, the activity docs, the screenshots and the
+ * active breaks taken (spec 2026-10-21-pausa-activa).
  */
 import {
   DEFAULT_TIME_ZONE,
   SLOT_MS,
   activityPercent,
+  exerciseById,
   meetingSecondsOf,
   slotsBetween,
+  type ActiveBreak,
   type ActivitySlot,
   type DayPlan,
   type ScreenshotMeta,
@@ -65,6 +68,18 @@ export interface TimelineBlock {
   schedule: BlockScheduleState | null;
   /** Scheduled entry / exit inside this block. */
   marks: ScheduleMark[];
+  /** Active breaks taken that overlap this block. */
+  breaks: TimelineBreak[];
+}
+
+export interface TimelineBreak {
+  /** "10:32–10:37" (the whole break, also when it spans two blocks). */
+  rangeLabel: string;
+  /** Title of the suggested exercise ("" when unknown). */
+  exercise: string;
+  /** Part of the block it covers, 0 (its start) … 1 (its end). */
+  from: number;
+  to: number;
 }
 
 export type BlockScheduleState = 'work' | 'lunch' | 'off';
@@ -104,6 +119,8 @@ export interface TimelineOptions {
    * the scheduled hours. null/undefined = no schedule.
    */
   plan?: DayPlan | null;
+  /** Answered active break reminders of the day: the `taken` ones are drawn. */
+  breaks?: readonly ActiveBreak[];
 }
 
 function overlap(a: number, b: number, from: number, to: number): number {
@@ -151,6 +168,8 @@ export function buildTimeline(
     shotsBySlot.set(key, list);
   }
 
+  const taken = (options.breaks ?? []).filter((b) => b.status === 'taken' && b.end > b.start && b.end > from && b.start < to);
+
   const blocks: TimelineBlock[] = slotsBetween(from, to).map((slotStart) => {
     const slot = bySlot.get(slotStart);
     const tracked = Math.max(0, slot?.trackedSeconds ?? 0);
@@ -176,6 +195,7 @@ export function buildTimeline(
       screenshots: (shotsBySlot.get(slotStart) ?? []).sort((a, b) => a.takenAt - b.takenAt),
       schedule: plan ? blockScheduleState(slotStart, plan) : null,
       marks: plan?.span ? marksIn(slotStart, plan.span, timeZone) : [],
+      breaks: breaksIn(slotStart, taken, timeZone),
     };
   });
 
@@ -197,7 +217,14 @@ export function buildTimeline(
 
   // Content = data, a screenshot, or the scheduled hours (entry → exit).
   const hasContent = (r: TimelineRow): boolean =>
-    r.blocks.some((b) => b.trackedSeconds > 0 || b.screenshots.length > 0 || b.marks.length > 0 || (b.schedule !== null && b.schedule !== 'off'));
+    r.blocks.some(
+      (b) =>
+        b.trackedSeconds > 0 ||
+        b.screenshots.length > 0 ||
+        b.marks.length > 0 ||
+        b.breaks.length > 0 ||
+        (b.schedule !== null && b.schedule !== 'off'),
+    );
   let visible = rows;
   if ((options.span ?? 'compact') === 'compact') {
     const first = rows.findIndex(hasContent);
@@ -210,6 +237,20 @@ export function buildTimeline(
     }
   }
   return { rows: visible, blocksWithData: blocks.filter((b) => b.trackedSeconds > 0).length };
+}
+
+/** Taken breaks overlapping `[slotStart, slotStart + SLOT_MS)`, with the part of the block they cover. */
+function breaksIn(slotStart: number, breaks: readonly ActiveBreak[], timeZone: string): TimelineBreak[] {
+  const end = slotStart + SLOT_MS;
+  return breaks
+    .filter((b) => b.start < end && b.end > slotStart)
+    .sort((a, b) => a.start - b.start)
+    .map((b) => ({
+      rangeLabel: `${formatTime(b.start, timeZone)}–${formatTime(b.end, timeZone)}`,
+      exercise: exerciseById(b.exercise)?.title ?? '',
+      from: (Math.max(b.start, slotStart) - slotStart) / SLOT_MS,
+      to: (Math.min(b.end, end) - slotStart) / SLOT_MS,
+    }));
 }
 
 /** Entry (at `span.start`) and exit (at the end of the block holding `span.end - 1 ms`) marks of a block. */

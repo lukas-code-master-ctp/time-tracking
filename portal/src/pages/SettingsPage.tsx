@@ -1,5 +1,13 @@
 import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { MAX_ALLOWED_DOMAINS, allowedDomainsOr, emailDomain, type OrgConfig, type ScheduleConfig } from '@timetracking/shared';
+import {
+  ACTIVE_BREAK_DURATION_OPTIONS,
+  ACTIVE_BREAK_INTERVAL_OPTIONS,
+  MAX_ALLOWED_DOMAINS,
+  allowedDomainsOr,
+  emailDomain,
+  type OrgConfig,
+  type ScheduleConfig,
+} from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
 import { ScheduleConfigForm } from '../components/ScheduleEditor';
 import { ErrorState, Loading, PageHeader } from '../components/ui';
@@ -172,6 +180,59 @@ export function SettingsForm({ config, adminEmail = null, onSave }: FormProps) {
         </label>
       </fieldset>
 
+      <fieldset>
+        <legend>Pausa activa</legend>
+        <label className="switch-row" htmlFor={`${id}-breaks`}>
+          <input
+            id={`${id}-breaks`}
+            type="checkbox"
+            checked={form.activeBreaksEnabled}
+            onChange={(e) => set('activeBreaksEnabled', e.target.checked)}
+          />
+          <span>
+            <span className="strong">Recordar pausas activas</span>
+            <span className="muted small block">
+              La extensión avisa a cada persona que tome una pausa breve con un ejercicio sugerido después de un rato de
+              trabajo continuo (no durante reuniones ni la colación). Si se alejó del computador lo que dura la pausa, ya
+              cuenta como pausa. Cada persona puede desactivarlo en su extensión. Las pausas que marca como tomadas se ven
+              en su línea de tiempo.
+            </span>
+          </span>
+        </label>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor={`${id}-breaks-every`}>Cada cuánto</label>
+            <select
+              id={`${id}-breaks-every`}
+              value={form.activeBreakIntervalMinutes}
+              disabled={!form.activeBreaksEnabled}
+              onChange={(e) => set('activeBreakIntervalMinutes', Number(e.target.value))}
+            >
+              {withCurrent(ACTIVE_BREAK_INTERVAL_OPTIONS, form.activeBreakIntervalMinutes).map((m) => (
+                <option key={m} value={m}>
+                  {m} min de trabajo continuo
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-breaks-len`}>Duración de la pausa</label>
+            <select
+              id={`${id}-breaks-len`}
+              value={form.activeBreakMinutes}
+              disabled={!form.activeBreaksEnabled}
+              onChange={(e) => set('activeBreakMinutes', Number(e.target.value))}
+            >
+              {withCurrent(ACTIVE_BREAK_DURATION_OPTIONS, form.activeBreakMinutes).map((m) => (
+                <option key={m} value={m}>
+                  {m} min
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </fieldset>
+
       <fieldset aria-describedby={`${id}-domains-help${errors.allowedDomains ? ` ${id}-domains-err` : ''}`}>
         <legend>Dominios permitidos</legend>
         <p id={`${id}-domains-help`} className="muted small">
@@ -264,6 +325,11 @@ export function SettingsForm({ config, adminEmail = null, onSave }: FormProps) {
       </div>
     </form>
   );
+}
+
+/** The options plus the saved value when it is not one of them (set outside the portal). */
+function withCurrent(options: readonly number[], current: number): number[] {
+  return options.includes(current) ? [...options] : [...options, current].sort((a, b) => a - b);
 }
 
 export function SettingsPage() {

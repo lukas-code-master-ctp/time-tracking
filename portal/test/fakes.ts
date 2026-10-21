@@ -1,6 +1,7 @@
 /** In-memory {@link DataSource} / {@link AuthApi} for component tests. */
 import { vi } from 'vitest';
 import type {
+  ActiveBreak,
   ActivitySlot,
   Invitation,
   OrgConfig,
@@ -24,6 +25,8 @@ export interface FakeDb {
   activity: ActivitySlot[];
   sessions: WithId<Session>[];
   screenshots: WithId<ScreenshotMeta>[];
+  /** Active breaks (optional: most tests have none). */
+  breaks?: ActiveBreak[];
 }
 
 export function emptyDb(): FakeDb {
@@ -63,6 +66,7 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     },
     listActivity: async (range, uid) =>
       db.activity.filter((a) => a.slotStart >= range.from && a.slotStart < range.to && (!uid || a.uid === uid)),
+    listBreaks: async (uid, range) => (db.breaks ?? []).filter((b) => b.uid === uid && b.start >= range.from && b.start < range.to),
     listSessions: async (range, uid) =>
       db.sessions.filter((s) => (!uid || s.uid === uid) && (s.endedAt === null || s.startedAt < range.to)),
     listScreenshots: async (uid, range) =>

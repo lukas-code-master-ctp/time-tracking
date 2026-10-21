@@ -9,16 +9,19 @@
  * - heartbeat: one item per session, the latest instant wins.
  * - sessionClose: removes pending heartbeats of the same session.
  * - sessionCreate: one per session.
+ * - break: one per answered active break reminder (`breakDocId`).
  * Order is FIFO, so a session is created before its heartbeats and closed
  * after them.
  */
-import { activityDocId, type ActivitySlot, type Session } from '@timetracking/shared';
+import { activityDocId, breakDocId, type ActiveBreak, type ActivitySlot, type Session } from '@timetracking/shared';
 
 export type SyncOp =
   | { kind: 'sessionCreate'; uid: string; sessionId: string; session: Session }
   | { kind: 'activity'; uid: string; slot: ActivitySlot }
   | { kind: 'heartbeat'; uid: string; sessionId: string; at: number }
-  | { kind: 'sessionClose'; uid: string; sessionId: string; endedAt: number };
+  | { kind: 'sessionClose'; uid: string; sessionId: string; endedAt: number }
+  /** Active break answer (breaks.ts). No top-level `sessionId`: not a session operation. */
+  | { kind: 'break'; uid: string; data: ActiveBreak };
 
 export interface QueueItem {
   /** Coalescing key, see {@link opKey}. */
@@ -56,6 +59,8 @@ export function opKey(op: SyncOp): string {
       return `close:${op.sessionId}`;
     case 'sessionCreate':
       return `create:${op.sessionId}`;
+    case 'break':
+      return `break:${breakDocId(op.uid, op.data.promptedAt)}`;
   }
 }
 
@@ -91,8 +96,13 @@ export function removeItem(q: QueueState, key: string, rev: number): boolean {
 /** Removes every session operation (create/heartbeat/close) of `sessionId`. */
 export function dropSessionOps(q: QueueState, sessionId: string): void {
   q.items = q.items.filter(
-    (i) => !(i.op.kind !== 'activity' && 'sessionId' in i.op && i.op.sessionId === sessionId),
+    (i) => !(isSessionOp(i.op) && i.op.sessionId === sessionId),
   );
+}
+
+/** Operations on `sessions/{id}` (create, heartbeat, close). */
+export function isSessionOp(op: SyncOp): op is Extract<SyncOp, { sessionId: string }> {
+  return op.kind === 'sessionCreate' || op.kind === 'heartbeat' || op.kind === 'sessionClose';
 }
 
 /** Delay after `failures` consecutive transient failures: 5 s, 10 s, 20 s… capped at 10 min. */
@@ -112,7 +122,7 @@ export function queueFromJSON(raw: unknown): QueueState {
     if (!item || typeof item !== 'object') continue;
     const op = (item as QueueItem).op;
     if (!op || typeof op !== 'object' || typeof op.uid !== 'string') continue;
-    if (!['activity', 'heartbeat', 'sessionClose', 'sessionCreate'].includes(op.kind)) continue;
+    if (!['activity', 'heartbeat', 'sessionClose', 'sessionCreate', 'break'].includes(op.kind)) continue;
     try {
       const key = opKey(op);
       q.items.push({

@@ -20,10 +20,12 @@ import {
   MAX_URLS_PER_SLOT,
   SLOT_SECONDS,
   activityDocId,
+  breakDocId,
+  type ActiveBreak,
   type ActivitySlot,
   type Session,
 } from '@timetracking/shared';
-import { backoffMs, dropSessionOps, removeItem, type QueueItem, type SyncOp } from './queue';
+import { backoffMs, dropSessionOps, isSessionOp, removeItem, type QueueItem, type SyncOp } from './queue';
 import type { StateStore } from './state';
 
 /** What the sync engine needs from Firebase. */
@@ -38,6 +40,8 @@ export interface Backend {
   heartbeat(sessionId: string, at: number): Promise<void>;
   /** `updateDoc(sessions/{id}, { endedAt, endReason: 'manual', lastHeartbeatAt: endedAt })`. */
   closeSession(sessionId: string, endedAt: number): Promise<void>;
+  /** `setDoc(breaks/{docId}, data)` with exactly the 8 fields of the rules. */
+  putBreak(docId: string, data: ActiveBreak): Promise<void>;
 }
 
 /** Error with a Firebase-like code (`permission-denied`, `unavailable`…). */
@@ -76,7 +80,7 @@ const PERMANENT = new Set([
   'unimplemented',
   'wrong-user',
 ]);
-/** Max attempts for activity writes rejected by the rules (e.g. user disabled). */
+/** Max attempts for activity and break writes rejected by the rules (e.g. user disabled, rules not deployed). */
 export const MAX_ACTIVITY_DENIED_ATTEMPTS = 3;
 /** Max attempts for unknown errors. */
 export const MAX_UNKNOWN_ATTEMPTS = 8;
@@ -85,7 +89,7 @@ export type Outcome = 'ok' | 'retry' | 'drop' | 'session-rejected';
 
 export function classify(code: string, op: SyncOp, attempts: number): Outcome {
   if (code === 'permission-denied') {
-    if (op.kind === 'activity') return attempts + 1 >= MAX_ACTIVITY_DENIED_ATTEMPTS ? 'drop' : 'retry';
+    if (!isSessionOp(op)) return attempts + 1 >= MAX_ACTIVITY_DENIED_ATTEMPTS ? 'drop' : 'retry';
     return 'session-rejected';
   }
   if (PERMANENT.has(code)) return 'drop';
@@ -177,6 +181,9 @@ export async function execOp(backend: Backend, op: SyncOp): Promise<void> {
     case 'sessionClose':
       await backend.closeSession(op.sessionId, nonNegInt(op.endedAt));
       return;
+    case 'break':
+      await backend.putBreak(breakDocId(op.uid, op.data.promptedAt), op.data);
+      return;
   }
 }
 
@@ -247,8 +254,7 @@ export class SyncEngine {
         if (outcome !== 'retry') console.warn(`[timetracking] ${next.key} descartada (${code})`, err);
       }
 
-      const rejectedSession =
-        outcome === 'session-rejected' && next.op.kind !== 'activity' ? next.op.sessionId : null;
+      const rejectedSession = outcome === 'session-rejected' && isSessionOp(next.op) ? next.op.sessionId : null;
 
       await this.store.run(async () => {
         const q = this.store.queue;

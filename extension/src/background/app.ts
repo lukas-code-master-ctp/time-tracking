@@ -17,13 +17,21 @@
  * midnight) applies the pause of the measurement, shows the entry, lunch and exit
  * reminders (chrome.notifications, one per event and day) and re-arms the
  * alarm.
+ *
+ * Active breaks (spec 2026-10-21-pausa-activa, breaks.ts): every pulse,
+ * after the schedule tick, advances the count of continuous work and shows
+ * the "Pausa activa" reminder when due. Its answers (notification buttons,
+ * closing it, or the popup) are queued as `breaks` documents.
  */
 import {
   CONSENT_VERSION,
   DEFAULT_TIME_ZONE,
   dateKey,
+  exerciseById,
+  readActiveBreakSettings,
   readPersonSchedule,
   readScheduleConfig,
+  type ActiveBreakSettings,
   type OrgConfig,
   type UserProfile,
 } from '@timetracking/shared';
@@ -36,6 +44,18 @@ import {
   type StatusView,
 } from '../messages';
 import { AuthError, JoinError, withKeepAlive, type AuthService } from './auth';
+import {
+  BREAK_BUTTONS,
+  answerBreak,
+  breakDoc,
+  breakNotificationId,
+  breakText,
+  breakTick,
+  nextBreakAt,
+  parseBreakNotificationId,
+  type BreakAnswer,
+  type BreakPrompt,
+} from './breaks';
 import { todayTotals } from './daily';
 import type { ImageProcessor } from './image';
 import { enqueueOp } from './queue';
@@ -44,6 +64,7 @@ import {
   SCHEDULE_ALARM,
   decideReminders,
   effectiveSchedule,
+  isMeasuringAt,
   lunchPauses,
   nextScheduleWake,
   parseReminderNotificationId,
@@ -142,10 +163,17 @@ export class App {
       if (alarm.name === PULSE_ALARM) void this.pulse().catch(logError('pulso'));
       if (alarm.name === SCHEDULE_ALARM) void this.onScheduleAlarm().catch(logError('horario'));
     });
-    chrome.notifications?.onButtonClicked.addListener(
-      (id) => void this.onReminderAction(id).catch(logError('recordatorio')),
-    );
+    chrome.notifications?.onButtonClicked.addListener((id, index) => {
+      const promptAt = parseBreakNotificationId(id);
+      if (promptAt !== null) void this.onBreakButton(promptAt, index).catch(logError('pausa activa'));
+      else void this.onReminderAction(id).catch(logError('recordatorio'));
+    });
     chrome.notifications?.onClicked.addListener((id) => void this.onReminderClicked(id).catch(logError('recordatorio')));
+    // Closed by the person (X, or cleared from the notification center): the break is skipped.
+    chrome.notifications?.onClosed?.addListener((id, byUser) => {
+      const promptAt = parseBreakNotificationId(id);
+      if (promptAt !== null && byUser) void this.answerActiveBreak(promptAt, 'skipped').catch(logError('pausa activa'));
+    });
     chrome.runtime.onMessage.addListener((msg: unknown, sender, sendResponse) => {
       if (sender.id !== chrome.runtime.id) return false;
       // Extension pages (popup, or popup/consent opened in a tab) vs content scripts.
@@ -191,6 +219,7 @@ export class App {
     await this.session.pulse();
     await this.refreshConfig(opts.forceScreenshot ? 0 : ORG_CONFIG_REFRESH_MS);
     await this.scheduleTick().catch(logError('horario'));
+    await this.breakTick().catch(logError('pausa activa'));
     const shot = await this.screenshots.maybeCapture(opts.forceScreenshot ?? false);
     await this.screenshots.drain(opts.forceScreenshot ?? false);
     await this.store.run(() => this.session.ensureAlarm());
@@ -225,6 +254,7 @@ export class App {
         screenshotsEnabled: config?.screenshotsEnabled === true,
         blurScreenshots: config?.blurScreenshots !== false,
         pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
+        activeBreaks: readActiveBreakSettings(config),
         fetchedAt: this.now(),
       };
       await this.store.save('meta');
@@ -422,9 +452,125 @@ export class App {
     }
   }
 
-  /** Click on the body of a reminder: the popup. */
+  // ---------- active breaks ----------
+
+  /** Joined, active uid of the signed-in user (inside store.run), or null. */
+  private activeUid(uid: string | null | undefined): string | null {
+    const { profile, profileUid } = this.store.meta;
+    return uid && profile && profileUid === uid && profile.status === 'active' ? uid : null;
+  }
+
+  /**
+   * Advances the count of continuous work and shows the active break
+   * reminder when due (breaks.ts). An unanswered reminder replaced by the
+   * new one is recorded as skipped.
+   */
+  async breakTick(): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const out = await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      if (!uid) return null;
+      const { meta, session, acc } = this.store;
+      const at = this.now();
+      const settings = meta.org?.uid === uid ? (meta.org.activeBreaks ?? null) : null;
+      const r = breakTick(meta.breaks, {
+        now: at,
+        uid,
+        settings,
+        optedOut: meta.breakOptOut.includes(uid),
+        sessionId: session?.uid === uid ? session.id : null,
+        measuring: isMeasuringAt(this.scheduleOf(uid), at),
+        idle: acc?.idleState ?? 'active',
+        inMeeting: acc?.inMeeting ?? false,
+      });
+      meta.breaks = r.state;
+      if (r.replaced && settings) {
+        enqueueOp(this.store.queue, { kind: 'break', uid, data: breakDoc(uid, r.replaced, 'skipped', at, settings.durationMinutes) });
+        await this.store.save('queue');
+      }
+      await this.store.save('meta');
+      return { prompt: r.prompt, replaced: r.replaced, durationMinutes: settings?.durationMinutes ?? 0 };
+    });
+    if (!out) return;
+    if (out.replaced) {
+      await chrome.notifications.clear(breakNotificationId(out.replaced.at)).catch(() => undefined);
+      void this.sync.kick();
+    }
+    if (out.prompt) await this.showBreak(out.prompt, out.durationMinutes);
+  }
+
+  private async showBreak(prompt: BreakPrompt, durationMinutes: number): Promise<void> {
+    const { title, message } = breakText(prompt, durationMinutes);
+    try {
+      await chrome.notifications.create(breakNotificationId(prompt.at), {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+        title,
+        message,
+        buttons: BREAK_BUTTONS.map((b) => ({ title: b })),
+        priority: 2,
+        // Stays until answered: the person may come back from the break to mark it.
+        requireInteraction: true,
+      });
+    } catch (err) {
+      console.warn('[timetracking] no se pudo mostrar la pausa activa', err);
+    }
+  }
+
+  /** Buttons of the active break reminder: "Tomé la pausa" (0) and "En 10 min" (1). */
+  async onBreakButton(promptAt: number, index: number): Promise<void> {
+    await this.answerActiveBreak(promptAt, index === 0 ? 'taken' : 'postponed');
+  }
+
+  /**
+   * Answers the pending reminder shown at `promptAt` (null = whichever is
+   * pending, from the popup): queues its `breaks` document and removes the
+   * notification. A reminder already answered or replaced is ignored.
+   */
+  async answerActiveBreak(promptAt: number | null, answer: BreakAnswer): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const answered = await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      const { meta } = this.store;
+      const state = meta.breaks;
+      const at = promptAt ?? state?.pending?.at ?? null;
+      if (!uid || !state || state.uid !== uid || at === null) return null;
+      const durationMinutes = (meta.org?.uid === uid ? meta.org.activeBreaks : null)?.durationMinutes ?? readActiveBreakSettings(null).durationMinutes;
+      const r = answerBreak(state, at, answer, this.now(), durationMinutes);
+      if (!r.doc) return null;
+      meta.breaks = r.state;
+      enqueueOp(this.store.queue, { kind: 'break', uid, data: r.doc });
+      await this.store.save('queue', 'meta');
+      return at;
+    });
+    if (answered === null) return;
+    await chrome.notifications.clear(breakNotificationId(answered)).catch(() => undefined);
+    void this.sync.kick();
+  }
+
+  /** The person turns the active break reminders on or off for themselves (this device). */
+  async setBreaksEnabled(enabled: boolean): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const dropped = await this.store.run(async () => {
+      if (!user) return null;
+      const { meta } = this.store;
+      meta.breakOptOut = meta.breakOptOut.filter((u) => u !== user.uid);
+      if (!enabled) meta.breakOptOut.push(user.uid);
+      // Turned off: a pending reminder goes away too (nothing is recorded).
+      const pending = !enabled && meta.breaks?.uid === user.uid ? meta.breaks.pending : null;
+      if (pending && meta.breaks) meta.breaks = { ...meta.breaks, pending: null };
+      await this.store.save('meta');
+      return pending;
+    });
+    if (dropped) await chrome.notifications.clear(breakNotificationId(dropped.at)).catch(() => undefined);
+  }
+
+  /** Click on the body of a reminder (or of an active break): the popup. */
   async onReminderClicked(notificationId: string): Promise<void> {
-    if (!parseReminderNotificationId(notificationId)) return;
+    if (!parseReminderNotificationId(notificationId) && parseBreakNotificationId(notificationId) === null) return;
     await chrome.notifications.clear(notificationId).catch(() => undefined);
     await this.openPopup();
   }
@@ -509,6 +655,12 @@ export class App {
           break;
         case 'sync.now':
           await Promise.all([this.sync.kick(true), this.screenshots.drain(true)]);
+          break;
+        case 'breaks.answer':
+          await this.answerActiveBreak(null, req.answer);
+          break;
+        case 'breaks.setEnabled':
+          await this.setBreaksEnabled(req.enabled);
           break;
         default:
           break;
@@ -660,6 +812,9 @@ export class App {
       this.store.meta.org = null;
       this.store.meta.schedule = null;
       this.store.meta.reminders = null;
+      const pendingBreak = this.store.meta.breaks?.pending ?? null;
+      this.store.meta.breaks = null;
+      if (pendingBreak) await chrome.notifications.clear(breakNotificationId(pendingBreak.at)).catch(() => undefined);
       await this.store.save('acc', 'meta');
       await this.ensureScheduleAlarm(null, this.now());
     });
@@ -667,6 +822,25 @@ export class App {
     await this.auth.signOut();
     await this.saveSignInResult(null);
     await this.store.run(() => this.session.ensureAlarm());
+  }
+
+  /** Active breaks for the popup (inside store.run); null when the organization has them off. */
+  private breaksView(uid: string | null, settings: ActiveBreakSettings | null): StatusView['breaks'] {
+    if (!uid || !settings?.enabled) return null;
+    const { meta, session } = this.store;
+    const state = meta.breaks?.uid === uid ? meta.breaks : null;
+    const enabled = !meta.breakOptOut.includes(uid);
+    const pending = enabled && state?.pending ? state.pending : null;
+    const exercise = pending ? exerciseById(pending.exercise) : null;
+    return {
+      intervalMinutes: settings.intervalMinutes,
+      durationMinutes: settings.durationMinutes,
+      enabled,
+      pending: pending
+        ? { at: pending.at, title: exercise?.title ?? 'Pausa activa', text: exercise?.text ?? 'Levántate y estira el cuerpo unos minutos.' }
+        : null,
+      nextAt: enabled && session ? nextBreakAt(state, settings) : null,
+    };
   }
 
   async status(): Promise<StatusView> {
@@ -701,6 +875,7 @@ export class App {
         today: todayTotals(daily, user?.uid ?? null, this.now()),
         capture: org ? { screenshots: org.screenshotsEnabled, blur: org.blurScreenshots } : null,
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
+        breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,

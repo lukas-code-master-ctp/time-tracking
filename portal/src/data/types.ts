@@ -3,6 +3,7 @@
  * are tested with in-memory fakes (see test/fakes.ts).
  */
 import type {
+  ActiveBreak,
   ActivitySlot,
   Invitation,
   OrgConfig,
@@ -59,6 +60,8 @@ export interface DataSource {
    */
   listSessions(range: TimeRange, uid?: string): Promise<WithId<Session>[]>;
   listScreenshots(uid: string, range: TimeRange): Promise<WithId<ScreenshotMeta>[]>;
+  /** Answered active break reminders of `uid` whose `start` is in the range. */
+  listBreaks(uid: string, range: TimeRange): Promise<ActiveBreak[]>;
   /** Download URL of a Storage object (admins may read every screenshot). */
   screenshotUrl(storagePath: string): Promise<string>;
 }

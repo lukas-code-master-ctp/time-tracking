@@ -12,6 +12,7 @@ import {
   isValidDomain,
   normalizeDomain,
   normalizeDomainList,
+  readActiveBreakSettings,
   type Invitation,
   type OrgConfig,
   type UserProfile,
@@ -29,6 +30,10 @@ export interface OrgConfigForm {
   /** Raw text of the input. */
   screenshotRetentionDays: string;
   pauseTimerAtLunch: boolean;
+  /** Active breaks (spec 2026-10-21-pausa-activa). */
+  activeBreaksEnabled: boolean;
+  activeBreakIntervalMinutes: number;
+  activeBreakMinutes: number;
 }
 
 export type FieldErrors<K extends string> = Partial<Record<K, string>>;
@@ -82,7 +87,8 @@ export function validateOrgConfig(form: OrgConfigForm, adminEmail?: string | nul
 /**
  * `config/org` with the 6 fields the rules require (`updatedBy` = caller), plus
  * `pauseTimerAtLunch` only when on: a full `setDoc` without it means off, and
- * saving with it off still works with the rules before 0.2.4.
+ * saving with it off still works with the rules before 0.2.4. The same for
+ * the active breaks: their three fields only when on (rules before 0.2.7).
  */
 export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, adminEmail?: string | null): OrgConfig {
   const errors = validateOrgConfig(form, adminEmail);
@@ -93,6 +99,13 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
     blurScreenshots: form.blurScreenshots,
     screenshotRetentionDays: Number(form.screenshotRetentionDays.trim()),
     ...(form.pauseTimerAtLunch ? { pauseTimerAtLunch: true } : {}),
+    ...(form.activeBreaksEnabled
+      ? {
+          activeBreaksEnabled: true,
+          activeBreakIntervalMinutes: form.activeBreakIntervalMinutes,
+          activeBreakMinutes: form.activeBreakMinutes,
+        }
+      : {}),
     updatedAt: Math.floor(now),
     updatedBy: uid,
   };
@@ -106,7 +119,13 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
     blurScreenshots: config?.blurScreenshots ?? true,
     screenshotRetentionDays: String(config?.screenshotRetentionDays ?? 90),
     pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
+    ...activeBreaksForm(config),
   };
+}
+
+function activeBreaksForm(config: OrgConfig | null): Pick<OrgConfigForm, 'activeBreaksEnabled' | 'activeBreakIntervalMinutes' | 'activeBreakMinutes'> {
+  const b = readActiveBreakSettings(config);
+  return { activeBreaksEnabled: b.enabled, activeBreakIntervalMinutes: b.intervalMinutes, activeBreakMinutes: b.durationMinutes };
 }
 
 // ---------- invitations ----------

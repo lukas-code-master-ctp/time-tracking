@@ -7,6 +7,7 @@ import {
 import {
   CHILE_HOLIDAY_DATES,
   activityDocId,
+  type ActiveBreak,
   type ActivitySlot,
   type DaySchedule,
   type Invitation,
@@ -149,6 +150,24 @@ describe('config/org', () => {
     await assertFails(
       admin.doc('config/org').set({ ...orgConfig(), pauseTimerAtLunch: 'true' } as unknown as OrgConfig),
     );
+  });
+
+  it('active break settings are optional, with bounded integer minutes', async () => {
+    const admin = db('admin');
+    await assertSucceeds(
+      admin.doc('config/org').set(orgConfig({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 60, activeBreakMinutes: 5 })),
+    );
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ activeBreaksEnabled: false, updatedAt: NOW + 1 })));
+    for (const bad of [
+      { activeBreaksEnabled: 'yes' },
+      { activeBreakIntervalMinutes: 14 },
+      { activeBreakIntervalMinutes: 241 },
+      { activeBreakIntervalMinutes: 60.5 },
+      { activeBreakMinutes: 0 },
+      { activeBreakMinutes: 16 },
+    ]) {
+      await assertFails(admin.doc('config/org').set({ ...orgConfig({ updatedAt: NOW + 2 }), ...bad } as unknown as OrgConfig));
+    }
   });
 
   it('accepts valid domain lists (1 to 10 domains)', async () => {
@@ -934,6 +953,63 @@ describe('screenshots metadata', () => {
     await seed(env, { 'screenshots/a': screenshot('alice') });
     await assertFails(db('alice').doc('screenshots/a').delete());
     await assertFails(db('admin').doc('screenshots/a').delete());
+  });
+});
+
+// ---------- breaks (active breaks) ----------
+
+function activeBreak(uid: string, overrides: Partial<ActiveBreak> = {}): ActiveBreak {
+  return {
+    uid,
+    sessionId: 's1',
+    status: 'taken',
+    promptedAt: NOW,
+    answeredAt: NOW + 4 * 60_000,
+    start: NOW + 60_000,
+    end: NOW + 4 * 60_000,
+    exercise: 'cuello',
+    ...overrides,
+  };
+}
+
+describe('breaks', () => {
+  it('the owner writes each answer once (a retry with the same data is fine), never changes it', async () => {
+    const ref = db('alice').doc(`breaks/alice_${NOW}`);
+    await assertSucceeds(ref.set(activeBreak('alice')));
+    await assertSucceeds(ref.set(activeBreak('alice')));
+    await assertFails(ref.set(activeBreak('alice', { status: 'skipped', start: NOW + 4 * 60_000 })));
+    await assertFails(ref.delete());
+    await assertFails(db('admin').doc(`breaks/alice_${NOW}`).delete());
+    const answered = NOW + 60_000;
+    await assertSucceeds(
+      db('alice').doc(`breaks/alice_${NOW + 1}`).set(
+        activeBreak('alice', { promptedAt: NOW + 1, status: 'postponed', answeredAt: answered, start: answered, end: answered }),
+      ),
+    );
+  });
+
+  it('rejects another uid or id, bad statuses, breaks longer than 15 min or before the reminder', async () => {
+    await assertFails(db('bob').doc(`breaks/alice_${NOW}`).set(activeBreak('alice')));
+    await assertFails(db('alice').doc(`breaks/alice_${NOW + 5}`).set(activeBreak('alice')));
+    await assertFails(db('alice').doc(`breaks/alice_${NOW}`).set(activeBreak('alice', { status: 'done' as ActiveBreak['status'] })));
+    await assertFails(db('alice').doc(`breaks/alice_${NOW}`).set(activeBreak('alice', { end: NOW + 60_000 + 16 * 60_000 })));
+    await assertFails(db('alice').doc(`breaks/alice_${NOW}`).set(activeBreak('alice', { start: NOW - 1 })));
+    await assertFails(db('alice').doc(`breaks/alice_${NOW}`).set(activeBreak('alice', { answeredAt: NOW - 1 })));
+    // Not taken: no interval.
+    await assertFails(db('alice').doc(`breaks/alice_${NOW}`).set(activeBreak('alice', { status: 'skipped' })));
+    await assertFails(db('alice').doc(`breaks/alice_${NOW}`).set({ ...activeBreak('alice'), extra: 1 } as unknown as ActiveBreak));
+    await assertFails(db('dave').doc(`breaks/dave_${NOW}`).set(activeBreak('dave')));
+  });
+
+  it('member reads own breaks by range; admin reads all', async () => {
+    await seed(env, { [`breaks/alice_${NOW}`]: activeBreak('alice'), [`breaks/bob_${NOW}`]: activeBreak('bob') });
+    await assertSucceeds(db('alice').doc(`breaks/alice_${NOW}`).get());
+    await assertFails(db('alice').doc(`breaks/bob_${NOW}`).get());
+    await assertSucceeds(db('alice').collection('breaks').where('uid', '==', 'alice').where('start', '>=', NOW - 1000).get());
+    await assertFails(db('alice').collection('breaks').get());
+    await assertSucceeds(
+      db('admin').collection('breaks').where('uid', '==', 'bob').where('start', '>=', NOW - 1000).where('start', '<', NOW + 1000).get(),
+    );
   });
 });
 

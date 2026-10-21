@@ -771,6 +771,16 @@ label {
   max-width: 140px;
 }
 
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+}
+
+.field-row .field {
+  flex: 1 1 200px;
+}
+
 .field-error {
   color: var(--danger-text);
   font-size: 13px;
@@ -1292,6 +1302,27 @@ a.person:hover .person-name {
   background: var(--sch-mark);
   box-shadow: 0 0 0 1px var(--sch-mark-halo);
   pointer-events: none;
+}
+
+/* Active break taken (spec 2026-10-21-pausa-activa): a bar at the bottom of
+   the block over the minutes it covers, clear of the % and of the marks at
+   the top. */
+.brk-mark {
+  position: absolute;
+  bottom: 2px;
+  height: 4px;
+  border-radius: 2px;
+  /* Same ink as the meeting bar (≥ 4.5:1 on every level color), told apart
+     by its place: the bottom of the block instead of the top left. */
+  background: var(--lvl-ink);
+  box-shadow: 0 0 0 1px var(--surface);
+  pointer-events: none;
+}
+
+.swatch .brk-mark {
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
 }
 
 .swatch.sch-marks {
