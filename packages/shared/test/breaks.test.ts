@@ -3,7 +3,9 @@ import {
   ACTIVE_BREAK_EXERCISES,
   breakDocId,
   dailyBreakTargets,
+  breakClosing,
   dailyExercise,
+  exerciseInstructions,
   exerciseAt,
   exerciseById,
   readActiveBreakSettings,
@@ -62,6 +64,15 @@ describe('active breaks', () => {
     expect(new Set(ids('2026-10-22')).size).toBe(3);
     // The next day starts where the previous one ended.
     expect(dailyExercise('2026-10-23', 0, 3)).toBe(exerciseAt(ACTIVE_BREAK_EXERCISES.indexOf(dailyExercise('2026-10-22', 2, 3)) + 1));
+  });
+
+  it('instructions: the exercise plus what to do with the rest of the break', () => {
+    const ex = ACTIVE_BREAK_EXERCISES[0]!;
+    expect(exerciseInstructions(ex, 1)).toBe(ex.text);
+    expect(exerciseInstructions(ex, 3)).toBe(`${ex.text} Si te sobra tiempo, repítelo una vez más.`);
+    expect(exerciseInstructions(ex, 5)).toBe(`${ex.text} ${breakClosing(5)}`);
+    expect(breakClosing(5)).toMatch(/^Repítelo 2 veces/);
+    expect(breakClosing(10)).toMatch(/^Repítelo 2 o 3 veces/);
   });
 
   it('breakDocId is uid_promptedAt', () => {

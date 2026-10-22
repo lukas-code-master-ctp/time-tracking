@@ -116,7 +116,8 @@ describe('active breaks (pure)', () => {
     expect(nextBreakAt(null, SETTINGS)).toBeNull();
     expect(breakText({ at: 1, sessionId: 's', exercise: 'vista' }, 5)).toEqual({
       title: 'Pausa activa · 5 min',
-      message: 'Descansa la vista (20-20-20). Mira algo a unos 6 metros durante 20 segundos y parpadea varias veces. Repite 3 veces.',
+      message:
+        'Descansa la vista (20-20-20). Mira algo a unos 6 metros durante 20 segundos y parpadea varias veces. Repite 3 veces. Repítelo 2 veces y usa el resto para ponerte de pie, caminar y tomar agua.',
     });
     expect(parseBreakNotificationId(`tt-break:${T0}`)).toBe(T0);
     expect(parseBreakNotificationId('tt-reminder:start:2026-10-05')).toBeNull();
