@@ -75,7 +75,7 @@ function body(kind: (typeof APPS)[Task]['body'], accent: string): string {
 }
 
 /** HTML of the mock-up (blurred with CSS, as the extension would upload it). */
-export function mockScreenHtml(task: Task, blurPx = 13): string {
+export function mockScreenHtml(task: Task, blurPx = 8): string {
   const app = APPS[task];
   return `<!doctype html><html><body style="margin:0;background:#fff;font:14px system-ui;overflow:hidden">
     <div style="filter:blur(${blurPx}px);transform:scale(1.04);transform-origin:center;height:${SHOT_HEIGHT}px">

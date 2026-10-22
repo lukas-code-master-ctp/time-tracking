@@ -31,9 +31,9 @@ export function fitWidth(width: number, height: number, maxWidth: number = SCREE
   return { width: maxWidth, height: Math.max(1, Math.round(height * scale)) };
 }
 
-/** Blur radius that makes text unreadable at this width (~13 px at 1280). */
+/** Blur radius that makes text unreadable at this width (~8 px at 1280). */
 export function blurRadiusFor(width: number): number {
-  return Math.max(6, Math.round(width / 100));
+  return Math.max(4, Math.round((width * 0.65) / 100));
 }
 
 /** Qualities tried in order, then the image is shrunk and the list starts again. */
