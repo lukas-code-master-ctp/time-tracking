@@ -2303,4 +2303,24 @@ input[type='time'][aria-invalid='true'] {
 
 .break-times {
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Pausa activa: the exercises of the plan of the day / of the rotation. */
+.break-plan {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 16px;
+  padding-left: 22px;
+}
+
+/* Already numbered in the text ("Pausa 1: …"). */
+.break-plan.plain {
+  list-style: none;
+  padding-left: 0;
+}
+
+.break-plan li::marker {
+  color: var(--muted);
+  font-weight: 600;
 }

@@ -17,7 +17,10 @@
  *   device, per user).
  */
 import {
+  DEFAULT_TIME_ZONE,
   dailyBreakTargets,
+  dailyExercise,
+  dateKey,
   exerciseAt,
   exerciseById,
   type ActiveBreak,
@@ -142,11 +145,17 @@ export function breakTick(prev: BreakState | null, input: BreakTickInput): Break
   state.awaySince = null;
   state.workSince ??= now;
   const quiet = state.quietUntil !== null && now < state.quietUntil;
-  const due = daily
-    ? dailyBreakTargets(input.windows, settings.perDay).some((t) => t > state.doneUntil! && t <= now)
-    : now - state.workSince >= intervalMs;
+  const targets = daily ? dailyBreakTargets(input.windows, settings.perDay) : [];
+  // `daily`: the latest target due (an earlier one passed in a meeting is folded into it).
+  let target = -1;
+  targets.forEach((t, i) => {
+    if (t > state.doneUntil! && t <= now) target = i;
+  });
+  const due = daily ? target !== -1 : now - state.workSince >= intervalMs;
   if (!due || quiet || input.inMeeting) return none;
-  const prompt: BreakPrompt = { at: now, sessionId: input.sessionId, exercise: exerciseAt(state.shown).id };
+  // `daily`: the exercise of the plan of the day (the same for everyone); `interval`: this device's rotation.
+  const exercise = daily ? dailyExercise(dateKey(now, DEFAULT_TIME_ZONE), target, settings.perDay) : exerciseAt(state.shown);
+  const prompt: BreakPrompt = { at: now, sessionId: input.sessionId, exercise: exercise.id };
   const replaced = state.pending;
   state.pending = prompt;
   state.shown += 1;

@@ -29,3 +29,8 @@ El popup muestra "3 pausas de 5 min al día, repartidas en tu horario" y la hora
 ## Despliegue
 1. `npx firebase deploy --only firestore:rules --project prod`: las reglas aceptan los dos campos nuevos. Hasta desplegarlas, guardar en modo "Veces al día" falla con permiso denegado, y el modo de trabajo continuo funciona igual.
 2. Merge: el portal se publica en Vercel y la extensión 0.2.8 se sube a la tienda.
+
+## Plan de ejercicios (extensión 0.2.11)
+En modo `daily` el ejercicio ya no depende de la rotación de cada equipo. La pausa `i` (desde 0) del día `date` usa `dailyExercise(date, i, n)`, que es igual para todos, así que el portal puede mostrar el plan. El plan avanza en el orden de `ACTIVE_BREAK_EXERCISES` de una pausa a la siguiente y de un día al otro. En modo `interval` cada equipo sigue rotando por su cuenta.
+
+En el portal, Pausa activa → "Plan de pausas" muestra el ejercicio de cada pausa del día elegido y las horas de cada persona con su ejercicio. Debajo está la lista completa de ejercicios.

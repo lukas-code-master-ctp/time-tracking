@@ -8,7 +8,9 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACTIVE_BREAK_EXERCISES,
   CHILE_HOLIDAY_DATES,
+  dailyExercise,
   planForDay,
   secondsToHours,
   teamSummaryToCsv,
@@ -657,10 +659,18 @@ describe('Pausa activa', () => {
     await userEvent.selectOptions(screen.getByLabelText('Veces al día', { selector: 'select' }), '2');
     const list = screen.getByRole('list', { name: 'Pausas previstas por colaborador' });
     const row = (name: string) => within(list).getAllByRole('listitem').find((li) => li.textContent?.includes(name))!;
+    // The plan of the day: the same exercises for everyone.
+    const [first, second] = [0, 1].map((i) => dailyExercise('2026-09-29', i, 2).title);
+    expect(within(screen.getByRole('list', { name: 'Plan del día' })).getAllByRole('listitem').map((li) => li.querySelector('.strong')?.textContent)).toEqual([
+      `Pausa 1: ${first}`,
+      `Pausa 2: ${second}`,
+    ]);
     // Tuesday 09:00–18:30, lunch 13:00–14:00: 8 h 30 of work in 3 parts.
-    expect(row('Ana Rojas')).toHaveTextContent('Horario: generalCerca de las 11:50 y 15:40');
+    expect(row('Ana Rojas')).toHaveTextContent(`Horario: general11:50 · ${first}15:40 · ${second}`);
     // Beto: Tuesday 09:30–12:00 (exception).
-    expect(row('Beto Díaz')).toHaveTextContent('Horario: personalizadoCerca de las 10:20 y 11:10');
+    expect(row('Beto Díaz')).toHaveTextContent(`Horario: personalizado10:20 · ${first}11:10 · ${second}`);
+    // All the exercises, in the order they rotate.
+    expect(within(screen.getByRole('list', { name: 'Ejercicios' })).getAllByRole('listitem')).toHaveLength(ACTIVE_BREAK_EXERCISES.length);
     // Sunday: nobody works.
     fireEvent.change(screen.getByLabelText('Día'), { target: { value: '2026-09-27' } });
     expect(row('Ana Rojas')).toHaveTextContent('No trabaja este día');
