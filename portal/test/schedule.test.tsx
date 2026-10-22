@@ -644,3 +644,64 @@ describe('Equipo: días antes de unirse', () => {
     expect(late.totals.absentDays).toBe(0);
   });
 });
+
+describe('Pausa activa', () => {
+  it('own page: turns on "x veces al día", shows when each person gets them and keeps the rest of config/org', async () => {
+    const data = db();
+    const backend = backendOf(data, ADMIN);
+    renderApp(backend, '/pausa-activa');
+    expect(await screen.findByText(/La pausa activa está apagada/)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/Recordar pausas activas/));
+    expect(screen.getByText(/no hay horas fijas/)).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Frecuencia'), 'daily');
+    await userEvent.selectOptions(screen.getByLabelText('Veces al día', { selector: 'select' }), '2');
+    const list = screen.getByRole('list', { name: 'Pausas previstas por colaborador' });
+    const row = (name: string) => within(list).getAllByRole('listitem').find((li) => li.textContent?.includes(name))!;
+    // Tuesday 09:00–18:30, lunch 13:00–14:00: 8 h 30 of work in 3 parts.
+    expect(row('Ana Rojas')).toHaveTextContent('Horario: generalCerca de las 11:50 y 15:40');
+    // Beto: Tuesday 09:30–12:00 (exception).
+    expect(row('Beto Díaz')).toHaveTextContent('Horario: personalizadoCerca de las 10:20 y 11:10');
+    // Sunday: nobody works.
+    fireEvent.change(screen.getByLabelText('Día'), { target: { value: '2026-09-27' } });
+    expect(row('Ana Rojas')).toHaveTextContent('No trabaja este día');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(backend.data.saveOrgConfig).toHaveBeenCalled());
+    expect(data.config).toEqual({
+      allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
+      screenshotsEnabled: true,
+      blurScreenshots: true,
+      screenshotRetentionDays: 90,
+      activeBreaksEnabled: true,
+      activeBreakIntervalMinutes: 60,
+      activeBreakMode: 'daily',
+      activeBreaksPerDay: 2,
+      activeBreakMinutes: 5,
+      updatedAt: NOW,
+      updatedBy: ADMIN.id,
+    });
+  });
+
+  it('collaborator: the planned breaks of the day in the summary and on the timeline', async () => {
+    const data = db();
+    data.config = { ...data.config!, activeBreaksEnabled: true, activeBreakMode: 'daily', activeBreaksPerDay: 2 };
+    renderApp(backendOf(data, ADMIN), '/colaborador/ana?fecha=2026-09-29');
+    expect(await screen.findByText(/previstas cerca de las 11:50 y 15:40/)).toBeInTheDocument();
+    const cells = screen.getAllByTestId('timeline-cell').map((c) => c.getAttribute('aria-label') ?? '');
+    expect(cells.filter((l) => l.includes('pausa activa prevista'))).toEqual([
+      expect.stringMatching(/^11:50–12:00.*pausa activa prevista a las 11:50/),
+      expect.stringMatching(/^15:40–15:50.*pausa activa prevista a las 15:40/),
+    ]);
+    expect(screen.getByText('Pausa activa prevista')).toBeInTheDocument();
+  });
+
+  it('menu: Colaboradores holds the invitations, Configuración at the bottom', async () => {
+    renderApp(backendOf(db(), ADMIN), '/invitaciones');
+    const tabs = await screen.findByRole('navigation', { name: 'Colaboradores' });
+    expect(within(tabs).getByRole('link', { name: 'Invitaciones' })).toHaveClass('active');
+    const main = screen.getByRole('navigation', { name: 'Principal' });
+    expect(within(main).getAllByRole('link').map((l) => l.textContent)).toEqual(['Equipo', 'Colaboradores', 'Pausa activa']);
+    expect(within(main).getByRole('link', { name: 'Colaboradores' })).toHaveClass('active');
+    expect(within(screen.getByRole('navigation', { name: 'Ajustes' })).getByRole('link', { name: 'Configuración' })).toBeInTheDocument();
+  });
+});

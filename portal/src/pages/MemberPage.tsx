@@ -17,6 +17,7 @@ import { Timeline } from '../components/Timeline';
 import { ActivityMeter, BarList, Empty, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { absenceTitle, buildAbsence, decideAbsence } from '../lib/absences';
+import { joinTimes, plannedBreaks } from '../lib/breaks';
 import { addDays, dayBounds, formatLongDate, formatTime, isValidDate, zonedDate } from '../lib/dates';
 import { SOURCE_LABEL, dayScheduleView, describeDay, scheduleFor, type DayScheduleView } from '../lib/schedule';
 import { sessionViews } from '../lib/team';
@@ -57,11 +58,19 @@ export function MemberPage() {
     // Rejected requests are only listed below; pending ones are shown but justify nothing yet.
     const dayAbsences = absences.filter((a) => absenceCoversDate(a, date) && absenceStatus(a) !== 'rejected');
     const schedule = dayScheduleView(date, sessions, eff, now, dayAbsences);
+    const firstStart = sessions.reduce<number | null>((m, x) => (x.startedAt >= day.from && (m === null || x.startedAt < m) ? x.startedAt : m), null);
+    const planned = plannedBreaks(readActiveBreakSettings(config), eff, date, firstStart);
     return {
       schedule,
       dayAbsences,
       summary: summarizeMember(slots, sessions, { from: day.from, to: day.to, now, topN: 10 }),
-      timeline: buildTimeline(day.from, day.to, slots, shots, { plan: schedule?.plan ?? null, breaks, absences: dayAbsences }),
+      timeline: buildTimeline(day.from, day.to, slots, shots, {
+        plan: schedule?.plan ?? null,
+        breaks,
+        absences: dayAbsences,
+        plannedBreaks: planned ?? [],
+      }),
+      planned,
       // Shown while the organization has them on, or for a day that has some.
       breaks: readActiveBreakSettings(config).enabled || breaks.length > 0 ? breakCounts(breaks) : null,
       sessions: sessionViews(sessions, day, now),
@@ -145,7 +154,9 @@ export function MemberPage() {
               <Stat
                 label="Pausas activas"
                 value={String(view.breaks.taken)}
-                hint={`tomadas · ${view.breaks.postponed} pospuestas · ${view.breaks.skipped} omitidas`}
+                hint={`tomadas · ${view.breaks.postponed} pospuestas · ${view.breaks.skipped} omitidas${
+                  view.planned && view.planned.length > 0 ? ` · previstas cerca de las ${joinTimes(view.planned)}` : ''
+                }`}
               />
             ) : null}
           </section>

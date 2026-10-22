@@ -375,8 +375,12 @@ a {
   flex: none;
 }
 
-.sidebar-footer {
+/* Configuración: at the bottom of the sidebar, right above the account. */
+.nav-bottom {
   margin-top: auto;
+}
+
+.sidebar-footer {
   display: grid;
   gap: 8px;
   padding: 12px;
@@ -2243,4 +2247,60 @@ input[type='time'][aria-invalid='true'] {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* Tabs under a page header (Colaboradores: Personas / Invitaciones). */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: -6px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  position: relative;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--accent);
+}
+
+.tab.active::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+}
+
+/* Pausa activa: planned reminder of the day (daily mode), a ring at the bottom of the block. */
+.brk-plan {
+  position: absolute;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--lvl-ink);
+  background: var(--surface);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.swatch .brk-plan {
+  left: 50%;
+}
+
+.break-times {
+  font-variant-numeric: tabular-nums;
 }

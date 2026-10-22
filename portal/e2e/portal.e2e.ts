@@ -313,7 +313,8 @@ async function until<T>(what: string, fn: () => Promise<T | null | undefined | f
 async function navTo(page: Page, label: string): Promise<void> {
   const size = page.viewportSize();
   if (size && size.width <= 860) await page.getByRole('button', { name: 'Menú' }).click();
-  await page.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: label }).click();
+  // Main entries, and Configuración at the bottom of the sidebar.
+  await page.locator('#menu').getByRole('link', { name: label, exact: true }).click();
 }
 
 // ---------- main ----------
@@ -523,7 +524,8 @@ async function main(): Promise<void> {
     ok('Lightbox con la captura (1280 px) y "Difuminada"; Esc lo cierra.');
 
     // 4. Invitations: domain validation + create.
-    await navTo(page, 'Invitaciones');
+    await navTo(page, 'Colaboradores');
+    await page.getByRole('navigation', { name: 'Colaboradores' }).getByRole('link', { name: 'Invitaciones' }).click();
     const email = page.getByLabel('Correo de la persona');
     await email.fill('alguien@gmail.com');
     await page.getByRole('button', { name: 'Invitar' }).click();
