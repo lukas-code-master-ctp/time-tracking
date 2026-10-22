@@ -3,11 +3,21 @@
  * the exercises the extension suggests. Shared by extension and portal.
  */
 
+/**
+ * How the reminders are spread: `interval` after `intervalMinutes` of
+ * continuous work; `daily` `perDay` times a day, spread over the working
+ * hours of the day (spec 2026-10-22-pausa-activa-veces-al-dia).
+ */
+export type ActiveBreakMode = 'interval' | 'daily';
+
 /** Settings of the active breaks of the organization. */
 export interface ActiveBreakSettings {
   enabled: boolean;
-  /** Continuous work before a reminder. */
+  mode: ActiveBreakMode;
+  /** Continuous work before a reminder (`interval`). */
   intervalMinutes: number;
+  /** Reminders a day (`daily`). */
+  perDay: number;
   /** How long the break lasts (also: away this long counts as a break). */
   durationMinutes: number;
 }
@@ -17,11 +27,15 @@ export const ACTIVE_BREAK_INTERVAL_OPTIONS: readonly number[] = [45, 60, 90, 120
 export const ACTIVE_BREAK_DURATION_OPTIONS: readonly number[] = [3, 5, 10];
 export const DEFAULT_ACTIVE_BREAK_INTERVAL_MINUTES = 60;
 export const DEFAULT_ACTIVE_BREAK_MINUTES = 5;
+export const ACTIVE_BREAK_PER_DAY_OPTIONS: readonly number[] = [2, 3, 4, 5, 6];
+export const DEFAULT_ACTIVE_BREAKS_PER_DAY = 3;
 /** Bounds accepted by firestore.rules (the portal only offers the options above). */
 export const MIN_ACTIVE_BREAK_INTERVAL_MINUTES = 15;
 export const MAX_ACTIVE_BREAK_INTERVAL_MINUTES = 240;
 export const MIN_ACTIVE_BREAK_MINUTES = 1;
 export const MAX_ACTIVE_BREAK_MINUTES = 15;
+export const MIN_ACTIVE_BREAKS_PER_DAY = 1;
+export const MAX_ACTIVE_BREAKS_PER_DAY = 12;
 
 function intIn(v: unknown, min: number, max: number): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -31,18 +45,49 @@ function intIn(v: unknown, min: number, max: number): v is number {
 export function readActiveBreakSettings(config: unknown): ActiveBreakSettings {
   const c = (config && typeof config === 'object' ? config : {}) as {
     activeBreaksEnabled?: unknown;
+    activeBreakMode?: unknown;
     activeBreakIntervalMinutes?: unknown;
+    activeBreaksPerDay?: unknown;
     activeBreakMinutes?: unknown;
   };
   return {
     enabled: c.activeBreaksEnabled === true,
+    mode: c.activeBreakMode === 'daily' ? 'daily' : 'interval',
     intervalMinutes: intIn(c.activeBreakIntervalMinutes, MIN_ACTIVE_BREAK_INTERVAL_MINUTES, MAX_ACTIVE_BREAK_INTERVAL_MINUTES)
       ? c.activeBreakIntervalMinutes
       : DEFAULT_ACTIVE_BREAK_INTERVAL_MINUTES,
+    perDay: intIn(c.activeBreaksPerDay, MIN_ACTIVE_BREAKS_PER_DAY, MAX_ACTIVE_BREAKS_PER_DAY)
+      ? c.activeBreaksPerDay
+      : DEFAULT_ACTIVE_BREAKS_PER_DAY,
     durationMinutes: intIn(c.activeBreakMinutes, MIN_ACTIVE_BREAK_MINUTES, MAX_ACTIVE_BREAK_MINUTES)
       ? c.activeBreakMinutes
       : DEFAULT_ACTIVE_BREAK_MINUTES,
   };
+}
+
+/**
+ * Instants of the `perDay` reminders of a day in `daily` mode: the working
+ * time of `work` (the windows of the day, lunch excluded, in order) split in
+ * `perDay + 1` equal parts; the i-th reminder at the end of the i-th part.
+ * E.g. 9:00–18:00 with lunch 13:00–14:00 and 3 a day: 11:00, 14:00, 16:00.
+ */
+export function dailyBreakTargets(work: readonly { start: number; end: number }[], perDay: number): number[] {
+  const total = work.reduce((sum, w) => sum + Math.max(0, w.end - w.start), 0);
+  const n = Math.floor(perDay);
+  if (!(total > 0) || !(n >= 1)) return [];
+  const out: number[] = [];
+  for (let i = 1; i <= n; i++) {
+    let left = Math.round((total * i) / (n + 1));
+    for (const w of work) {
+      const len = Math.max(0, w.end - w.start);
+      if (left < len) {
+        out.push(w.start + left);
+        break;
+      }
+      left -= len;
+    }
+  }
+  return out;
 }
 
 export interface ActiveBreakExercise {

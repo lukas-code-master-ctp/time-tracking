@@ -129,7 +129,10 @@ export interface StatusView {
    * reminder (null when not counting: no work day, away, lunch…).
    */
   breaks: {
+    /** `interval`: after `intervalMinutes` of continuous work; `daily`: `perDay` a day. */
+    mode: 'interval' | 'daily';
     intervalMinutes: number;
+    perDay: number;
     durationMinutes: number;
     enabled: boolean;
     pending: { at: number; title: string; text: string } | null;

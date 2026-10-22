@@ -378,7 +378,10 @@ function renderReady(s: StatusView): void {
 function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLElement {
   const toggle = el('input', { type: 'checkbox', id: 'breaks-enabled', checked: b.enabled, disabled: busy });
   toggle.addEventListener('change', () => void act({ type: 'breaks.setEnabled', enabled: toggle.checked }));
-  const every = `Cada ${b.intervalMinutes} min de trabajo continuo, una pausa de ${b.durationMinutes} min.`;
+  const every =
+    b.mode === 'daily'
+      ? `${b.perDay} ${b.perDay === 1 ? 'pausa' : 'pausas'} de ${b.durationMinutes} min al día, repartidas en tu horario.`
+      : `Cada ${b.intervalMinutes} min de trabajo continuo, una pausa de ${b.durationMinutes} min.`;
   let body: (HTMLElement | string)[];
   if (b.pending) {
     body = [

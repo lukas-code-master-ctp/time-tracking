@@ -62,6 +62,7 @@ import { enqueueOp } from './queue';
 import type { Remote } from './remote';
 import {
   SCHEDULE_ALARM,
+  breakWindows,
   decideReminders,
   effectiveSchedule,
   isMeasuringAt,
@@ -483,6 +484,7 @@ export class App {
         measuring: isMeasuringAt(this.scheduleOf(uid), at),
         idle: acc?.idleState ?? 'active',
         inMeeting: acc?.inMeeting ?? false,
+        windows: this.breakWindowsOf(uid, at),
       });
       meta.breaks = r.state;
       if (r.replaced && settings) {
@@ -498,6 +500,13 @@ export class App {
       void this.sync.kick();
     }
     if (out.prompt) await this.showBreak(out.prompt, out.durationMinutes);
+  }
+
+  /** Today's working windows for the `daily` active breaks (inside store.run). */
+  private breakWindowsOf(uid: string, at: number): { start: number; end: number }[] {
+    const { session } = this.store;
+    const dayStartedAt = session?.uid === uid ? (session.dayStartedAt ?? session.startedAt) : null;
+    return breakWindows(this.scheduleOf(uid), at, dayStartedAt);
   }
 
   private async showBreak(prompt: BreakPrompt, durationMinutes: number): Promise<void> {
@@ -833,13 +842,15 @@ export class App {
     const pending = enabled && state?.pending ? state.pending : null;
     const exercise = pending ? exerciseById(pending.exercise) : null;
     return {
+      mode: settings.mode ?? 'interval',
       intervalMinutes: settings.intervalMinutes,
+      perDay: settings.perDay ?? readActiveBreakSettings(null).perDay,
       durationMinutes: settings.durationMinutes,
       enabled,
       pending: pending
         ? { at: pending.at, title: exercise?.title ?? 'Pausa activa', text: exercise?.text ?? 'Levántate y estira el cuerpo unos minutos.' }
         : null,
-      nextAt: enabled && session ? nextBreakAt(state, settings) : null,
+      nextAt: enabled && session ? nextBreakAt(state, settings, this.breakWindowsOf(uid, this.now())) : null,
     };
   }
 

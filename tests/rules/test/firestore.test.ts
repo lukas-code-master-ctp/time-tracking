@@ -158,8 +158,24 @@ describe('config/org', () => {
       admin.doc('config/org').set(orgConfig({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 60, activeBreakMinutes: 5 })),
     );
     await assertSucceeds(admin.doc('config/org').set(orgConfig({ activeBreaksEnabled: false, updatedAt: NOW + 1 })));
+    await assertSucceeds(
+      admin.doc('config/org').set(
+        orgConfig({
+          activeBreaksEnabled: true,
+          activeBreakMode: 'daily',
+          activeBreakIntervalMinutes: 60,
+          activeBreaksPerDay: 4,
+          activeBreakMinutes: 5,
+          updatedAt: NOW + 3,
+        }),
+      ),
+    );
     for (const bad of [
       { activeBreaksEnabled: 'yes' },
+      { activeBreakMode: 'weekly' },
+      { activeBreaksPerDay: 0 },
+      { activeBreaksPerDay: 13 },
+      { activeBreaksPerDay: 2.5 },
       { activeBreakIntervalMinutes: 14 },
       { activeBreakIntervalMinutes: 241 },
       { activeBreakIntervalMinutes: 60.5 },

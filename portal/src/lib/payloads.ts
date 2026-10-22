@@ -13,6 +13,7 @@ import {
   normalizeDomain,
   normalizeDomainList,
   readActiveBreakSettings,
+  type ActiveBreakMode,
   type Invitation,
   type OrgConfig,
   type UserProfile,
@@ -32,7 +33,10 @@ export interface OrgConfigForm {
   pauseTimerAtLunch: boolean;
   /** Active breaks (spec 2026-10-21-pausa-activa). */
   activeBreaksEnabled: boolean;
+  /** `interval`: after x min of continuous work; `daily`: x times a day (spec 2026-10-22). */
+  activeBreakMode: ActiveBreakMode;
   activeBreakIntervalMinutes: number;
+  activeBreaksPerDay: number;
   activeBreakMinutes: number;
 }
 
@@ -88,7 +92,8 @@ export function validateOrgConfig(form: OrgConfigForm, adminEmail?: string | nul
  * `config/org` with the 6 fields the rules require (`updatedBy` = caller), plus
  * `pauseTimerAtLunch` only when on: a full `setDoc` without it means off, and
  * saving with it off still works with the rules before 0.2.4. The same for
- * the active breaks: their three fields only when on (rules before 0.2.7).
+ * the active breaks: their fields only when on (rules before 0.2.7), and the
+ * mode with the times a day only in `daily` mode (rules before 0.2.8).
  */
 export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, adminEmail?: string | null): OrgConfig {
   const errors = validateOrgConfig(form, adminEmail);
@@ -103,6 +108,9 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
       ? {
           activeBreaksEnabled: true,
           activeBreakIntervalMinutes: form.activeBreakIntervalMinutes,
+          ...(form.activeBreakMode === 'daily'
+            ? { activeBreakMode: 'daily' as const, activeBreaksPerDay: form.activeBreaksPerDay }
+            : {}),
           activeBreakMinutes: form.activeBreakMinutes,
         }
       : {}),
@@ -123,9 +131,17 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
   };
 }
 
-function activeBreaksForm(config: OrgConfig | null): Pick<OrgConfigForm, 'activeBreaksEnabled' | 'activeBreakIntervalMinutes' | 'activeBreakMinutes'> {
+function activeBreaksForm(
+  config: OrgConfig | null,
+): Pick<OrgConfigForm, 'activeBreaksEnabled' | 'activeBreakMode' | 'activeBreakIntervalMinutes' | 'activeBreaksPerDay' | 'activeBreakMinutes'> {
   const b = readActiveBreakSettings(config);
-  return { activeBreaksEnabled: b.enabled, activeBreakIntervalMinutes: b.intervalMinutes, activeBreakMinutes: b.durationMinutes };
+  return {
+    activeBreaksEnabled: b.enabled,
+    activeBreakMode: b.mode,
+    activeBreakIntervalMinutes: b.intervalMinutes,
+    activeBreaksPerDay: b.perDay,
+    activeBreakMinutes: b.durationMinutes,
+  };
 }
 
 // ---------- invitations ----------

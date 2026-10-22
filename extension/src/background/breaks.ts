@@ -17,6 +17,7 @@
  *   device, per user).
  */
 import {
+  dailyBreakTargets,
   exerciseAt,
   exerciseById,
   type ActiveBreak,
@@ -27,6 +28,8 @@ import {
 
 /** "En 10 min". */
 export const BREAK_SNOOZE_MS = 10 * 60_000;
+/** `daily` mode: no reminder sooner than this after the previous one (a late one moves the next). */
+export const DAILY_MIN_GAP_MS = 30 * 60_000;
 
 /** Reminder shown and not answered yet. */
 export interface BreakPrompt {
@@ -47,13 +50,15 @@ export interface BreakState {
   lastTickAt: number | null;
   /** No reminder before this instant (just shown, or postponed). */
   quietUntil: number | null;
+  /** `daily` mode: the targets up to this instant are done (shown or dropped). */
+  doneUntil: number | null;
   pending: BreakPrompt | null;
   /** Reminders shown so far (rotates the exercise). */
   shown: number;
 }
 
 export function emptyBreakState(uid: string): BreakState {
-  return { uid, workSince: null, awaySince: null, lastTickAt: null, quietUntil: null, pending: null, shown: 0 };
+  return { uid, workSince: null, awaySince: null, lastTickAt: null, quietUntil: null, doneUntil: null, pending: null, shown: 0 };
 }
 
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -74,6 +79,7 @@ export function breakStateFromJSON(raw: unknown): BreakState | null {
     awaySince: numOrNull(r.awaySince),
     lastTickAt: numOrNull(r.lastTickAt),
     quietUntil: numOrNull(r.quietUntil),
+    doneUntil: numOrNull(r.doneUntil),
     pending,
     shown: typeof r.shown === 'number' && Number.isInteger(r.shown) && r.shown >= 0 ? r.shown : 0,
   };
@@ -91,6 +97,8 @@ export interface BreakTickInput {
   measuring: boolean;
   idle: IdleState;
   inMeeting: boolean;
+  /** `daily` mode: working windows of today (`breakWindows`). */
+  windows: readonly { start: number; end: number }[];
 }
 
 export interface BreakTickResult {
@@ -111,27 +119,39 @@ export function breakTick(prev: BreakState | null, input: BreakTickInput): Break
     state.workSince = null;
     state.awaySince = null;
     state.lastTickAt = null;
+    state.doneUntil = now;
     return none;
   }
+  const daily = settings.mode === 'daily';
   const breakMs = settings.durationMinutes * 60_000;
   const intervalMs = settings.intervalMinutes * 60_000;
-  if (state.lastTickAt !== null && now - state.lastTickAt >= breakMs) state.workSince = null; // asleep / closed
+  // A break's length without pulses (asleep / closed) or away: it was a break.
+  const rested = (): void => {
+    state.workSince = null;
+    if (daily) state.doneUntil = now;
+  };
+  if (state.lastTickAt !== null && now - state.lastTickAt >= breakMs) rested();
   state.lastTickAt = now;
+  if (!daily || state.doneUntil === null) state.doneUntil = now;
   if (input.idle !== 'active') {
     state.awaySince ??= now;
-    if (now - state.awaySince >= breakMs) state.workSince = null;
+    if (now - state.awaySince >= breakMs) rested();
     return none;
   }
-  if (state.awaySince !== null && now - state.awaySince >= breakMs) state.workSince = null;
+  if (state.awaySince !== null && now - state.awaySince >= breakMs) rested();
   state.awaySince = null;
   state.workSince ??= now;
-  const due = now - state.workSince >= intervalMs && (state.quietUntil === null || now >= state.quietUntil);
-  if (!due || input.inMeeting) return none;
+  const quiet = state.quietUntil !== null && now < state.quietUntil;
+  const due = daily
+    ? dailyBreakTargets(input.windows, settings.perDay).some((t) => t > state.doneUntil! && t <= now)
+    : now - state.workSince >= intervalMs;
+  if (!due || quiet || input.inMeeting) return none;
   const prompt: BreakPrompt = { at: now, sessionId: input.sessionId, exercise: exerciseAt(state.shown).id };
   const replaced = state.pending;
   state.pending = prompt;
   state.shown += 1;
-  state.quietUntil = now + intervalMs;
+  state.doneUntil = now;
+  state.quietUntil = now + (daily ? DAILY_MIN_GAP_MS : intervalMs);
   return { state, prompt, replaced };
 }
 
@@ -175,13 +195,24 @@ export function answerBreak(
     next.quietUntil = null;
   } else if (answer === 'postponed') {
     next.quietUntil = now + BREAK_SNOOZE_MS;
+    // `daily` mode: the reminder is due again after the snooze.
+    next.doneUntil = 0;
   }
   return { state: next, doc: breakDoc(state.uid, prompt, answer, now, durationMinutes) };
 }
 
-/** Next reminder (estimate for the popup): null when not counting now. */
-export function nextBreakAt(state: BreakState | null, settings: ActiveBreakSettings | null): number | null {
+/** Next reminder (estimate for the popup): null when not counting now or none left today. */
+export function nextBreakAt(
+  state: BreakState | null,
+  settings: ActiveBreakSettings | null,
+  windows: readonly { start: number; end: number }[] = [],
+): number | null {
   if (!state || !settings?.enabled || state.workSince === null) return null;
+  if (settings.mode === 'daily') {
+    const done = state.doneUntil ?? 0;
+    const next = dailyBreakTargets(windows, settings.perDay).find((t) => t > done);
+    return next === undefined ? null : Math.max(next, state.quietUntil ?? 0);
+  }
   return Math.max(state.workSince + settings.intervalMinutes * 60_000, state.quietUntil ?? 0);
 }
 
