@@ -148,6 +148,16 @@ export function exerciseAt(n: number): ActiveBreakExercise {
   return list[i]!;
 }
 
+/**
+ * `daily` mode: the exercise of the `index`-th reminder (0-based) of `date`
+ * (YYYY-MM-DD). The same for everyone, so the portal can show the plan of
+ * the day; it keeps rotating from one day to the next.
+ */
+export function dailyExercise(date: string, index: number, perDay: number): ActiveBreakExercise {
+  const day = Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
+  return exerciseAt(day * Math.max(1, Math.floor(perDay)) + index);
+}
+
 /** Exercise by id (unknown ids, e.g. from a newer version: null). */
 export function exerciseById(id: string): ActiveBreakExercise | null {
   return ACTIVE_BREAK_EXERCISES.find((e) => e.id === id) ?? null;

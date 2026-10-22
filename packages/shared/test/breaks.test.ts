@@ -3,6 +3,7 @@ import {
   ACTIVE_BREAK_EXERCISES,
   breakDocId,
   dailyBreakTargets,
+  dailyExercise,
   exerciseAt,
   exerciseById,
   readActiveBreakSettings,
@@ -54,6 +55,13 @@ describe('active breaks', () => {
     expect(dailyBreakTargets([{ start: h(9), end: h(18) }], 2)).toEqual([h(12), h(15)]);
     expect(dailyBreakTargets([], 3)).toEqual([]);
     expect(dailyBreakTargets(work, 0)).toEqual([]);
+  });
+
+  it('daily plan: the exercise depends only on the date and the reminder, and moves on every day', () => {
+    const ids = (date: string) => [0, 1, 2].map((i) => dailyExercise(date, i, 3).id);
+    expect(new Set(ids('2026-10-22')).size).toBe(3);
+    // The next day starts where the previous one ended.
+    expect(dailyExercise('2026-10-23', 0, 3)).toBe(exerciseAt(ACTIVE_BREAK_EXERCISES.indexOf(dailyExercise('2026-10-22', 2, 3)) + 1));
   });
 
   it('breakDocId is uid_promptedAt', () => {

@@ -2,7 +2,9 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import {
   ACTIVE_BREAK_DURATION_OPTIONS,
   ACTIVE_BREAK_INTERVAL_OPTIONS,
+  ACTIVE_BREAK_EXERCISES,
   ACTIVE_BREAK_PER_DAY_OPTIONS,
+  dailyExercise,
   type ActiveBreakSettings,
   type OrgConfig,
   type PersonSchedule,
@@ -14,8 +16,8 @@ import { initials } from '../components/TeamTable';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { ALLOWED_DOMAINS } from '../env';
-import { joinTimes, plannedBreaks, settingsOfForm } from '../lib/breaks';
-import { formatLongDate, formatRelativeDateTime, isValidDate, zonedDate } from '../lib/dates';
+import { plannedBreaks, settingsOfForm } from '../lib/breaks';
+import { formatLongDate, formatRelativeDateTime, formatTime, isValidDate, zonedDate } from '../lib/dates';
 import { errorMessage } from '../lib/messages';
 import { activeBreaksForm, buildOrgConfig, orgConfigToForm, type ActiveBreaksForm } from '../lib/payloads';
 import { SOURCE_LABEL, scheduleFor, type ScheduleContext } from '../lib/schedule';
@@ -186,33 +188,71 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
     .filter((u) => u.status === 'active')
     .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email, 'es'));
   if (active.length === 0) return <Empty title="Aún no hay colaboradores activos" />;
+  const plan = Array.from({ length: settings.perDay }, (_, i) => dailyExercise(date, i, settings.perDay));
   return (
-    <ul className="list" aria-label="Pausas previstas por colaborador">
-      {active.map((u) => {
-        const eff = scheduleFor(schedules, u.id);
-        const times = plannedBreaks(settings, eff, date, null) ?? [];
-        return (
-          <li key={u.id} className="list-item">
-            <div className="person">
-              <span className="avatar" aria-hidden="true">
-                {initials(u.displayName || u.email)}
-              </span>
-              <span className="person-text">
-                <span className="person-name">{u.displayName || u.email}</span>
-                <span className="person-email">Horario: {SOURCE_LABEL[eff.source].toLowerCase()}</span>
-              </span>
-            </div>
-            <span className="break-times">
-              {!eff.week
-                ? 'Sin horario: se reparten en 9 horas desde que inicia la jornada'
-                : times.length === 0
-                  ? 'No trabaja este día'
-                  : `Cerca de las ${joinTimes(times)}`}
+    <>
+      <ol className="break-plan plain" aria-label="Plan del día">
+        {plan.map((ex, i) => (
+          <li key={i}>
+            <span className="strong">
+              Pausa {i + 1}: {ex.title}
             </span>
+            <span className="muted small block">{ex.text}</span>
           </li>
-        );
-      })}
-    </ul>
+        ))}
+      </ol>
+      <ul className="list" aria-label="Pausas previstas por colaborador">
+        {active.map((u) => {
+          const eff = scheduleFor(schedules, u.id);
+          const times = plannedBreaks(settings, eff, date, null) ?? [];
+          return (
+            <li key={u.id} className="list-item">
+              <div className="person">
+                <span className="avatar" aria-hidden="true">
+                  {initials(u.displayName || u.email)}
+                </span>
+                <span className="person-text">
+                  <span className="person-name">{u.displayName || u.email}</span>
+                  <span className="person-email">Horario: {SOURCE_LABEL[eff.source].toLowerCase()}</span>
+                </span>
+              </div>
+              <span className="break-times">
+                {!eff.week
+                  ? 'Sin horario: se reparten en 9 horas desde que inicia la jornada'
+                  : times.length === 0
+                    ? 'No trabaja este día'
+                    : times.map((t, i) => (
+                        <span key={t} className="block">
+                          {formatTime(t)} · {plan[i]?.title}
+                        </span>
+                      ))}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+/** The exercises the extension suggests, in the order they rotate. */
+export function ExerciseCatalog({ mode }: { mode: ActiveBreakSettings['mode'] }) {
+  return (
+    <>
+      <p className="muted small">
+        {mode === 'daily'
+          ? 'Con "Veces al día" todos hacen el mismo ejercicio en cada pausa: el plan avanza en este orden de una pausa a la siguiente y de un día al otro.'
+          : 'Con "Según el trabajo continuo" cada persona recorre estos ejercicios en orden, a su propio ritmo.'}
+      </p>
+      <ol className="break-plan" aria-label="Ejercicios">
+        {ACTIVE_BREAK_EXERCISES.map((ex) => (
+          <li key={ex.id}>
+            <span className="strong">{ex.title}</span>
+            <span className="muted small block">{ex.text}</span>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -279,7 +319,7 @@ export function ActiveBreaksPage() {
           </section>
           <section className="card" aria-labelledby="h-break-times">
             <div className="card-head">
-              <h2 id="h-break-times">A qué hora le toca a cada uno</h2>
+              <h2 id="h-break-times">Plan de pausas</h2>
               <div className="day-picker">
                 <label className="sr-only" htmlFor="break-day">
                   Día
@@ -299,6 +339,10 @@ export function ActiveBreaksPage() {
               aviso se corre; y quien desactivó los recordatorios en su extensión no los recibe.
             </p>
             <BreakTimesTable settings={settingsOfForm(form)} users={load.data.users} schedules={schedules} date={date} />
+          </section>
+          <section className="card" aria-labelledby="h-exercises">
+            <h2 id="h-exercises">Ejercicios</h2>
+            <ExerciseCatalog mode={form.activeBreakMode} />
           </section>
         </>
       )}

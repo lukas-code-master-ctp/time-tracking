@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACTIVE_BREAK_EXERCISES, zonedDateTimeToMs, type ActiveBreakSettings } from '@timetracking/shared';
+import { ACTIVE_BREAK_EXERCISES, dailyExercise, zonedDateTimeToMs, type ActiveBreakSettings } from '@timetracking/shared';
 import {
   BREAK_SNOOZE_MS,
   DAILY_MIN_GAP_MS,
@@ -180,6 +180,23 @@ describe('active breaks, x times a day (pure)', () => {
     expect(breakWindows(schedule, at('10:00'), null)).toEqual(WINDOWS);
     expect(breakWindows(null, at('10:00'), at('08:30'))).toEqual([{ start: at('08:30'), end: at('08:30') + NO_SCHEDULE_BREAK_DAY_MS }]);
     expect(breakWindows(null, at('10:00'), null)).toEqual([]);
+  });
+
+  it('the exercise follows the plan of the day: the same for everyone, by date and reminder', () => {
+    const r = run(null, at('09:00'), at('18:00'), daily());
+    expect(r.prompts).toEqual([at('11:00'), at('14:00'), at('16:00')]);
+    // Another person (fresh state, another rotation count) gets the same exercises.
+    const other = run({ ...emptyBreakState('u1'), shown: 5 }, at('09:00'), at('11:00'), daily()).state.pending;
+    expect(other?.exercise).toBe(dailyExercise('2026-10-05', 0, 3).id);
+    const exercises: string[] = [];
+    let s: BreakState | null = null;
+    for (let t = at('09:00'); t <= at('18:00'); t += 30_000) {
+      const x = breakTick(s, input(t, daily()(t)));
+      s = x.state;
+      if (x.prompt) exercises.push(x.prompt.exercise);
+    }
+    expect(exercises).toEqual([0, 1, 2].map((i) => dailyExercise('2026-10-05', i, 3).id));
+    expect(new Set(exercises).size).toBe(3);
   });
 
   it('"En 10 min" brings the reminder back after the snooze', () => {
