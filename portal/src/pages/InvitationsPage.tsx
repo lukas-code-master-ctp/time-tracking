@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { allowedDomainsOr, formatDomains, type Invitation, type UserProfile, type WithId } from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
+import { PeopleTabs } from '../components/PeopleTabs';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { ALLOWED_DOMAINS, EXTENSION_INSTALL_URL, isPlaceholderInstallUrl } from '../env';
@@ -147,7 +148,7 @@ export function InvitationsPage() {
   return (
     <>
       <PageHeader
-        title="Invitaciones"
+        title="Colaboradores"
         subtitle="Invita a tu equipo. Al iniciar sesión en la extensión por primera vez, quedan como colaboradores."
         actions={
           EXTENSION_INSTALL_URL ? (
@@ -157,6 +158,7 @@ export function InvitationsPage() {
           ) : null
         }
       />
+      <PeopleTabs />
       <InstallUrlWarning url={EXTENSION_INSTALL_URL} />
       {notice ? (
         <p className="banner ok" role="status">

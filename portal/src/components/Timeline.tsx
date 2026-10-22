@@ -27,6 +27,7 @@ function scheduleText(b: TimelineBlock): string {
   if (b.schedule === 'lunch') parts.push('en colación');
   for (const m of b.marks) parts.push(`${m.kind === 'start' ? 'entrada' : 'salida'} programada a las ${m.time}`);
   for (const p of b.breaks) parts.push(`pausa activa ${p.rangeLabel}`);
+  for (const p of b.plannedBreaks) parts.push(`pausa activa prevista a las ${p.time}`);
   if (b.absence) parts.push(`ausencia justificada: ${b.absence.toLowerCase()}`);
   return parts.length > 0 ? `, ${parts.join(', ')}` : '';
 }
@@ -52,6 +53,7 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
   const shown = pinnedBlock ?? active;
   const withSchedule = timeline.rows.some((r) => r.blocks.some((b) => b.schedule !== null));
   const withBreaks = timeline.rows.some((r) => r.blocks.some((b) => b.breaks.length > 0));
+  const withPlanned = timeline.rows.some((r) => r.blocks.some((b) => b.plannedBreaks.length > 0));
   const withAbsences = timeline.rows.some((r) => r.blocks.some((b) => b.absence !== null));
 
   return (
@@ -89,6 +91,9 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
                       aria-hidden="true"
                       style={{ left: `${(p.from * 100).toFixed(2)}%`, width: `max(4px, ${((p.to - p.from) * 100).toFixed(2)}%)` }}
                     />
+                  ))}
+                  {b.plannedBreaks.map((p) => (
+                    <span key={p.time} className="brk-plan" aria-hidden="true" style={{ left: `clamp(4px, ${(p.at * 100).toFixed(2)}%, calc(100% - 4px))` }} />
                   ))}
                   {b.percent !== null ? (
                     <span className="cell-pct">{b.percent}</span>
@@ -143,6 +148,14 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
             Pausa activa tomada
           </li>
         ) : null}
+        {withPlanned ? (
+          <li>
+            <span className="swatch lvl-none sch-marks" aria-hidden="true">
+              <span className="brk-plan" />
+            </span>
+            Pausa activa prevista
+          </li>
+        ) : null}
         {withAbsences ? (
           <li>
             <span className="swatch lvl-none sch-justified" aria-hidden="true" />
@@ -193,6 +206,11 @@ function BlockDetail({ block, onOpenScreenshot }: { block: TimelineBlock; onOpen
         {block.marks.map((m) => (
           <span key={m.kind} className="chip">
             {m.kind === 'start' ? 'Entrada' : 'Salida'} programada {m.time}
+          </span>
+        ))}
+        {block.plannedBreaks.map((p) => (
+          <span key={p.time} className="chip">
+            Pausa activa prevista {p.time}
           </span>
         ))}
         {block.breaks.map((p) => (

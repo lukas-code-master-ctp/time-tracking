@@ -408,16 +408,8 @@ describe('SettingsForm', () => {
     await userEvent.type(days, '30');
     await userEvent.click(screen.getByLabelText(/Tomar capturas/));
     await userEvent.click(screen.getByLabelText(/Pausar el reloj en la colación/));
-    // Active breaks: the selects only work once turned on.
-    expect(screen.getByLabelText('Cada cuánto')).toBeDisabled();
-    await userEvent.click(screen.getByLabelText(/Recordar pausas activas/));
-    await userEvent.selectOptions(screen.getByLabelText('Cada cuánto'), '90');
-    await userEvent.selectOptions(screen.getByLabelText('Duración de la pausa'), '3');
-    // x times a day instead of the continuous work.
-    await userEvent.selectOptions(screen.getByLabelText('Frecuencia'), 'daily');
-    expect(screen.queryByLabelText('Cada cuánto')).toBeNull();
-    await userEvent.selectOptions(screen.getByLabelText('Veces al día'), '4');
-    expect(screen.getByText(/Se reparten en partes iguales/)).toBeInTheDocument();
+    // The active breaks moved to their own page: not in this form.
+    expect(screen.queryByLabelText(/Recordar pausas activas/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(onSave).toHaveBeenCalledWith({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -425,11 +417,11 @@ describe('SettingsForm', () => {
       blurScreenshots: true,
       screenshotRetentionDays: '30',
       pauseTimerAtLunch: true,
-      activeBreaksEnabled: true,
-      activeBreakMode: 'daily',
-      activeBreakIntervalMinutes: 90,
-      activeBreaksPerDay: 4,
-      activeBreakMinutes: 3,
+      activeBreaksEnabled: false,
+      activeBreakMode: 'interval',
+      activeBreakIntervalMinutes: 60,
+      activeBreaksPerDay: 3,
+      activeBreakMinutes: 5,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });

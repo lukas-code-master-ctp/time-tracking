@@ -131,9 +131,13 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
   };
 }
 
-function activeBreaksForm(
-  config: OrgConfig | null,
-): Pick<OrgConfigForm, 'activeBreaksEnabled' | 'activeBreakMode' | 'activeBreakIntervalMinutes' | 'activeBreaksPerDay' | 'activeBreakMinutes'> {
+/** The active break fields of the form (page Pausa activa). */
+export type ActiveBreaksForm = Pick<
+  OrgConfigForm,
+  'activeBreaksEnabled' | 'activeBreakMode' | 'activeBreakIntervalMinutes' | 'activeBreaksPerDay' | 'activeBreakMinutes'
+>;
+
+export function activeBreaksForm(config: OrgConfig | null): ActiveBreaksForm {
   const b = readActiveBreakSettings(config);
   return {
     activeBreaksEnabled: b.enabled,

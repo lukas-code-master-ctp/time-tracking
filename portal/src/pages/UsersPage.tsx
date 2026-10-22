@@ -4,6 +4,7 @@ import { type Role, type UserProfile, type UserStatus, type WithId } from '@time
 import { ConfirmDialog } from '../components/Modal';
 import { PersonScheduleEditor } from '../components/ScheduleEditor';
 import { initials } from '../components/TeamTable';
+import { PeopleTabs } from '../components/PeopleTabs';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { formatRelativeDateTime } from '../lib/dates';
@@ -76,6 +77,7 @@ export function UsersPage() {
   return (
     <>
       <PageHeader title="Colaboradores" subtitle="Personas registradas. Cambia su rol, su horario o desactiva su cuenta." />
+      <PeopleTabs />
       {notice ? (
         <p className="banner ok" role="status">
           {notice}
@@ -88,7 +90,7 @@ export function UsersPage() {
           <Loading />
         ) : users.length === 0 ? (
           <Empty title="Aún no hay colaboradores">
-            <Link to="/invitaciones">Invita a tu equipo</Link>
+            <Link to="/colaboradores/invitaciones">Invita a tu equipo</Link>
           </Empty>
         ) : (
           <ul className="list">

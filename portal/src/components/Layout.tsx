@@ -6,8 +6,13 @@ import { initials } from './TeamTable';
 
 const NAV = [
   { to: '/', label: 'Equipo', end: true, icon: 'M3 20v-1a6 6 0 0 1 12 0v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 9v-1a5 5 0 0 0-3-4.6M15 3.2a4 4 0 0 1 0 7.6' },
-  { to: '/invitaciones', label: 'Invitaciones', end: false, icon: 'M3 6h18v12H3zM3 7l9 6 9-6' },
+  // People and their invitations: one page with two tabs (/colaboradores, /colaboradores/invitaciones).
   { to: '/colaboradores', label: 'Colaboradores', end: false, icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8v-1a7 7 0 0 1 14 0v1' },
+  { to: '/pausa-activa', label: 'Pausa activa', end: false, icon: 'M3 12h4l3-8 4 16 3-8h4' },
+];
+
+/** At the bottom of the sidebar, above the account. */
+const NAV_BOTTOM = [
   { to: '/configuracion', label: 'Configuración', end: false, icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.5 7.5 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.5 7.5 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z' },
 ];
 
@@ -16,6 +21,21 @@ function Icon({ d }: { d: string }) {
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d={d} />
     </svg>
+  );
+}
+
+function NavList({ items }: { items: typeof NAV }) {
+  return (
+    <ul>
+      {items.map((n) => (
+        <li key={n.to}>
+          <NavLink to={n.to} end={n.end} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            <Icon d={n.icon} />
+            {n.label}
+          </NavLink>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -57,16 +77,10 @@ export function Layout() {
             <span className="brand-sub">Portal de administración</span>
           </span>
           <nav aria-label="Principal">
-            <ul>
-              {NAV.map((n) => (
-                <li key={n.to}>
-                  <NavLink to={n.to} end={n.end} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-                    <Icon d={n.icon} />
-                    {n.label}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
+            <NavList items={NAV} />
+          </nav>
+          <nav className="nav-bottom" aria-label="Ajustes">
+            <NavList items={NAV_BOTTOM} />
           </nav>
           <div className="sidebar-footer">
             <div className="me">
