@@ -747,8 +747,8 @@ describe('image helpers (the canvas part runs in the e2e)', () => {
     expect(fitWidth(2560, 1440)).toEqual({ width: 1280, height: 720 });
     expect(fitWidth(800, 600)).toEqual({ width: 800, height: 600 });
     expect(fitWidth(3000, 1)).toEqual({ width: 1280, height: 1 });
-    expect(blurRadiusFor(1280)).toBe(13);
-    expect(blurRadiusFor(100)).toBe(6);
+    expect(blurRadiusFor(1280)).toBe(8);
+    expect(blurRadiusFor(100)).toBe(4);
   });
 
   it('lowers the quality, then the size, until the JPEG is strictly below the limit', async () => {
