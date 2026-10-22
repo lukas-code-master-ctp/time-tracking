@@ -267,6 +267,29 @@ describe('Timeline', () => {
     expect(detail).toHaveTextContent('docs.google.com');
     expect(detail).toHaveTextContent('Fuera de Chrome1 min');
   });
+
+  it('a clicked block stays in the detail while the pointer crosses other blocks', async () => {
+    const t = buildTimeline(day.from, day.to, [
+      slot('ana', at(9, 10), 600, 540, { domains: { 'docs.google.com': 600 } }),
+      slot('ana', at(9, 20), 600, 120, { domains: { 'mail.google.com': 600 } }),
+    ]);
+    render(<Timeline timeline={t} />);
+    const cells = screen.getAllByTestId('timeline-cell');
+    const detail = screen.getByTestId('timeline-detail');
+    await userEvent.click(cells[1]!);
+    expect(cells[1]).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.hover(cells[2]!);
+    await userEvent.hover(cells[0]!);
+    expect(detail).toHaveTextContent('docs.google.com');
+    expect(cells[1]).toHaveClass('selected');
+    expect(cells[2]).not.toHaveClass('selected');
+    // Clicking it again keeps it pinned; clicking another block moves the selection.
+    await userEvent.click(cells[1]!);
+    expect(detail).toHaveTextContent('docs.google.com');
+    await userEvent.click(cells[2]!);
+    expect(detail).toHaveTextContent('mail.google.com');
+    expect(cells[1]).toHaveAttribute('aria-pressed', 'false');
+  });
 });
 
 describe('Timeline with meetings', () => {
