@@ -7,6 +7,7 @@ import {
 import {
   CHILE_HOLIDAY_DATES,
   activityDocId,
+  type Absence,
   type ActiveBreak,
   type ActivitySlot,
   type DaySchedule,
@@ -1026,6 +1027,82 @@ describe('breaks', () => {
     await assertSucceeds(
       db('admin').collection('breaks').where('uid', '==', 'bob').where('start', '>=', NOW - 1000).where('start', '<', NOW + 1000).get(),
     );
+  });
+});
+
+// ---------- absences ----------
+
+function absence(uid: string, overrides: Partial<Absence> = {}): Absence {
+  return {
+    uid,
+    type: 'vacation',
+    startDate: '2026-11-02',
+    endDate: '2026-11-13',
+    startTime: null,
+    endTime: null,
+    note: '',
+    createdAt: NOW,
+    createdBy: 'admin',
+    updatedAt: NOW,
+    updatedBy: 'admin',
+    ...overrides,
+  };
+}
+
+describe('absences', () => {
+  it('an admin creates, changes and deletes them', async () => {
+    const ref = db('admin').doc('absences/a1');
+    await assertSucceeds(ref.set(absence('alice')));
+    await assertSucceeds(ref.set(absence('alice', { type: 'medical', note: 'Licencia 5 días', endDate: '2026-11-06' })));
+    await assertSucceeds(
+      ref.set(absence('alice', { type: 'errand', startDate: '2026-11-03', endDate: '2026-11-03', startTime: '09:00', endTime: '11:30' })),
+    );
+    await assertSucceeds(ref.delete());
+  });
+
+  it('members, disabled admins and strangers cannot write them', async () => {
+    await assertFails(db('alice').doc('absences/a1').set(absence('alice', { createdBy: 'alice', updatedBy: 'alice' })));
+    await assertFails(db('eve').doc('absences/a1').set(absence('alice', { createdBy: 'eve', updatedBy: 'eve' })));
+    await assertFails(db(null).doc('absences/a1').set(absence('alice')));
+    await seed(env, { 'absences/a1': absence('alice') });
+    await assertFails(db('alice').doc('absences/a1').delete());
+  });
+
+  it('rejects malformed absences', async () => {
+    const put = (a: Partial<Absence> & Record<string, unknown>) => db('admin').doc('absences/a1').set({ ...absence('alice'), ...a });
+    await assertFails(put({ uid: 'nobody' }));
+    await assertFails(put({ type: 'nap' as Absence['type'] }));
+    await assertFails(put({ startDate: '2026-11-14' }));
+    await assertFails(put({ startDate: '2026-13-01' }));
+    await assertFails(put({ endDate: '2027-11-03' }));
+    await assertSucceeds(put({ endDate: '2027-11-02' }));
+    // Hours: one day, start < end, both set.
+    await assertFails(put({ startTime: '09:00', endTime: '11:00' }));
+    await assertFails(put({ startDate: '2026-11-03', endDate: '2026-11-03', startTime: '11:00', endTime: '09:00' }));
+    await assertFails(put({ startDate: '2026-11-03', endDate: '2026-11-03', startTime: '09:00', endTime: null }));
+    await assertFails(put({ type: 'other', note: '  ' }));
+    await assertFails(put({ note: 'x'.repeat(501) }));
+    await assertFails(put({ updatedBy: 'alice' }));
+    await assertFails(put({ createdBy: 'alice' }));
+    await assertFails(put({ extra: 1 }));
+  });
+
+  it('an update keeps the person and the creation', async () => {
+    await seed(env, { 'absences/a1': absence('alice') });
+    const ref = db('admin').doc('absences/a1');
+    await assertFails(ref.set(absence('bob')));
+    await assertFails(ref.set(absence('alice', { createdAt: NOW + 1 })));
+    await assertSucceeds(ref.set(absence('alice', { updatedAt: NOW + 1, note: 'Aprobadas por RR.HH.' })));
+  });
+
+  it('the person reads hers; an admin reads all', async () => {
+    await seed(env, { 'absences/a1': absence('alice'), 'absences/b1': absence('bob') });
+    await assertSucceeds(db('alice').doc('absences/a1').get());
+    await assertFails(db('alice').doc('absences/b1').get());
+    await assertSucceeds(db('alice').collection('absences').where('uid', '==', 'alice').get());
+    await assertFails(db('alice').collection('absences').get());
+    await assertFails(db('dave').doc('absences/a1').get());
+    await assertSucceeds(db('admin').collection('absences').where('startDate', '<=', '2026-11-30').get());
   });
 });
 

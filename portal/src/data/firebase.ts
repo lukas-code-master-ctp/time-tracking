@@ -44,10 +44,12 @@ import {
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
+  absenceOverlapsRange,
   emailKey,
   readAllowedDomains,
   readPersonSchedule,
   readScheduleConfig,
+  type Absence,
   type ActiveBreak,
   type ActivitySlot,
   type Invitation,
@@ -218,6 +220,34 @@ export function createFirebaseBackend(): Backend {
         }
         throw err;
       }
+    },
+    async listAbsences(fromDate, toDate, uid) {
+      try {
+        // One person: all of theirs (a handful). Everybody: those ending in
+        // the range or later (single-field index). The rest is filtered here.
+        const q = uid
+          ? query(collection(db, COLLECTIONS.absences), where('uid', '==', uid))
+          : query(collection(db, COLLECTIONS.absences), where('endDate', '>=', fromDate));
+        const snap = await getDocs(q);
+        return snap.docs
+          .map((d) => ({ ...(d.data() as Absence), id: d.id }))
+          .filter((a) => absenceOverlapsRange(a, fromDate, toDate));
+      } catch (err) {
+        // Rules of the absences not deployed yet: the pages work without them.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+          console.warn('[timetracking] no se pudieron leer las ausencias justificadas', err);
+          return [];
+        }
+        throw err;
+      }
+    },
+    async saveAbsence(id, absence) {
+      const target = id ? doc(db, COLLECTIONS.absences, id) : doc(collection(db, COLLECTIONS.absences));
+      await setDoc(target, absence);
+      return target.id;
+    },
+    async deleteAbsence(id) {
+      await deleteDoc(doc(db, COLLECTIONS.absences, id));
     },
     screenshotUrl(storagePath) {
       return getDownloadURL(ref(storage, storagePath));

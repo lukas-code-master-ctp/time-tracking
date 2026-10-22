@@ -11,6 +11,8 @@ export const COLLECTIONS = {
   schedules: 'schedules',
   /** `breaks/{uid_promptedAt}`: answered active break reminders. */
   breaks: 'breaks',
+  /** `absences/{autoId}`: justified absences (vacations, leave…). */
+  absences: 'absences',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

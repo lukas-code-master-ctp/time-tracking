@@ -20,6 +20,7 @@ export const COMPLIANCE_HEADERS = [
   'Atrasos',
   'Sin conexión en horario',
   'Ausencias',
+  'Justificado',
 ] as const;
 
 /** Schedule cells of one row (or the totals). `c` null = the person has no schedule. */
@@ -63,6 +64,16 @@ function ComplianceCells({ c, source }: { c: ComplianceTotals | null; source?: M
       </td>
       <td className="num">{formatDuration(c.offlineSeconds)}</td>
       <td className="num">{c.absentDays === 0 ? '0' : `${c.absentDays} ${c.absentDays === 1 ? 'día' : 'días'}`}</td>
+      <td className="num">
+        {c.justifiedSeconds === 0 ? (
+          '—'
+        ) : (
+          <>
+            <span className="strong">{formatDuration(c.justifiedSeconds)}</span>
+            {c.justifiedDays > 0 ? <span className="sub">{`${c.justifiedDays} ${c.justifiedDays === 1 ? 'día' : 'días'}`}</span> : null}
+          </>
+        )}
+      </td>
     </>
   );
 }

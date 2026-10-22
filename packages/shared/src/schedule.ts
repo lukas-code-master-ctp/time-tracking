@@ -22,6 +22,7 @@
 
 import { DEFAULT_TIME_ZONE, dateKey } from './collections.js';
 import type {
+  Absence,
   DaySchedule,
   EpochMs,
   PersonSchedule,
@@ -496,6 +497,62 @@ function clip(pieces: readonly Piece[], w: Interval): Piece[] {
 
 const sec = (ms: number): number => Math.floor(Math.max(0, ms) / 1000);
 
+/** The fields of an absence that decide which instants it justifies. */
+export type AbsenceSpan = Pick<Absence, 'startDate' | 'endDate' | 'startTime' | 'endTime'>;
+
+/** Union of intervals, sorted (touching intervals are joined). */
+export function mergeIntervals(list: readonly Interval[]): Interval[] {
+  const sorted = list.filter((i) => i.end > i.start).sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: Interval[] = [];
+  for (const i of sorted) {
+    const last = out[out.length - 1];
+    if (last && i.start <= last.end) last.end = Math.max(last.end, i.end);
+    else out.push({ ...i });
+  }
+  return out;
+}
+
+/**
+ * Justified instants of `date` (spec 2026-10-22-ausencias-justificadas),
+ * merged and sorted: the whole calendar day for an absence of whole days,
+ * `[startTime, endTime)` for an absence by hours. Malformed absences are
+ * ignored.
+ */
+export function absenceIntervalsForDay(
+  date: string,
+  absences: readonly AbsenceSpan[],
+  timeZone: string = DEFAULT_TIME_ZONE,
+): Interval[] {
+  const raw: Interval[] = [];
+  for (const a of absences) {
+    if (!isValidDateKey(a.startDate) || !isValidDateKey(a.endDate) || date < a.startDate || date > a.endDate) continue;
+    if (a.startTime === null && a.endTime === null) {
+      raw.push(zonedDayBounds(date, timeZone));
+    } else if (isValidTime(a.startTime) && isValidTime(a.endTime) && a.startTime < a.endTime) {
+      raw.push({ start: zonedDateTimeToMs(date, a.startTime, timeZone), end: zonedDateTimeToMs(date, a.endTime, timeZone) });
+    }
+  }
+  return mergeIntervals(raw);
+}
+
+/** Moves `at` forward (dir 1) or backward (dir -1) while it falls inside one of `cover`. */
+function skipCovered(at: number, cover: readonly Interval[], dir: 1 | -1): number {
+  let cursor = at;
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const c of cover) {
+      if (dir === 1 && cursor >= c.start && cursor < c.end) {
+        cursor = c.end;
+        moved = true;
+      } else if (dir === -1 && cursor > c.start && cursor <= c.end) {
+        cursor = c.start;
+        moved = true;
+      }
+    }
+  }
+  return cursor;
+}
+
 export interface DayCompliance {
   date: string;
   weekday: Weekday;
@@ -535,7 +592,14 @@ export interface DayCompliance {
   /** `exit - departureAt` when it exceeds the tolerance, the day is finished and the session is closed; otherwise 0. */
   earlyLeaveSeconds: number;
   earlyLeave: boolean;
-  /** Finished workday without any session time on it. */
+  /**
+   * Part of the working windows covered by a justified absence (the whole
+   * day, not only until `now`). 0 without absences.
+   */
+  justifiedSeconds: number;
+  /** Workday whose working windows are all covered by justified absences. */
+  justified: boolean;
+  /** Finished workday without any session time on it, unless it is `justified`. */
   absent: boolean;
 }
 
@@ -554,7 +618,12 @@ export interface DayCompliance {
  *   session that started before the entry and was still open at the entry is
  *   on time; one that ended before the entry does not count as arrival;
  * - an open session that has not reached the exit is not an early leave (the
- *   person is still working, or it will be closed automatically).
+ *   person is still working, or it will be closed automatically);
+ * - justified absences (`absences`, spec 2026-10-22-ausencias-justificadas)
+ *   count as connected for the offline time; an absence covering the entry
+ *   moves the entry used for lateness to its end (skipping the lunch), and
+ *   one covering the exit moves the exit used for the early leave to its
+ *   start; a workday fully covered is `justified` and never `absent`.
  */
 export function complianceForDay(
   date: string,
@@ -564,8 +633,9 @@ export function complianceForDay(
   toleranceMinutes: number,
   now: number,
   timeZone: string = DEFAULT_TIME_ZONE,
+  absences: readonly AbsenceSpan[] = [],
 ): DayCompliance {
-  return complianceFromPieces(date, connectedPieces(sessions, now), week, holidays, toleranceMinutes, now, timeZone);
+  return complianceFromPieces(date, connectedPieces(sessions, now), week, holidays, toleranceMinutes, now, timeZone, absences);
 }
 
 function complianceFromPieces(
@@ -576,17 +646,24 @@ function complianceFromPieces(
   toleranceMinutes: number,
   now: number,
   timeZone: string,
+  absences: readonly AbsenceSpan[],
 ): DayCompliance {
   const plan = planForDay(date, week, holidays, timeZone);
   const day = zonedDayBounds(date, timeZone);
   const pieces = clip(connected, day);
   const toleranceMs = Math.max(0, toleranceMinutes) * 60_000;
+  const justified = plan.work.length > 0 && absences.length > 0 ? absenceIntervalsForDay(date, absences, timeZone) : [];
 
   const connectedMs = overlapMs(pieces, day);
   const inMs = plan.work.reduce((t, w) => t + overlapMs(pieces, w), 0);
   const lunchMs = plan.lunch ? overlapMs(pieces, plan.lunch) : 0;
   const expectedMs = plan.work.reduce((t, w) => t + (w.end - w.start), 0);
   const expectedSoFarMs = plan.work.reduce((t, w) => t + Math.max(0, Math.min(w.end, now) - w.start), 0);
+  const justifiedMs = plan.work.reduce((t, w) => t + overlapMs(justified, w), 0);
+  // Worked or justified until now: the time that is not offline.
+  const covered = justified.length > 0 ? mergeIntervals([...pieces, ...justified]) : pieces;
+  const coveredSoFarMs = plan.work.reduce((t, w) => t + overlapMs(covered, { start: w.start, end: Math.min(w.end, now) }), 0);
+  const fullyJustified = plan.work.length > 0 && justifiedMs >= expectedMs;
 
   const bounds = plan.span ?? day;
   const state = now < bounds.start ? 'upcoming' : now >= bounds.end ? 'finished' : 'ongoing';
@@ -602,9 +679,14 @@ function complianceFromPieces(
     if (first && last) {
       arrivalAt = first.start;
       departureAt = last.end;
-      const delay = arrivalAt - plan.span.start;
+      // A justified absence at the entry (or the exit) moves it; the lunch
+      // right after (or before) it is skipped too.
+      const cover = justified.length > 0 && plan.lunch ? [...justified, plan.lunch] : justified;
+      const entry = cover.length > 0 ? skipCovered(plan.span.start, cover, 1) : plan.span.start;
+      const exit = cover.length > 0 ? skipCovered(plan.span.end, cover, -1) : plan.span.end;
+      const delay = arrivalAt - entry;
       if (delay > toleranceMs) lateSeconds = sec(delay);
-      const early = plan.span.end - departureAt;
+      const early = exit - departureAt;
       if (state === 'finished' && !last.open && early > toleranceMs) earlyLeaveSeconds = sec(early);
     }
   }
@@ -626,14 +708,16 @@ function complianceFromPieces(
     inScheduleSeconds,
     lunchSeconds,
     outsideScheduleSeconds: sec(connectedMs - inMs - lunchMs),
-    offlineSeconds: Math.max(0, expectedSoFarSeconds - inScheduleSeconds),
+    offlineSeconds: Math.max(0, expectedSoFarSeconds - sec(coveredSoFarMs)),
     arrivalAt,
     departureAt,
     lateSeconds,
     late: lateSeconds > 0,
     earlyLeaveSeconds,
     earlyLeave: earlyLeaveSeconds > 0,
-    absent: plan.work.length > 0 && state === 'finished' && connectedMs === 0,
+    justifiedSeconds: sec(justifiedMs),
+    justified: fullyJustified,
+    absent: plan.work.length > 0 && state === 'finished' && connectedMs === 0 && !fullyJustified,
   };
 }
 
@@ -652,6 +736,10 @@ export interface ComplianceTotals {
   earlyLeaveCount: number;
   earlyLeaveSeconds: number;
   absentDays: number;
+  /** Working time covered by justified absences. */
+  justifiedSeconds: number;
+  /** Workdays fully covered by justified absences. */
+  justifiedDays: number;
 }
 
 /** Sum of several days. */
@@ -671,6 +759,8 @@ export function sumCompliance(days: readonly DayCompliance[]): ComplianceTotals 
     earlyLeaveCount: 0,
     earlyLeaveSeconds: 0,
     absentDays: 0,
+    justifiedSeconds: 0,
+    justifiedDays: 0,
   };
   for (const d of days) {
     t.days++;
@@ -687,6 +777,8 @@ export function sumCompliance(days: readonly DayCompliance[]): ComplianceTotals 
     if (d.earlyLeave) t.earlyLeaveCount++;
     t.earlyLeaveSeconds += d.earlyLeaveSeconds;
     if (d.absent) t.absentDays++;
+    t.justifiedSeconds += d.justifiedSeconds;
+    if (d.justified) t.justifiedDays++;
   }
   return t;
 }
@@ -709,6 +801,7 @@ export function complianceForRange(
   toleranceMinutes: number,
   now: number,
   timeZone: string = DEFAULT_TIME_ZONE,
+  absences: readonly AbsenceSpan[] = [],
 ): RangeCompliance {
   const [a, b] = fromDate <= toDate ? [fromDate, toDate] : [toDate, fromDate];
   parseDateKey(a);
@@ -719,7 +812,7 @@ export function complianceForRange(
     if (days.length >= MAX_COMPLIANCE_RANGE_DAYS) {
       throw new RangeError(`El rango supera ${MAX_COMPLIANCE_RANGE_DAYS} días.`);
     }
-    days.push(complianceFromPieces(d, connected, week, holidays, toleranceMinutes, now, timeZone));
+    days.push(complianceFromPieces(d, connected, week, holidays, toleranceMinutes, now, timeZone, absences));
   }
   return { days, totals: sumCompliance(days) };
 }

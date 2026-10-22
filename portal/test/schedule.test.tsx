@@ -426,7 +426,7 @@ describe('Equipo: columnas de horario', () => {
     const csv = teamSummaryToCsv(team, { separator: ';', decimalSeparator: ',', extra: complianceCsvExtra(tc) });
     const [head, ...lines] = csv.trim().split(/\r\n/);
     const cols = head!.split(';');
-    expect(cols.slice(-9)).toEqual([
+    expect(cols.slice(-11)).toEqual([
       'Horario',
       'Horas esperadas',
       'Horas esperadas a la fecha',
@@ -436,6 +436,8 @@ describe('Equipo: columnas de horario', () => {
       'Horas de atraso',
       'Horas sin conexión en horario',
       'Ausencias (días)',
+      'Horas justificadas',
+      'Días justificados',
     ]);
     const csvOf = (name: string, col: string) => lines.find((l) => l.startsWith(name))!.split(';')[cols.indexOf(col)];
     const dec = (s: number) => String(secondsToHours(s)).replace('.', ',');
@@ -464,7 +466,7 @@ describe('Equipo: columnas de horario', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Exportar CSV' }));
     const text = await created[0]!.text();
     expect(text).toContain(';Horario;Horas esperadas;Horas esperadas a la fecha;Horas en horario;');
-    expect(text).toMatch(/Beto Díaz;[^\r]*;Personalizado;2,5;2,5;1;0;1;0,5;1,5;0\r\n/);
+    expect(text).toMatch(/Beto Díaz;[^\r]*;Personalizado;2,5;2,5;1;0;1;0,5;1,5;0;0;0\r\n/);
     URL.createObjectURL = original.create;
     URL.revokeObjectURL = original.revoke;
     click.mockRestore();

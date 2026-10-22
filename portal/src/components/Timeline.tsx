@@ -17,7 +17,7 @@ function percentText(b: TimelineBlock): string {
 export function cellClass(b: TimelineBlock): string {
   const color = b.mostlyMeeting ? 'lvl-meeting' : `lvl-${b.level}`;
   const sch = b.schedule === 'off' ? ' sch-off' : b.schedule === 'lunch' ? ' sch-lunch' : '';
-  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}${b.breaks.length > 0 ? ' has-break' : ''}${sch}`;
+  return `cell ${color}${b.meetingSeconds > 0 ? ' has-meeting' : ''}${b.screenshots.length > 0 ? ' has-shot' : ''}${b.breaks.length > 0 ? ' has-break' : ''}${b.absence ? ' sch-justified' : ''}${sch}`;
 }
 
 /** ", fuera de horario" / ", en colación" and the scheduled entry/exit, for the accessible label. */
@@ -27,6 +27,7 @@ function scheduleText(b: TimelineBlock): string {
   if (b.schedule === 'lunch') parts.push('en colación');
   for (const m of b.marks) parts.push(`${m.kind === 'start' ? 'entrada' : 'salida'} programada a las ${m.time}`);
   for (const p of b.breaks) parts.push(`pausa activa ${p.rangeLabel}`);
+  if (b.absence) parts.push(`ausencia justificada: ${b.absence.toLowerCase()}`);
   return parts.length > 0 ? `, ${parts.join(', ')}` : '';
 }
 
@@ -51,6 +52,7 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
   const shown = pinnedBlock ?? active;
   const withSchedule = timeline.rows.some((r) => r.blocks.some((b) => b.schedule !== null));
   const withBreaks = timeline.rows.some((r) => r.blocks.some((b) => b.breaks.length > 0));
+  const withAbsences = timeline.rows.some((r) => r.blocks.some((b) => b.absence !== null));
 
   return (
     <div className="timeline">
@@ -141,6 +143,12 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
             Pausa activa tomada
           </li>
         ) : null}
+        {withAbsences ? (
+          <li>
+            <span className="swatch lvl-none sch-justified" aria-hidden="true" />
+            Ausencia justificada
+          </li>
+        ) : null}
         {withSchedule ? (
           <>
             <li>
@@ -181,6 +189,7 @@ function BlockDetail({ block, onOpenScreenshot }: { block: TimelineBlock; onOpen
         {block.mostlyMeeting ? <span className="chip lvl-chip lvl-meeting">En reunión</span> : null}
         {block.schedule === 'off' ? <span className="chip">Fuera de horario</span> : null}
         {block.schedule === 'lunch' ? <span className="chip">Colación</span> : null}
+        {block.absence ? <span className="chip accent-chip">Justificado: {block.absence}</span> : null}
         {block.marks.map((m) => (
           <span key={m.kind} className="chip">
             {m.kind === 'start' ? 'Entrada' : 'Salida'} programada {m.time}
