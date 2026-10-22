@@ -12,7 +12,7 @@
  */
 
 import { isValidDateKey, isValidTime, type ScheduleIssue } from './schedule.js';
-import type { Absence, AbsenceType } from './types.js';
+import type { Absence, AbsenceStatus, AbsenceType } from './types.js';
 
 /** In the order of the portal's select. */
 export const ABSENCE_TYPES: readonly AbsenceType[] = Object.freeze(['vacation', 'medical', 'errand', 'permission', 'other']);
@@ -29,6 +29,17 @@ export const ABSENCE_TYPE_LABELS: Readonly<Record<AbsenceType, string>> = Object
 export const MAX_ABSENCE_NOTE = 500;
 /** Longest absence (days, both ends included). Same limit as `firestore.rules`. */
 export const MAX_ABSENCE_DAYS = 366;
+
+export const ABSENCE_STATUS_LABELS: Readonly<Record<AbsenceStatus, string>> = Object.freeze({
+  pending: 'Pendiente',
+  approved: 'Aprobada',
+  rejected: 'Rechazada',
+});
+
+/** Status of an absence; documents without one (recorded before the requests) are approved. */
+export function absenceStatus(a: Pick<Absence, 'status'>): AbsenceStatus {
+  return a.status === 'pending' || a.status === 'rejected' ? a.status : 'approved';
+}
 
 export function isAbsenceType(value: unknown): value is AbsenceType {
   return typeof value === 'string' && (ABSENCE_TYPES as readonly string[]).includes(value);

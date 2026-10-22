@@ -241,6 +241,15 @@ export function createFirebaseBackend(): Backend {
         throw err;
       }
     },
+    async listPendingAbsences() {
+      try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.absences), where('status', '==', 'pending')));
+        return snap.docs.map((d) => ({ ...(d.data() as Absence), id: d.id }));
+      } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
     async saveAbsence(id, absence) {
       const target = id ? doc(db, COLLECTIONS.absences, id) : doc(collection(db, COLLECTIONS.absences));
       await setDoc(target, absence);

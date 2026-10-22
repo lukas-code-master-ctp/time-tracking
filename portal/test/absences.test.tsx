@@ -6,7 +6,7 @@ import { CHILE_HOLIDAY_DATES, type Absence, type WithId } from '@timetracking/sh
 import { App } from '../src/App';
 import { BackendProvider } from '../src/data/context';
 import type { Backend } from '../src/data/types';
-import { absenceToForm, buildAbsence, emptyAbsenceForm, sortAbsences, validateAbsenceForm } from '../src/lib/absences';
+import { absenceToForm, buildAbsence, decideAbsence, emptyAbsenceForm, sortAbsences, validateAbsenceForm } from '../src/lib/absences';
 import { dayBounds } from '../src/lib/dates';
 import { DEFAULT_WEEK } from '../src/lib/schedule';
 import { buildTimeline } from '../src/lib/timeline';
@@ -88,6 +88,7 @@ describe('absence form helpers', () => {
       startTime: null,
       endTime: null,
       note: 'aprobadas',
+      status: 'approved',
       createdAt: NOW,
       createdBy: ADMIN.id,
       updatedAt: NOW,
@@ -151,6 +152,7 @@ describe('Detalle: ausencias justificadas', () => {
       startTime: '09:00',
       endTime: '11:00',
       note: 'Notaría',
+      status: 'approved',
       createdAt: NOW,
       createdBy: ADMIN.id,
       updatedAt: NOW,
@@ -181,6 +183,52 @@ describe('Detalle: ausencias justificadas', () => {
     await user.click(within(screen.getByRole('dialog', { name: 'Eliminar ausencia' })).getByRole('button', { name: 'Eliminar' }));
     expect(backend.data.deleteAbsence).toHaveBeenCalledWith('abs-ana');
     expect(await screen.findByTestId('day-schedule')).toHaveTextContent('Ausente');
+  });
+});
+
+describe('Solicitudes desde la extensión', () => {
+  const request = (o: Partial<WithId<Absence>> = {}) =>
+    absence({ id: 'req-1', status: 'pending', createdBy: 'ana', updatedBy: 'ana', type: 'medical', note: 'Licencia 1 día', ...o });
+
+  it('editing or deciding keeps the person, the creation and (when editing) the status', () => {
+    const r = request();
+    expect(buildAbsence(absenceToForm(r), 'ana', ADMIN.id, NOW, r).status).toBe('pending');
+    expect(decideAbsence(r, 'approved', ADMIN.id, NOW)).toEqual({ ...request(), id: undefined, status: 'approved', updatedBy: ADMIN.id, updatedAt: NOW });
+  });
+
+  it('a pending request justifies nothing until an admin approves it on the team page', async () => {
+    const user = userEvent.setup();
+    const data = db();
+    data.absences = [request()];
+    const backend = backendOf(data, ADMIN);
+    renderApp(backend, '/?rango=custom&desde=2026-09-28&hasta=2026-09-28');
+    const box = await screen.findByTestId('pending-requests');
+    expect(box).toHaveTextContent('Ana Rojas · Licencia médica · 28-09-2026, día completo');
+    const table = await screen.findByRole('table');
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent);
+    const cell = (h: string) => within(table).getByText('Ana Rojas').closest('tr')!.querySelectorAll('td')[headers.indexOf(h)]!.textContent;
+    expect(cell('Ausencias')).toBe('1 día');
+
+    await user.click(within(box).getByRole('button', { name: /^Aprobar/ }));
+    expect(backend.data.saveAbsence).toHaveBeenCalledWith('req-1', expect.objectContaining({ status: 'approved', updatedBy: ADMIN.id, createdBy: 'ana' }));
+    await vi.waitFor(() => expect(screen.queryByTestId('pending-requests')).toBeNull());
+    await vi.waitFor(() => expect(cell('Ausencias')).toBe('0'));
+  });
+
+  it('the collaborator page shows the status and can reject', async () => {
+    const user = userEvent.setup();
+    const data = db();
+    data.absences = [request()];
+    const backend = backendOf(data, ADMIN);
+    renderApp(backend, '/colaborador/ana?fecha=2026-09-28');
+    const list = await screen.findByTestId('absence-list');
+    expect(list).toHaveTextContent('Pendiente');
+    expect(list).toHaveTextContent('Solicitada desde la extensión');
+    expect(screen.getByTestId('day-schedule')).toHaveTextContent('Licencia médica (pendiente)');
+    expect(screen.getByTestId('day-schedule')).toHaveTextContent('Ausente');
+    await user.click(within(list).getByRole('button', { name: /^Rechazar/ }));
+    expect(backend.data.saveAbsence).toHaveBeenCalledWith('req-1', expect.objectContaining({ status: 'rejected' }));
+    expect(await within(await screen.findByTestId('absence-list')).findByText('Rechazada')).toBeInTheDocument();
   });
 });
 

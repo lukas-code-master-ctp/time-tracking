@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { formatDuration, teamSummaryToCsv, type ActivitySlot } from '@timetracking/shared';
+import { PendingRequests } from '../components/Absences';
 import { RangePicker } from '../components/RangePicker';
-import { TeamTable } from '../components/TeamTable';
+import { TeamTable, memberHref } from '../components/TeamTable';
 import { Empty, ErrorState, Loading, PageHeader, Stat, ActivityMeter } from '../components/ui';
-import { useData } from '../data/context';
+import { useAdmin, useData } from '../data/context';
 import { describeRange, isRangePreset, presetRange, rangeIncludes, startOfDay, zonedDate, type DateRange } from '../lib/dates';
 import { downloadText } from '../lib/download';
-import { absencesByUid } from '../lib/absences';
+import { absencesByUid, decideAbsence } from '../lib/absences';
 import { complianceCsvExtra, teamCompliance, type ScheduleContext } from '../lib/schedule';
 import { buildTeam, mergeActivity } from '../lib/team';
 import { useLoad } from '../lib/useLoad';
@@ -23,7 +24,10 @@ export function rangeFromParams(params: URLSearchParams, now: number): DateRange
 
 export function TeamPage() {
   const data = useData();
+  const { uid: adminUid } = useAdmin();
   const [params, setParams] = useSearchParams();
+  // Absence requests waiting for an admin (any dates): read with the page and after each decision.
+  const pending = useLoad(() => data.listPendingAbsences(), [data]);
   // The range is resolved against "now" at render time; `today` rolls over at midnight.
   const range = rangeFromParams(params, Date.now());
 
@@ -123,6 +127,7 @@ export function TeamPage() {
   };
 
   const team = load.data?.team;
+  const names = useMemo(() => new Map((team?.rows ?? []).map((r) => [r.uid, r.displayName])), [team]);
   return (
     <>
       <PageHeader
@@ -143,6 +148,17 @@ export function TeamPage() {
         range={range}
         onPreset={setPreset}
         onCustom={(desde, hasta) => setParams({ rango: 'custom', desde, hasta })}
+      />
+
+      <PendingRequests
+        requests={pending.data ?? []}
+        names={names}
+        hrefOf={(a) => memberHref(a.uid, a.startDate)}
+        onDecide={async (a, status) => {
+          await data.saveAbsence(a.id, decideAbsence(a, status, adminUid, Date.now()));
+          pending.reload();
+          reloadAll();
+        }}
       />
 
       {team ? (

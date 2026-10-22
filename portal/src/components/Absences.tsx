@@ -1,7 +1,18 @@
 import { useId, useState } from 'react';
-import { ABSENCE_TYPES, ABSENCE_TYPE_LABELS, MAX_ABSENCE_NOTE, type Absence, type AbsenceType, type WithId } from '@timetracking/shared';
+import {
+  ABSENCE_STATUS_LABELS,
+  ABSENCE_TYPES,
+  ABSENCE_TYPE_LABELS,
+  MAX_ABSENCE_NOTE,
+  absenceStatus,
+  type Absence,
+  type AbsenceStatus,
+  type AbsenceType,
+  type WithId,
+} from '@timetracking/shared';
 import { absenceTitle, absenceToForm, emptyAbsenceForm, sortAbsences, validateAbsenceForm, type AbsenceForm } from '../lib/absences';
 import { errorMessage } from '../lib/messages';
+import { Link } from 'react-router';
 import { ConfirmDialog, Modal } from './Modal';
 
 interface Props {
@@ -11,14 +22,64 @@ interface Props {
   date: string;
   onSave(id: string | null, form: AbsenceForm, existing: Absence | null): Promise<void>;
   onDelete(id: string): Promise<void>;
+  /** Approves or rejects a pending request. */
+  onDecide(absence: WithId<Absence>, status: Exclude<AbsenceStatus, 'pending'>): Promise<void>;
+}
+
+const STATUS_CHIP: Record<AbsenceStatus, string> = { pending: 'warn', approved: 'ok', rejected: 'muted-chip' };
+
+/** "Pendiente" / "Aprobada" / "Rechazada". Approved ones recorded by an admin show nothing unless `always`. */
+export function AbsenceStatusChip({ absence, always = false }: { absence: Absence; always?: boolean }) {
+  const status = absenceStatus(absence);
+  if (status === 'approved' && !always && absence.createdBy !== absence.uid) return null;
+  return <span className={`chip small-chip ${STATUS_CHIP[status]}`}>{ABSENCE_STATUS_LABELS[status]}</span>;
+}
+
+/** "Aprobar" / "Rechazar" of a pending request. */
+export function DecisionButtons({
+  absence,
+  onDecide,
+}: {
+  absence: WithId<Absence>;
+  onDecide(absence: WithId<Absence>, status: Exclude<AbsenceStatus, 'pending'>): Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const decide = async (status: Exclude<AbsenceStatus, 'pending'>): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onDecide(absence, status);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button type="button" className="btn primary" disabled={busy} onClick={() => void decide('approved')} aria-label={`Aprobar ${absenceTitle(absence)}`}>
+        Aprobar
+      </button>
+      <button type="button" className="btn" disabled={busy} onClick={() => void decide('rejected')} aria-label={`Rechazar ${absenceTitle(absence)}`}>
+        Rechazar
+      </button>
+      {error ? (
+        <span className="field-error" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 /**
  * "Ausencias justificadas" of the collaborator page (spec
  * 2026-10-22-ausencias-justificadas): the list, "Agregar ausencia", and
- * editing or deleting each one.
+ * editing or deleting each one. Requests made from the extension show their
+ * status, and the pending ones can be approved or rejected here.
  */
-export function AbsencesSection({ absences, date, onSave, onDelete }: Props) {
+export function AbsencesSection({ absences, date, onSave, onDelete, onDecide }: Props) {
   const [editing, setEditing] = useState<{ id: string | null; existing: Absence | null; form: AbsenceForm } | null>(null);
   const [deleting, setDeleting] = useState<WithId<Absence> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,10 +125,14 @@ export function AbsencesSection({ absences, date, onSave, onDelete }: Props) {
           {sorted.map((a) => (
             <li key={a.id}>
               <div className="absence-text">
-                <span className="strong">{absenceTitle(a)}</span>
+                <span className="strong">
+                  {absenceTitle(a)} <AbsenceStatusChip absence={a} />
+                </span>
                 {a.note ? <span className="muted small">{a.note}</span> : null}
+                {a.createdBy === a.uid ? <span className="muted small">Solicitada desde la extensión</span> : null}
               </div>
               <div className="row-actions">
+                {absenceStatus(a) === 'pending' ? <DecisionButtons absence={a} onDecide={onDecide} /> : null}
                 <button
                   type="button"
                   className="btn"
@@ -118,6 +183,51 @@ export function AbsencesSection({ absences, date, onSave, onDelete }: Props) {
           onCancel={() => setDeleting(null)}
         />
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * "Solicitudes de ausencia" of the team page: the requests made from the
+ * extension waiting for an admin (spec 2026-10-22-solicitud-ausencias).
+ * Nothing is shown while there are none.
+ */
+export function PendingRequests({
+  requests,
+  names,
+  hrefOf,
+  onDecide,
+}: {
+  requests: readonly WithId<Absence>[];
+  /** uid → name shown. */
+  names: ReadonlyMap<string, string>;
+  /** Collaborator page of a request (opened on its first day). */
+  hrefOf(absence: Absence): string;
+  onDecide(absence: WithId<Absence>, status: Exclude<AbsenceStatus, 'pending'>): Promise<void>;
+}) {
+  if (requests.length === 0) return null;
+  const sorted = [...requests].sort((a, b) => a.createdAt - b.createdAt);
+  return (
+    <section className="card" aria-labelledby="h-requests">
+      <h2 id="h-requests">
+        Solicitudes de ausencia <span className="chip warn small-chip">{sorted.length} pendiente{sorted.length === 1 ? '' : 's'}</span>
+      </h2>
+      <ul className="absence-list" data-testid="pending-requests">
+        {sorted.map((a) => (
+          <li key={a.id}>
+            <div className="absence-text">
+              <span className="strong">
+                <Link to={hrefOf(a)}>{names.get(a.uid) ?? 'Colaborador'}</Link> · {absenceTitle(a)}
+              </span>
+              {a.note ? <span className="muted small">{a.note}</span> : null}
+            </div>
+            <div className="row-actions">
+              <DecisionButtons absence={a} onDecide={onDecide} />
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">Solo las ausencias aprobadas justifican tiempo en los reportes.</p>
     </section>
   );
 }

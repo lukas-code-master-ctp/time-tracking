@@ -4,6 +4,7 @@ import {
   ABSENCE_TYPE_LABELS,
   absenceIntervalsForDay,
   absenceOverlapsRange,
+  absenceStatus,
   complianceForDay,
   complianceForRange,
   describeAbsenceWhen,
@@ -96,6 +97,15 @@ describe('absence intervals', () => {
     expect(absenceIntervalsForDay(MON, [errand('09:00', '10:00'), errand('09:30', '11:00')])).toEqual([
       { start: at(MON, '09:00'), end: at(MON, '11:00') },
     ]);
+  });
+
+  it('only approved absences justify time (no status = approved)', () => {
+    expect(absenceIntervalsForDay(MON, [absence({ status: 'pending' })])).toEqual([]);
+    expect(absenceIntervalsForDay(MON, [absence({ status: 'rejected' })])).toEqual([]);
+    expect(absenceIntervalsForDay(MON, [absence({ status: 'approved' })])).toEqual([zonedDayBounds(MON)]);
+    expect(absenceStatus({})).toBe('approved');
+    expect(absenceStatus({ status: 'pending' })).toBe('pending');
+    expect(complianceForDay(MON, [], WEEK, [], 5, LATER, undefined, [absence({ status: 'pending' })]).absent).toBe(true);
   });
 
   it('merges touching intervals', () => {

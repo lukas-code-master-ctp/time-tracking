@@ -6,10 +6,12 @@
  */
 import {
   ABSENCE_TYPE_LABELS,
+  absenceStatus,
   describeAbsenceWhen,
   isFullDayAbsence,
   validateAbsence,
   type Absence,
+  type AbsenceStatus,
   type AbsenceType,
   type ScheduleIssue,
   type WithId,
@@ -66,8 +68,9 @@ export function validateAbsenceForm(form: AbsenceForm): ScheduleIssue[] {
 }
 
 /**
- * `absences/{id}` with the 11 fields the rules require. A change keeps the
- * person and the creation of `existing`. Throws when invalid.
+ * `absences/{id}` with the 12 fields the rules require. What an admin records
+ * is approved; a change keeps the person, the creation and the status of
+ * `existing` (an edited request stays pending). Throws when invalid.
  */
 export function buildAbsence(form: AbsenceForm, uid: string, adminUid: string, now: number, existing?: Absence | null): Absence {
   const issues = validateAbsenceForm(form);
@@ -76,11 +79,21 @@ export function buildAbsence(form: AbsenceForm, uid: string, adminUid: string, n
   return {
     uid: existing?.uid ?? uid,
     ...formFields(form),
+    status: existing ? absenceStatus(existing) : 'approved',
     createdAt: existing?.createdAt ?? at,
     createdBy: existing?.createdBy ?? adminUid,
     updatedAt: at,
     updatedBy: adminUid,
   };
+}
+
+/**
+ * An admin approves or rejects a request (spec 2026-10-22-solicitud-ausencias):
+ * the same document with the new status, changed by the admin.
+ */
+export function decideAbsence(existing: Absence, status: Exclude<AbsenceStatus, 'pending'>, adminUid: string, now: number): Absence {
+  const { id: _id, ...doc } = existing as Absence & { id?: string };
+  return { ...doc, status, updatedAt: Math.floor(now), updatedBy: adminUid };
 }
 
 /** "Vacaciones · 03-11-2026 al 14-11-2026". */

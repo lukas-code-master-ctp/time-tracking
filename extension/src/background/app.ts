@@ -31,13 +31,17 @@ import {
   readActiveBreakSettings,
   readPersonSchedule,
   readScheduleConfig,
+  validateAbsence,
+  type Absence,
   type ActiveBreakSettings,
   type OrgConfig,
   type UserProfile,
+  type WithId,
 } from '@timetracking/shared';
 import {
   isContentMessage,
   isPopupRequest,
+  type AbsenceRequest,
   type PopupRequest,
   type PopupResponse,
   type SignInResult,
@@ -671,6 +675,14 @@ export class App {
         case 'breaks.setEnabled':
           await this.setBreaksEnabled(req.enabled);
           break;
+        case 'absences.list':
+          return { ok: true, status: await this.status(), absences: await this.listAbsences() };
+        case 'absences.request':
+          await this.requestAbsence(req.absence);
+          return { ok: true, status: await this.status(), absences: await this.listAbsences() };
+        case 'absences.cancel':
+          await this.cancelAbsence(req.id);
+          return { ok: true, status: await this.status(), absences: await this.listAbsences() };
         default:
           break;
       }
@@ -789,6 +801,68 @@ export class App {
       this.store.meta.profile = { ...this.store.meta.profile, consentAcceptedAt: at, consentVersion: CONSENT_VERSION };
       await this.store.save('meta');
     });
+  }
+
+  // ---------- absence requests (spec 2026-10-22-solicitud-ausencias) ----------
+
+  /** uid of a signed-in person who joined and accepted the notice; throws otherwise. */
+  private async memberUid(): Promise<string> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    if (!user) throw new AuthError('signed-out', 'Inicia sesión primero desde el ícono de la extensión.');
+    const profile = await this.store.run(() => (this.store.meta.profileUid === user.uid ? this.store.meta.profile : null));
+    if (!profile) throw new AuthError('not-joined', 'Tu cuenta aún no está habilitada. Pide a tu administrador que te invite.');
+    if (profile.consentVersion !== CONSENT_VERSION) throw new AuthError('consent-required', 'Primero acepta el aviso de medición.');
+    return user.uid;
+  }
+
+  /** Online reads/writes: a failure becomes one Spanish message for the page. */
+  private async absencesCall<T>(what: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      console.warn(`[timetracking] ausencias (${what})`, err);
+      const code = errorCode(err);
+      throw new AuthError(
+        'absences-failed',
+        code === 'permission-denied'
+          ? 'Tu empresa aún no tiene habilitadas las solicitudes de ausencia, o ya no puedes cambiar esta solicitud.'
+          : 'No se pudo conectar. Revisa tu conexión y vuelve a intentarlo.',
+      );
+    }
+  }
+
+  /** The person's absences and requests, newest first. */
+  async listAbsences(): Promise<WithId<Absence>[]> {
+    const uid = await this.memberUid();
+    const list = await this.absencesCall('leer', () => this.backend.listAbsences(uid));
+    return list.sort((a, b) => b.startDate.localeCompare(a.startDate) || b.createdAt - a.createdAt);
+  }
+
+  /** "Solicitar ausencia": a pending `absences` document by and for the person. */
+  async requestAbsence(req: AbsenceRequest): Promise<void> {
+    const uid = await this.memberUid();
+    const hours = req.startTime !== null || req.endTime !== null;
+    const fields = {
+      type: req.type,
+      startDate: req.startDate,
+      endDate: hours ? req.startDate : req.endDate,
+      startTime: hours ? req.startTime : null,
+      endTime: hours ? req.endTime : null,
+      note: typeof req.note === 'string' ? req.note.trim() : '',
+    };
+    const issues = validateAbsence(fields);
+    if (issues.length > 0) throw new AuthError('absence-invalid', [...new Set(issues.map((i) => i.message))].join(' '));
+    const at = Math.round(this.now());
+    await this.absencesCall('solicitar', () =>
+      this.backend.createAbsence({ uid, ...fields, status: 'pending', createdAt: at, createdBy: uid, updatedAt: at, updatedBy: uid }),
+    );
+  }
+
+  /** Withdraws a pending request. */
+  async cancelAbsence(id: string): Promise<void> {
+    await this.memberUid();
+    await this.absencesCall('retirar', () => this.backend.deleteAbsence(id));
   }
 
   /**

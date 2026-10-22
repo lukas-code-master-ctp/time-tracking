@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ausencias — Registro de jornada</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <img src="icons/icon-48.png" alt="" width="40" height="40" />
+        <div>
+          <h1>Ausencias</h1>
+          <p class="muted">Pide vacaciones, licencias, trámites o permisos. Tu administrador las aprueba o las rechaza.</p>
+        </div>
+      </header>
+
+      <p id="status" class="banner" role="status" hidden></p>
+
+      <section class="card" aria-labelledby="h-request">
+        <h2 id="h-request">Solicitar ausencia</h2>
+        <form id="form" class="form" novalidate>
+          <div class="field">
+            <label for="type">Tipo</label>
+            <select id="type">
+              <option value="vacation">Vacaciones</option>
+              <option value="medical">Licencia médica</option>
+              <option value="errand">Trámite</option>
+              <option value="permission">Permiso</option>
+              <option value="other">Otro</option>
+            </select>
+          </div>
+          <div class="segmented" role="group" aria-label="Duración">
+            <button type="button" id="mode-days" class="active" aria-pressed="true">Días completos</button>
+            <button type="button" id="mode-hours" aria-pressed="false">Por horas</button>
+          </div>
+          <div id="days" class="row">
+            <div class="field">
+              <label for="from">Desde</label>
+              <input id="from" type="date" />
+            </div>
+            <div class="field">
+              <label for="to">Hasta (inclusive)</label>
+              <input id="to" type="date" />
+            </div>
+          </div>
+          <div id="hours" class="row" hidden>
+            <div class="field">
+              <label for="day">Día</label>
+              <input id="day" type="date" />
+            </div>
+            <div class="field">
+              <label for="start">Desde</label>
+              <input id="start" type="time" value="09:00" />
+            </div>
+            <div class="field">
+              <label for="end">Hasta</label>
+              <input id="end" type="time" value="11:00" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="note" id="note-label">Comentario (opcional)</label>
+            <textarea id="note" rows="3" maxlength="500" placeholder="Ej.: licencia N° 12345, hora al médico…"></textarea>
+          </div>
+          <div class="actions">
+            <button type="submit" id="submit" class="btn primary">Enviar solicitud</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="h-mine">
+        <h2 id="h-mine">Mis ausencias</h2>
+        <ul id="list" class="requests"></ul>
+        <p id="empty" class="muted" hidden>Aún no tienes ausencias registradas.</p>
+        <p class="small muted">Solo las aprobadas justifican tu tiempo. Puedes retirar una solicitud mientras esté pendiente.</p>
+      </section>
+    </main>
+    <script type="module" src="/src/absences/main.ts"></script>
+  </body>
+</html>

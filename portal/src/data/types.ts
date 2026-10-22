@@ -68,6 +68,8 @@ export interface DataSource {
    * of everybody or of one person. `[]` while the rules are not deployed.
    */
   listAbsences(fromDate: string, toDate: string, uid?: string): Promise<WithId<Absence>[]>;
+  /** Requests from the people still waiting for an admin (`status == 'pending'`). `[]` while the rules are not deployed. */
+  listPendingAbsences(): Promise<WithId<Absence>[]>;
   /** Writes the whole absence: a new document when `id` is null. Returns its id. */
   saveAbsence(id: string | null, absence: Absence): Promise<string>;
   deleteAbsence(id: string): Promise<void>;

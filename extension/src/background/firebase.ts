@@ -25,12 +25,17 @@ import {
   type Auth,
 } from 'firebase/auth/web-extension';
 import {
+  collection,
   connectFirestoreEmulator,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   getFirestore,
+  query,
   setDoc,
   updateDoc,
+  where,
   type Firestore,
 } from 'firebase/firestore/lite';
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
@@ -41,6 +46,7 @@ import {
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
+  type Absence,
   type ActiveBreak,
   type ActivitySlot,
   type OrgConfig,
@@ -141,6 +147,18 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     screenshotExists: (path) => storageObjectExists(h, path),
     async putScreenshotMeta(id: string, meta: ScreenshotMeta) {
       await setDoc(doc(db, COLLECTIONS.screenshots, id), meta);
+    },
+    async listAbsences(uid: string) {
+      const snap = await getDocs(query(collection(db, COLLECTIONS.absences), where('uid', '==', uid)));
+      return snap.docs.map((d) => ({ ...(d.data() as Absence), id: d.id }));
+    },
+    async createAbsence(data: Absence) {
+      const target = doc(collection(db, COLLECTIONS.absences));
+      await setDoc(target, data);
+      return target.id;
+    },
+    async deleteAbsence(id: string) {
+      await deleteDoc(doc(db, COLLECTIONS.absences, id));
     },
   };
 }

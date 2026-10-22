@@ -1,0 +1,161 @@
+/* "Ausencias" page (spec 2026-10-22-solicitud-ausencias). Same layout as the consent page. */
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+  display: grid;
+  gap: 14px;
+  font-size: 15px;
+}
+
+.head {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.head h1 {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.card h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.row[hidden] {
+  display: none;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 160px;
+}
+
+label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-height: 38px;
+  min-width: 0;
+}
+
+textarea {
+  resize: vertical;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  width: fit-content;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.segmented button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.segmented button.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.requests {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.requests li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.requests li:first-child {
+  border-top: none;
+}
+
+.requests .what {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.pill.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.small {
+  font-size: 13px;
+}
