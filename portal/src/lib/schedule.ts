@@ -22,10 +22,12 @@ import {
   normalizeHolidays,
   planForDay,
   secondsToHours,
+  sumCompliance,
   validateHolidays,
   validateToleranceMinutes,
   validateWeekSchedule,
   weekdayOfDateKey,
+  type AbsenceSpan,
   type ComplianceTotals,
   type DayCompliance,
   type DayPlan,
@@ -331,22 +333,7 @@ export interface TeamCompliance {
 }
 
 function zeroTotals(): ComplianceTotals {
-  return {
-    days: 0,
-    workdays: 0,
-    expectedSeconds: 0,
-    expectedSoFarSeconds: 0,
-    connectedSeconds: 0,
-    inScheduleSeconds: 0,
-    lunchSeconds: 0,
-    outsideScheduleSeconds: 0,
-    offlineSeconds: 0,
-    lateCount: 0,
-    lateSeconds: 0,
-    earlyLeaveCount: 0,
-    earlyLeaveSeconds: 0,
-    absentDays: 0,
-  };
+  return sumCompliance([]);
 }
 
 export function addTotals(a: ComplianceTotals, b: ComplianceTotals): ComplianceTotals {
@@ -376,6 +363,7 @@ export function complianceStartDate(fromDate: string, joinedAt: number | undefin
  * schedule: the columns are not shown. `joinedAt` (uid → `createdAt`) keeps
  * the days before someone joined out of the count: a person invited on the
  * 20th has no absences nor offline time from the 1st to the 19th.
+ * `absences` (uid → justified absences) excuse the time they cover.
  */
 export function teamCompliance(
   uids: readonly string[],
@@ -385,6 +373,7 @@ export function teamCompliance(
   toDate: string,
   now: number,
   joinedAt?: ReadonlyMap<string, number>,
+  absences?: ReadonlyMap<string, readonly AbsenceSpan[]>,
 ): TeamCompliance | null {
   if (!anySchedule(ctx, uids)) return null;
   const byPerson = new Map<string, Session[]>();
@@ -408,7 +397,7 @@ export function teamCompliance(
     const personTotals =
       start > toDate
         ? zeroTotals()
-        : complianceForRange(start, toDate, own, eff.week, eff.holidays, eff.toleranceMinutes, now).totals;
+        : complianceForRange(start, toDate, own, eff.week, eff.holidays, eff.toleranceMinutes, now, undefined, absences?.get(uid) ?? []).totals;
     byUid.set(uid, { source: eff.source, totals: personTotals });
     totals = addTotals(totals, personTotals);
     scheduled++;
@@ -435,6 +424,8 @@ export function complianceCsvExtra(tc: TeamCompliance): TeamCsvExtra {
       { key: 'lateHours', header: 'Horas de atraso' },
       { key: 'offlineHours', header: 'Horas sin conexión en horario' },
       { key: 'absentDays', header: 'Ausencias (días)' },
+      { key: 'justifiedHours', header: 'Horas justificadas' },
+      { key: 'justifiedDays', header: 'Días justificados' },
     ],
     values(row) {
       const c = tc.byUid.get(row.uid);
@@ -450,6 +441,8 @@ export function complianceCsvExtra(tc: TeamCompliance): TeamCsvExtra {
         lateHours: secondsToHours(t.lateSeconds),
         offlineHours: secondsToHours(t.offlineSeconds),
         absentDays: t.absentDays,
+        justifiedHours: secondsToHours(t.justifiedSeconds),
+        justifiedDays: t.justifiedDays,
       };
     },
   };
@@ -467,16 +460,17 @@ export interface DayScheduleView {
   perSession: Map<string, { outsideScheduleSeconds: number; lunchSeconds: number }>;
 }
 
-/** Plan and compliance of `date` for one person; null without a schedule. */
+/** Plan and compliance of `date` for one person (with their justified absences); null without a schedule. */
 export function dayScheduleView(
   date: string,
   sessions: readonly (Session & { id: string })[],
   eff: EffectiveSchedule,
   now: number,
+  absences: readonly AbsenceSpan[] = [],
 ): DayScheduleView | null {
   if (!eff.week) return null;
   const plan = planForDay(date, eff.week, eff.holidays);
-  const compliance = complianceForDay(date, sessions, eff.week, eff.holidays, eff.toleranceMinutes, now);
+  const compliance = complianceForDay(date, sessions, eff.week, eff.holidays, eff.toleranceMinutes, now, undefined, absences);
   const perSession = new Map<string, { outsideScheduleSeconds: number; lunchSeconds: number }>();
   for (const s of sessions) {
     const c = complianceForDay(date, [s], eff.week, eff.holidays, eff.toleranceMinutes, now);

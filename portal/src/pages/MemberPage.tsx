@@ -1,10 +1,21 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { formatDuration, readActiveBreakSettings, summarizeMember, type ActiveBreak } from '@timetracking/shared';
+import {
+  ABSENCE_TYPE_LABELS,
+  absenceCoversDate,
+  formatDuration,
+  readActiveBreakSettings,
+  summarizeMember,
+  type Absence,
+  type ActiveBreak,
+  type WithId,
+} from '@timetracking/shared';
+import { AbsencesSection } from '../components/Absences';
 import { ScreenshotGallery } from '../components/Screenshots';
 import { Timeline } from '../components/Timeline';
 import { ActivityMeter, BarList, Empty, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
-import { useData } from '../data/context';
+import { useAdmin, useData } from '../data/context';
+import { absenceTitle, buildAbsence } from '../lib/absences';
 import { addDays, dayBounds, formatLongDate, formatTime, isValidDate, zonedDate } from '../lib/dates';
 import { SOURCE_LABEL, dayScheduleView, describeDay, scheduleFor, type DayScheduleView } from '../lib/schedule';
 import { sessionViews } from '../lib/team';
@@ -14,6 +25,7 @@ import { useLoad } from '../lib/useLoad';
 export function MemberPage() {
   const { uid = '' } = useParams();
   const data = useData();
+  const { uid: adminUid } = useAdmin();
   const [params, setParams] = useSearchParams();
   const today = zonedDate(Date.now());
   const raw = params.get('fecha') ?? '';
@@ -22,7 +34,7 @@ export function MemberPage() {
   const [openShot, setOpenShot] = useState<string | null>(null);
 
   const load = useLoad(async () => {
-    const [user, config, slots, sessions, shots, general, personal, breaks] = await Promise.all([
+    const [user, config, slots, sessions, shots, general, personal, breaks, absences] = await Promise.all([
       data.getUser(uid),
       data.getOrgConfig(),
       data.listActivity(day, uid),
@@ -31,19 +43,23 @@ export function MemberPage() {
       data.getScheduleConfig(),
       data.getPersonSchedule(uid),
       data.listBreaks(uid, day),
+      // The person's absences around the day: enough to list and edit them.
+      data.listAbsences(addDays(date, -ABSENCE_LIST_PAST_DAYS), addDays(date, ABSENCE_LIST_FUTURE_DAYS), uid),
     ]);
-    return { user, config, slots, sessions, shots, general, personal, breaks, now: Date.now() };
+    return { user, config, slots, sessions, shots, general, personal, breaks, absences, now: Date.now() };
   }, [data, uid, day.from, day.to]);
 
   const view = useMemo(() => {
     if (!load.data) return null;
-    const { config, slots, sessions, shots, general, personal, breaks, now } = load.data;
+    const { config, slots, sessions, shots, general, personal, breaks, absences, now } = load.data;
     const eff = scheduleFor({ config: general, persons: new Map(personal ? [[uid, personal]] : []) }, uid);
-    const schedule = dayScheduleView(date, sessions, eff, now);
+    const dayAbsences = absences.filter((a) => absenceCoversDate(a, date));
+    const schedule = dayScheduleView(date, sessions, eff, now, dayAbsences);
     return {
       schedule,
+      dayAbsences,
       summary: summarizeMember(slots, sessions, { from: day.from, to: day.to, now, topN: 10 }),
-      timeline: buildTimeline(day.from, day.to, slots, shots, { plan: schedule?.plan ?? null, breaks }),
+      timeline: buildTimeline(day.from, day.to, slots, shots, { plan: schedule?.plan ?? null, breaks, absences: dayAbsences }),
       // Shown while the organization has them on, or for a day that has some.
       breaks: readActiveBreakSettings(config).enabled || breaks.length > 0 ? breakCounts(breaks) : null,
       sessions: sessionViews(sessions, day, now),
@@ -132,7 +148,28 @@ export function MemberPage() {
             ) : null}
           </section>
 
-          {view.schedule ? <DayComplianceCards view={view.schedule} /> : null}
+          {view.schedule ? (
+            <DayComplianceCards view={view.schedule} absences={view.dayAbsences} />
+          ) : view.dayAbsences.length > 0 ? (
+            <p className="day-schedule" data-testid="day-absences">
+              {view.dayAbsences.map((a) => (
+                <AbsenceChip key={a.id} absence={a} />
+              ))}
+            </p>
+          ) : null}
+
+          <AbsencesSection
+            absences={load.data.absences}
+            date={date}
+            onSave={async (id, form, existing) => {
+              await data.saveAbsence(id, buildAbsence(form, uid, adminUid, Date.now(), existing));
+              load.reload();
+            }}
+            onDelete={async (id) => {
+              await data.deleteAbsence(id);
+              load.reload();
+            }}
+          />
 
           <section className="card" aria-labelledby="h-sessions">
             <h2 id="h-sessions">Jornadas del día</h2>
@@ -225,6 +262,20 @@ export function MemberPage() {
   );
 }
 
+/** How far around the day the page lists the person's absences. */
+const ABSENCE_LIST_PAST_DAYS = 120;
+const ABSENCE_LIST_FUTURE_DAYS = 365;
+
+/** "Vacaciones" chip of the day, with the details as its title. */
+function AbsenceChip({ absence }: { absence: WithId<Absence> }) {
+  return (
+    <span className="chip accent-chip" title={`${absenceTitle(absence)}${absence.note ? ` · ${absence.note}` : ''}`}>
+      {ABSENCE_TYPE_LABELS[absence.type] ?? 'Ausencia'}
+      {absence.startTime ? ` ${absence.startTime}–${absence.endTime ?? ''}` : ''}
+    </span>
+  );
+}
+
 /** Answers of the day by status. */
 export function breakCounts(breaks: readonly ActiveBreak[]): { taken: number; postponed: number; skipped: number } {
   const count = (status: ActiveBreak['status']): number => breaks.filter((b) => b.status === status).length;
@@ -242,7 +293,7 @@ function OutsideCell({ part }: { part: { outsideScheduleSeconds: number; lunchSe
 }
 
 /** "Horario del día": the day's schedule and the compliance cards. */
-export function DayComplianceCards({ view }: { view: DayScheduleView }) {
+export function DayComplianceCards({ view, absences = [] }: { view: DayScheduleView; absences?: readonly WithId<Absence>[] }) {
   const { plan, compliance: c, source } = view;
   const ongoing = c.state === 'ongoing';
   const finished = c.state === 'finished';
@@ -269,6 +320,9 @@ export function DayComplianceCards({ view }: { view: DayScheduleView }) {
         ) : null}
         {c.workday && c.state === 'upcoming' ? <span className="chip muted-chip">Aún no empieza</span> : null}
         {c.absent ? <span className="chip warn">Ausente</span> : null}
+        {absences.map((a) => (
+          <AbsenceChip key={a.id} absence={a} />
+        ))}
       </p>
       {c.workday ? (
         <div className="stats compliance-stats" role="region" aria-label="Cumplimiento del día">
@@ -285,6 +339,9 @@ export function DayComplianceCards({ view }: { view: DayScheduleView }) {
           <Stat label="Atraso" value={lateValue} hint={lateHint} />
           <Stat label="Salida anticipada" value={earlyValue} hint={earlyHint} />
           <Stat label="Sin conexión en horario" value={formatDuration(c.offlineSeconds)} hint={ongoing ? 'hasta ahora' : undefined} />
+          {c.justifiedSeconds > 0 ? (
+            <Stat label="Justificado" value={formatDuration(c.justifiedSeconds)} hint={c.justified ? 'todo el día' : 'del horario'} />
+          ) : null}
         </div>
       ) : (
         <p className="muted">

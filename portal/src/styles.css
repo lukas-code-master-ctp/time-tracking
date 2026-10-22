@@ -1319,6 +1319,14 @@ a.person:hover .person-name {
   pointer-events: none;
 }
 
+/* Justified absence (spec 2026-10-22-ausencias-justificadas): a dashed
+   accent outline inside the block, clear of the hover/selected ring. */
+.cell.sch-justified,
+.swatch.sch-justified {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+}
+
 .swatch .brk-mark {
   left: 2px;
   right: 2px;
@@ -2165,4 +2173,74 @@ input[type='time'][aria-invalid='true'] {
   .table-hint {
     display: none;
   }
+}
+
+/* Justified absences (spec 2026-10-22-ausencias-justificadas). */
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.card-head h2 {
+  margin: 0;
+}
+
+.absence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.absence-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.absence-list li:first-child {
+  border-top: none;
+}
+
+.absence-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.absence-form {
+  display: grid;
+  gap: 14px;
+  color: var(--text);
+}
+
+.absence-form .field-error {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.absence-form textarea {
+  min-height: 72px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.absence-form textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
 }

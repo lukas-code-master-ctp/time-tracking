@@ -11,6 +11,8 @@ rules_version = '2';
 //   schedules (`schedules/{uid}`, "Volver al general") by an admin.
 // - `breaks` (active breaks, spec 2026-10-21-pausa-activa) are written once
 //   by their owner and never changed.
+// - `absences` (justified absences, spec 2026-10-22-ausencias-justificadas)
+//   are created, changed and deleted only by an admin; the person reads hers.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -422,6 +424,52 @@ service cloud.firestore {
         && changedKeys().size() == 0;
 
       allow delete: if false;
+    }
+
+    // ---------- absences/{id} (justified absences) ----------
+
+    // 'YYYY-MM-DD' (the calendar validity, e.g. no Feb 30, is checked by the
+    // portal and packages/shared/src/absences.ts).
+    function validDateKey(d) {
+      return d is string && d.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])');
+    }
+
+    // Whole days: both times null. By hours: one day and start < end.
+    // At most 366 days (compared through timestamps of the dates).
+    function validAbsence(d) {
+      return d.keys().hasOnly(['uid', 'type', 'startDate', 'endDate', 'startTime', 'endTime', 'note',
+                                'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.keys().hasAll(['uid', 'type', 'startDate', 'endDate', 'startTime', 'endTime', 'note',
+                            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.uid is string && exists(userPath(d.uid))
+        && d.type in ['vacation', 'medical', 'errand', 'permission', 'other']
+        && validDateKey(d.startDate) && validDateKey(d.endDate)
+        && d.startDate <= d.endDate
+        && timestamp.date(int(d.endDate.split('-')[0]), int(d.endDate.split('-')[1]), int(d.endDate.split('-')[2]))
+           < timestamp.date(int(d.startDate.split('-')[0]), int(d.startDate.split('-')[1]), int(d.startDate.split('-')[2]))
+             + duration.value(366, 'd')
+        && ((d.startTime == null && d.endTime == null)
+            || (validTime(d.startTime) && validTime(d.endTime) && d.startTime < d.endTime
+                && d.startDate == d.endDate))
+        && d.note is string && d.note.size() <= 500
+        && (d.type != 'other' || d.note.trim().size() > 0)
+        && d.createdAt is int && d.createdBy is string
+        && d.updatedAt is int
+        && d.updatedBy == request.auth.uid;
+    }
+
+    match /absences/{id} {
+      allow read: if isAdmin() || (isActive() && ownsExisting());
+      allow create: if isAdmin()
+        && validAbsence(incoming())
+        && incoming().createdBy == request.auth.uid;
+      // The person and the creation stay; the rest may change.
+      allow update: if isAdmin()
+        && validAbsence(incoming())
+        && incoming().uid == resource.data.uid
+        && incoming().createdAt == resource.data.createdAt
+        && incoming().createdBy == resource.data.createdBy;
+      allow delete: if isAdmin();
     }
 
     // Anything else is denied.

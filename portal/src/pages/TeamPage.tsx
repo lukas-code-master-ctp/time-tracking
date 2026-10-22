@@ -7,6 +7,7 @@ import { Empty, ErrorState, Loading, PageHeader, Stat, ActivityMeter } from '../
 import { useData } from '../data/context';
 import { describeRange, isRangePreset, presetRange, rangeIncludes, startOfDay, zonedDate, type DateRange } from '../lib/dates';
 import { downloadText } from '../lib/download';
+import { absencesByUid } from '../lib/absences';
 import { complianceCsvExtra, teamCompliance, type ScheduleContext } from '../lib/schedule';
 import { buildTeam, mergeActivity } from '../lib/team';
 import { useLoad } from '../lib/useLoad';
@@ -42,7 +43,7 @@ export function TeamPage() {
     const readSchedules = full.current || !schedules.current;
     full.current = false;
     const since = prev ? Math.max(range.from, prev.since) : range.from;
-    const [users, fresh, sessions, ctx] = await Promise.all([
+    const [users, fresh, sessions, ctx, absences] = await Promise.all([
       data.listUsers(),
       data.listActivity(prev ? { from: since, to: range.to } : range),
       data.listSessions(range),
@@ -51,6 +52,7 @@ export function TeamPage() {
             ([config, persons]): ScheduleContext => ({ config, persons: new Map(persons.map(({ id, ...p }) => [id, p])) }),
           )
         : Promise.resolve(schedules.current!),
+      data.listAbsences(range.fromDate, range.toDate),
     ]);
     schedules.current = ctx;
     const slots = prev ? mergeActivity(prev.slots, fresh, since) : fresh;
@@ -70,6 +72,7 @@ export function TeamPage() {
       range.toDate,
       now,
       new Map(users.map((u) => [u.id, u.createdAt])),
+      absencesByUid(absences),
     );
     return { team, compliance, now };
   }, [data, range.from, range.to]);
@@ -169,7 +172,15 @@ export function TeamPage() {
             hint={load.data.compliance.totals.lateCount > 0 ? `${formatDuration(load.data.compliance.totals.lateSeconds)} en total` : undefined}
           />
           <Stat label="Sin conexión en horario" value={formatDuration(load.data.compliance.totals.offlineSeconds)} />
-          <Stat label="Ausencias" value={`${load.data.compliance.totals.absentDays} ${load.data.compliance.totals.absentDays === 1 ? 'día' : 'días'}`} />
+          <Stat
+            label="Ausencias"
+            value={`${load.data.compliance.totals.absentDays} ${load.data.compliance.totals.absentDays === 1 ? 'día' : 'días'}`}
+            hint={
+              load.data.compliance.totals.justifiedSeconds > 0
+                ? `justificado ${formatDuration(load.data.compliance.totals.justifiedSeconds)}`
+                : 'sin contar las justificadas'
+            }
+          />
         </section>
       ) : null}
 
@@ -205,8 +216,10 @@ export function TeamPage() {
           Horario: “Esperadas” son las horas de horario hasta ahora, sin la colación ni los feriados ni los días libres (“de …”, las de todo el periodo); “En
           horario”, el tiempo de jornada dentro de ellas; “Fuera de horario”, el tiempo de jornada fuera del horario y de la
           colación. “Atrasos”: cuántos días la llegada superó la tolerancia, y cuánto sumaron. “Sin conexión en horario” es lo esperado hasta
-          ahora sin jornada abierta, y una ausencia es un día laboral ya terminado sin jornada. Los días antes de que la
-          persona se uniera no cuentan. Se calcula con el horario vigente.
+          ahora sin jornada abierta, y una ausencia es un día laboral ya terminado sin jornada. “Justificado” es el tiempo de
+          horario cubierto por vacaciones, licencias, trámites u otras ausencias registradas en la ficha de cada persona: no
+          cuenta como ausencia, atraso, salida anticipada ni sin conexión. Los días antes de que la persona se uniera no
+          cuentan. Se calcula con el horario vigente.
         </p>
       ) : null}
     </>

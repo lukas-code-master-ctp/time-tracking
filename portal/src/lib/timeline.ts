@@ -4,12 +4,15 @@
  * active breaks taken (spec 2026-10-21-pausa-activa).
  */
 import {
+  ABSENCE_TYPE_LABELS,
   DEFAULT_TIME_ZONE,
   SLOT_MS,
+  absenceIntervalsForDay,
   activityPercent,
   exerciseById,
   meetingSecondsOf,
   slotsBetween,
+  type Absence,
   type ActiveBreak,
   type ActivitySlot,
   type DayPlan,
@@ -70,6 +73,8 @@ export interface TimelineBlock {
   marks: ScheduleMark[];
   /** Active breaks taken that overlap this block. */
   breaks: TimelineBreak[];
+  /** Type of the justified absence covering half the block or more ("Trámite"), or null. */
+  absence: string | null;
 }
 
 export interface TimelineBreak {
@@ -121,6 +126,8 @@ export interface TimelineOptions {
   plan?: DayPlan | null;
   /** Answered active break reminders of the day: the `taken` ones are drawn. */
   breaks?: readonly ActiveBreak[];
+  /** Justified absences of the person touching the day (spec 2026-10-22-ausencias-justificadas). */
+  absences?: readonly Absence[];
 }
 
 function overlap(a: number, b: number, from: number, to: number): number {
@@ -169,6 +176,10 @@ export function buildTimeline(
   }
 
   const taken = (options.breaks ?? []).filter((b) => b.status === 'taken' && b.end > b.start && b.end > from && b.start < to);
+  const day = zonedParts(from, timeZone).date;
+  const justified = (options.absences ?? []).flatMap((a) =>
+    absenceIntervalsForDay(day, [a], timeZone).map((i) => ({ ...i, label: ABSENCE_TYPE_LABELS[a.type] ?? 'Ausencia' })),
+  );
 
   const blocks: TimelineBlock[] = slotsBetween(from, to).map((slotStart) => {
     const slot = bySlot.get(slotStart);
@@ -196,6 +207,7 @@ export function buildTimeline(
       schedule: plan ? blockScheduleState(slotStart, plan) : null,
       marks: plan?.span ? marksIn(slotStart, plan.span, timeZone) : [],
       breaks: breaksIn(slotStart, taken, timeZone),
+      absence: justified.find((j) => overlap(slotStart, slotStart + SLOT_MS, j.start, j.end) * 2 >= SLOT_MS)?.label ?? null,
     };
   });
 

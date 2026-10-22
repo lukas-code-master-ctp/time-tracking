@@ -3,6 +3,7 @@
  * are tested with in-memory fakes (see test/fakes.ts).
  */
 import type {
+  Absence,
   ActiveBreak,
   ActivitySlot,
   Invitation,
@@ -62,6 +63,14 @@ export interface DataSource {
   listScreenshots(uid: string, range: TimeRange): Promise<WithId<ScreenshotMeta>[]>;
   /** Answered active break reminders of `uid` whose `start` is in the range. */
   listBreaks(uid: string, range: TimeRange): Promise<ActiveBreak[]>;
+  /**
+   * Justified absences touching `fromDate..toDate` (inclusive, `YYYY-MM-DD`),
+   * of everybody or of one person. `[]` while the rules are not deployed.
+   */
+  listAbsences(fromDate: string, toDate: string, uid?: string): Promise<WithId<Absence>[]>;
+  /** Writes the whole absence: a new document when `id` is null. Returns its id. */
+  saveAbsence(id: string | null, absence: Absence): Promise<string>;
+  deleteAbsence(id: string): Promise<void>;
   /** Download URL of a Storage object (admins may read every screenshot). */
   screenshotUrl(storagePath: string): Promise<string>;
 }

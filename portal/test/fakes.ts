@@ -1,16 +1,18 @@
 /** In-memory {@link DataSource} / {@link AuthApi} for component tests. */
 import { vi } from 'vitest';
-import type {
-  ActiveBreak,
-  ActivitySlot,
-  Invitation,
-  OrgConfig,
-  PersonSchedule,
-  ScheduleConfig,
-  ScreenshotMeta,
-  Session,
-  UserProfile,
-  WithId,
+import {
+  absenceOverlapsRange,
+  type Absence,
+  type ActiveBreak,
+  type ActivitySlot,
+  type Invitation,
+  type OrgConfig,
+  type PersonSchedule,
+  type ScheduleConfig,
+  type ScreenshotMeta,
+  type Session,
+  type UserProfile,
+  type WithId,
 } from '@timetracking/shared';
 import type { AuthApi, AuthUser, Backend, DataSource } from '../src/data/types';
 
@@ -27,6 +29,8 @@ export interface FakeDb {
   screenshots: WithId<ScreenshotMeta>[];
   /** Active breaks (optional: most tests have none). */
   breaks?: ActiveBreak[];
+  /** Justified absences (optional: most tests have none). */
+  absences?: WithId<Absence>[];
 }
 
 export function emptyDb(): FakeDb {
@@ -71,6 +75,16 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
       db.sessions.filter((s) => (!uid || s.uid === uid) && (s.endedAt === null || s.startedAt < range.to)),
     listScreenshots: async (uid, range) =>
       db.screenshots.filter((s) => s.uid === uid && s.takenAt >= range.from && s.takenAt < range.to),
+    listAbsences: async (fromDate, toDate, uid) =>
+      (db.absences ?? []).filter((a) => (!uid || a.uid === uid) && absenceOverlapsRange(a, fromDate, toDate)),
+    saveAbsence: async (id, absence) => {
+      const newId = id ?? `abs-${(db.absences ?? []).length + 1}`;
+      db.absences = [...(db.absences ?? []).filter((a) => a.id !== newId), { ...absence, id: newId }];
+      return newId;
+    },
+    deleteAbsence: async (id) => {
+      db.absences = (db.absences ?? []).filter((a) => a.id !== id);
+    },
     screenshotUrl: async (path) => `https://example.test/${encodeURIComponent(path)}`,
   };
   for (const k of Object.keys(data) as (keyof DataSource)[]) {

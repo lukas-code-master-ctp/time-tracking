@@ -151,6 +151,31 @@ export interface ActiveBreak {
   exercise: string;
 }
 
+/** Reason of a justified absence (labels in `ABSENCE_TYPE_LABELS`). */
+export type AbsenceType = 'vacation' | 'medical' | 'errand' | 'permission' | 'other';
+
+/**
+ * `absences/{autoId}` — a justified absence (spec 2026-10-22-ausencias-justificadas),
+ * written by an admin. Whole days: `startDate..endDate` (inclusive) with both
+ * times null. By hours: one day (`startDate == endDate`) and
+ * `startTime < endTime`. Dates `YYYY-MM-DD` and times `HH:MM` in America/Santiago.
+ */
+export interface Absence {
+  uid: string;
+  type: AbsenceType;
+  startDate: string;
+  endDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  /** Free comment ('' when none; required for `other`). Max 500 characters. */
+  note: string;
+  createdAt: EpochMs;
+  createdBy: string;
+  updatedAt: EpochMs;
+  /** uid of the admin who last changed it. */
+  updatedBy: string;
+}
+
 /** Day of the week, as used by the keys of `WeekSchedule`. */
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
