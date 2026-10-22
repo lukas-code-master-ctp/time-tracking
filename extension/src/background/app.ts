@@ -28,6 +28,7 @@ import {
   DEFAULT_TIME_ZONE,
   dateKey,
   exerciseById,
+  exerciseInstructions,
   readActiveBreakSettings,
   readPersonSchedule,
   readScheduleConfig,
@@ -922,7 +923,7 @@ export class App {
       durationMinutes: settings.durationMinutes,
       enabled,
       pending: pending
-        ? { at: pending.at, title: exercise?.title ?? 'Pausa activa', text: exercise?.text ?? 'Levántate y estira el cuerpo unos minutos.' }
+        ? { at: pending.at, title: exercise?.title ?? 'Pausa activa', text: exercise ? exerciseInstructions(exercise, settings.durationMinutes) : 'Levántate y estira el cuerpo unos minutos.' }
         : null,
       nextAt: enabled && session ? nextBreakAt(state, settings, this.breakWindowsOf(uid, this.now())) : null,
     };

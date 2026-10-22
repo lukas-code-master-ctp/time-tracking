@@ -23,6 +23,7 @@ import {
   dateKey,
   exerciseAt,
   exerciseById,
+  exerciseInstructions,
   type ActiveBreak,
   type ActiveBreakSettings,
   type ActiveBreakStatus,
@@ -245,6 +246,6 @@ export function breakText(prompt: BreakPrompt, durationMinutes: number): { title
   const ex = exerciseById(prompt.exercise);
   return {
     title: `Pausa activa · ${durationMinutes} min`,
-    message: ex ? `${ex.title}. ${ex.text}` : 'Levántate y estira el cuerpo unos minutos.',
+    message: ex ? `${ex.title}. ${exerciseInstructions(ex, durationMinutes)}` : 'Levántate y estira el cuerpo unos minutos.',
   };
 }

@@ -141,6 +141,23 @@ export const ACTIVE_BREAK_EXERCISES: readonly ActiveBreakExercise[] = [
   },
 ];
 
+/**
+ * What to say after the exercise so it fills a break of `durationMinutes`:
+ * the exercises take 1–2 minutes, the rest of the break is spelled out.
+ */
+export function breakClosing(durationMinutes: number): string {
+  if (durationMinutes >= 10) return 'Repítelo 2 o 3 veces y luego camina unos minutos, toma agua y mira lejos de la pantalla.';
+  if (durationMinutes >= 5) return 'Repítelo 2 veces y usa el resto para ponerte de pie, caminar y tomar agua.';
+  if (durationMinutes >= 3) return 'Si te sobra tiempo, repítelo una vez más.';
+  return '';
+}
+
+/** The instructions of `exercise` for a break of `durationMinutes` (its text plus `breakClosing`). */
+export function exerciseInstructions(exercise: ActiveBreakExercise, durationMinutes: number): string {
+  const closing = breakClosing(durationMinutes);
+  return closing ? `${exercise.text} ${closing}` : exercise.text;
+}
+
 /** The exercise of the `n`-th reminder (rotates). */
 export function exerciseAt(n: number): ActiveBreakExercise {
   const list = ACTIVE_BREAK_EXERCISES;

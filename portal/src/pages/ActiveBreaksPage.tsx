@@ -4,7 +4,9 @@ import {
   ACTIVE_BREAK_INTERVAL_OPTIONS,
   ACTIVE_BREAK_EXERCISES,
   ACTIVE_BREAK_PER_DAY_OPTIONS,
+  breakClosing,
   dailyExercise,
+  exerciseInstructions,
   type ActiveBreakSettings,
   type OrgConfig,
   type PersonSchedule,
@@ -197,7 +199,7 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
             <span className="strong">
               Pausa {i + 1}: {ex.title}
             </span>
-            <span className="muted small block">{ex.text}</span>
+            <span className="muted small block">{exerciseInstructions(ex, settings.durationMinutes)}</span>
           </li>
         ))}
       </ol>
@@ -236,13 +238,15 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
 }
 
 /** The exercises the extension suggests, in the order they rotate. */
-export function ExerciseCatalog({ mode }: { mode: ActiveBreakSettings['mode'] }) {
+export function ExerciseCatalog({ mode, durationMinutes }: { mode: ActiveBreakSettings['mode']; durationMinutes: number }) {
+  const closing = breakClosing(durationMinutes);
   return (
     <>
       <p className="muted small">
         {mode === 'daily'
           ? 'Con "Veces al día" todos hacen el mismo ejercicio en cada pausa: el plan avanza en este orden de una pausa a la siguiente y de un día al otro.'
           : 'Con "Según el trabajo continuo" cada persona recorre estos ejercicios en orden, a su propio ritmo.'}
+        {closing ? ` Con pausas de ${durationMinutes} min, cada ejercicio termina con: "${closing}"` : ''}
       </p>
       <ol className="break-plan" aria-label="Ejercicios">
         {ACTIVE_BREAK_EXERCISES.map((ex) => (
@@ -342,7 +346,7 @@ export function ActiveBreaksPage() {
           </section>
           <section className="card" aria-labelledby="h-exercises">
             <h2 id="h-exercises">Ejercicios</h2>
-            <ExerciseCatalog mode={form.activeBreakMode} />
+            <ExerciseCatalog mode={form.activeBreakMode} durationMinutes={form.activeBreakMinutes} />
           </section>
         </>
       )}

@@ -665,6 +665,8 @@ describe('Pausa activa', () => {
       `Pausa 1: ${first}`,
       `Pausa 2: ${second}`,
     ]);
+    // 5 min breaks: each exercise says what to do with the rest of the break.
+    expect(within(screen.getByRole('list', { name: 'Plan del día' })).getAllByText(/Repítelo 2 veces y usa el resto/)).toHaveLength(2);
     // Tuesday 09:00–18:30, lunch 13:00–14:00: 8 h 30 of work in 3 parts.
     expect(row('Ana Rojas')).toHaveTextContent(`Horario: general11:50 · ${first}15:40 · ${second}`);
     // Beto: Tuesday 09:30–12:00 (exception).
