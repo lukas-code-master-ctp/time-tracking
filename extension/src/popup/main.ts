@@ -371,7 +371,9 @@ function renderReady(s: StatusView): void {
   if (pending > 0) {
     sync.title = 'Se enviarán automáticamente cuando haya conexión';
   }
-  root.append(el('footer', { className: 'footer muted' }, [sync, out]));
+  const absences = el('button', { type: 'button', className: 'link', textContent: 'Solicitar ausencia' });
+  absences.addEventListener('click', () => void chrome.tabs.create({ url: chrome.runtime.getURL('absences.html') }));
+  root.append(el('footer', { className: 'footer muted' }, [sync, absences, out]));
 }
 
 /** "Pausa activa" (spec 2026-10-21-pausa-activa). */

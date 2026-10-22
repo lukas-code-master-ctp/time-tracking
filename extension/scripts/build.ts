@@ -13,7 +13,7 @@ import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync } from 
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { build } from 'vite';
 import { ROOT, missingFirebaseValues, outDirOf, resolveBuildConfig, type BuildTarget } from '../build/common.ts';
-import { BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, DEV_EXTENSION_ID, ICONS, POPUP_FILE } from '../build/manifest.ts';
+import { ABSENCES_FILE, BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, DEV_EXTENSION_ID, ICONS, POPUP_FILE } from '../build/manifest.ts';
 import { PARTS, partConfig } from '../build/parts.ts';
 import { STORE_EXTENSION_ID, STORE_PUBLIC_KEY, extensionIdFromKey } from '../build/store-key.ts';
 
@@ -163,7 +163,7 @@ function manifestProblems(problems: string[]): string | undefined {
 function checkBundle(): string | undefined {
   const problems: string[] = [];
   const iconsOn = Object.values(ICONS).map((p) => p.replace('icon-', 'icon-on-'));
-  for (const f of [BACKGROUND_FILE, CONTENT_FILE, POPUP_FILE, CONSENT_FILE, 'manifest.json', ...Object.values(ICONS), ...iconsOn]) {
+  for (const f of [BACKGROUND_FILE, CONTENT_FILE, POPUP_FILE, CONSENT_FILE, ABSENCES_FILE, 'manifest.json', ...Object.values(ICONS), ...iconsOn]) {
     if (!existsSync(join(outDir, f))) problems.push(`falta ${f}`);
   }
   const bg = readFileSync(join(outDir, BACKGROUND_FILE), 'utf8');

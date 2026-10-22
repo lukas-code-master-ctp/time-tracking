@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import {
   ABSENCE_TYPE_LABELS,
   absenceCoversDate,
+  absenceStatus,
   formatDuration,
   readActiveBreakSettings,
   summarizeMember,
@@ -15,7 +16,7 @@ import { ScreenshotGallery } from '../components/Screenshots';
 import { Timeline } from '../components/Timeline';
 import { ActivityMeter, BarList, Empty, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
-import { absenceTitle, buildAbsence } from '../lib/absences';
+import { absenceTitle, buildAbsence, decideAbsence } from '../lib/absences';
 import { addDays, dayBounds, formatLongDate, formatTime, isValidDate, zonedDate } from '../lib/dates';
 import { SOURCE_LABEL, dayScheduleView, describeDay, scheduleFor, type DayScheduleView } from '../lib/schedule';
 import { sessionViews } from '../lib/team';
@@ -53,7 +54,8 @@ export function MemberPage() {
     if (!load.data) return null;
     const { config, slots, sessions, shots, general, personal, breaks, absences, now } = load.data;
     const eff = scheduleFor({ config: general, persons: new Map(personal ? [[uid, personal]] : []) }, uid);
-    const dayAbsences = absences.filter((a) => absenceCoversDate(a, date));
+    // Rejected requests are only listed below; pending ones are shown but justify nothing yet.
+    const dayAbsences = absences.filter((a) => absenceCoversDate(a, date) && absenceStatus(a) !== 'rejected');
     const schedule = dayScheduleView(date, sessions, eff, now, dayAbsences);
     return {
       schedule,
@@ -169,6 +171,10 @@ export function MemberPage() {
               await data.deleteAbsence(id);
               load.reload();
             }}
+            onDecide={async (a, status) => {
+              await data.saveAbsence(a.id, decideAbsence(a, status, adminUid, Date.now()));
+              load.reload();
+            }}
           />
 
           <section className="card" aria-labelledby="h-sessions">
@@ -268,10 +274,12 @@ const ABSENCE_LIST_FUTURE_DAYS = 365;
 
 /** "Vacaciones" chip of the day, with the details as its title. */
 function AbsenceChip({ absence }: { absence: WithId<Absence> }) {
+  const pending = absenceStatus(absence) === 'pending';
   return (
-    <span className="chip accent-chip" title={`${absenceTitle(absence)}${absence.note ? ` · ${absence.note}` : ''}`}>
+    <span className={`chip ${pending ? 'warn' : 'accent-chip'}`} title={`${absenceTitle(absence)}${absence.note ? ` · ${absence.note}` : ''}`}>
       {ABSENCE_TYPE_LABELS[absence.type] ?? 'Ausencia'}
       {absence.startTime ? ` ${absence.startTime}–${absence.endTime ?? ''}` : ''}
+      {pending ? ' (pendiente)' : ''}
     </span>
   );
 }

@@ -1095,6 +1095,37 @@ describe('absences', () => {
     await assertSucceeds(ref.set(absence('alice', { updatedAt: NOW + 1, note: 'Aprobadas por RR.HH.' })));
   });
 
+  it('the person requests her own absences as pending and withdraws them while pending', async () => {
+    const mine = (o: Partial<Absence> = {}) =>
+      absence('alice', { status: 'pending', createdBy: 'alice', updatedBy: 'alice', ...o });
+    await assertSucceeds(db('alice').doc('absences/r1').set(mine()));
+    // Not for someone else, not approved by herself, not on behalf of an admin.
+    await assertFails(db('alice').doc('absences/r2').set(mine({ uid: 'bob' })));
+    await assertFails(db('alice').doc('absences/r2').set(mine({ status: 'approved' })));
+    const { status: _status, ...noStatus } = mine();
+    await assertFails(db('alice').doc('absences/r2').set(noStatus));
+    await assertFails(db('alice').doc('absences/r2').set(mine({ createdBy: 'admin' })));
+    await assertFails(db('alice').doc('absences/r2').set(mine({ updatedAt: NOW + 1 })));
+    await assertFails(db('dave').doc('absences/r2').set(absence('dave', { status: 'pending', createdBy: 'dave', updatedBy: 'dave' })));
+    // She cannot change it, nor withdraw it once decided.
+    await assertFails(db('alice').doc('absences/r1').set(mine({ note: 'otra' })));
+    await assertFails(db('bob').doc('absences/r1').delete());
+    await assertSucceeds(db('alice').doc('absences/r1').delete());
+    await seed(env, { 'absences/r3': mine({ status: 'approved' }), 'absences/r4': absence('alice') });
+    await assertFails(db('alice').doc('absences/r3').delete());
+    await assertFails(db('alice').doc('absences/r4').delete());
+  });
+
+  it('an admin approves or rejects a request', async () => {
+    await seed(env, { 'absences/r1': absence('alice', { status: 'pending', createdBy: 'alice', updatedBy: 'alice' }) });
+    const decided = (status: Absence['status']) =>
+      absence('alice', { status, createdBy: 'alice', updatedBy: 'admin', updatedAt: NOW + 1 });
+    await assertSucceeds(db('admin').doc('absences/r1').set(decided('approved')));
+    await assertSucceeds(db('admin').doc('absences/r1').set(decided('rejected')));
+    await assertFails(db('admin').doc('absences/r1').set(decided('maybe' as never)));
+    await assertSucceeds(db('admin').collection('absences').where('status', '==', 'pending').get());
+  });
+
   it('the person reads hers; an admin reads all', async () => {
     await seed(env, { 'absences/a1': absence('alice'), 'absences/b1': absence('bob') });
     await assertSucceeds(db('alice').doc('absences/a1').get());

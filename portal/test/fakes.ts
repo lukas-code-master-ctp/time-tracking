@@ -77,6 +77,7 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
       db.screenshots.filter((s) => s.uid === uid && s.takenAt >= range.from && s.takenAt < range.to),
     listAbsences: async (fromDate, toDate, uid) =>
       (db.absences ?? []).filter((a) => (!uid || a.uid === uid) && absenceOverlapsRange(a, fromDate, toDate)),
+    listPendingAbsences: async () => (db.absences ?? []).filter((a) => a.status === 'pending'),
     saveAbsence: async (id, absence) => {
       const newId = id ?? `abs-${(db.absences ?? []).length + 1}`;
       db.absences = [...(db.absences ?? []).filter((a) => a.id !== newId), { ...absence, id: newId }];

@@ -8,7 +8,7 @@
  * popup / consent page → service worker (request/response):
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
-import type { Role, UserStatus } from '@timetracking/shared';
+import type { Absence, AbsenceType, Role, UserStatus, WithId } from '@timetracking/shared';
 import type { ScheduleView } from './background/schedule';
 
 // ---------- content script ----------
@@ -45,6 +45,12 @@ export type PopupRequest =
   | { type: 'breaks.answer'; answer: 'taken' | 'postponed' }
   /** Turn the active break reminders on/off for the signed-in user on this device. */
   | { type: 'breaks.setEnabled'; enabled: boolean }
+  /** Absences page (spec 2026-10-22-solicitud-ausencias): the person's absences and requests. */
+  | { type: 'absences.list' }
+  /** Request an absence (pending until an admin decides). */
+  | { type: 'absences.request'; absence: AbsenceRequest }
+  /** Withdraw a pending request. */
+  | { type: 'absences.cancel'; id: string }
   /** Dev build only (e2e): run the 30-second pulse now. */
   | { type: 'debug.forcePulse' }
   /** Dev build only (e2e): refresh config/org and take this block's screenshot now. */
@@ -64,6 +70,9 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'sync.now',
   'breaks.answer',
   'breaks.setEnabled',
+  'absences.list',
+  'absences.request',
+  'absences.cancel',
   // Dropped from the prod bundle (`__APP_ENV__` is replaced literally).
   ...(__APP_ENV__ === 'dev' ? (['auth.devSignIn', 'debug.forcePulse', 'debug.forceScreenshot'] as const) : []),
 ];
@@ -80,7 +89,22 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
     return answer === 'taken' || answer === 'postponed';
   }
   if (m.type === 'breaks.setEnabled') return typeof (msg as { enabled?: unknown }).enabled === 'boolean';
+  if (m.type === 'absences.cancel') return typeof (msg as { id?: unknown }).id === 'string';
+  if (m.type === 'absences.request') {
+    const a = (msg as { absence?: unknown }).absence;
+    return !!a && typeof a === 'object'; // the fields are validated by the worker (validateAbsence)
+  }
   return true;
+}
+
+/** What the person fills in "Solicitar ausencia" (the worker adds the rest of the document). */
+export interface AbsenceRequest {
+  type: AbsenceType;
+  startDate: string;
+  endDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  note: string;
 }
 
 /**
@@ -150,5 +174,5 @@ export interface StatusView {
 }
 
 export type PopupResponse =
-  | { ok: true; status: StatusView; debug?: unknown }
+  | { ok: true; status: StatusView; debug?: unknown; absences?: WithId<Absence>[] }
   | { ok: false; error: string; reason?: string; status?: StatusView };

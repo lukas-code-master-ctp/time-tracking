@@ -2,7 +2,7 @@
  * Everything the service worker needs from Firebase, behind one interface
  * (Firestore/Storage in firebase.ts, a fake in the unit tests).
  */
-import type { OrgConfig, ScreenshotMeta } from '@timetracking/shared';
+import type { Absence, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
 import type { Backend } from './sync';
 
 export interface Remote extends Backend {
@@ -22,4 +22,10 @@ export interface Remote extends Backend {
   screenshotExists(path: string): Promise<boolean>;
   /** `setDoc(screenshots/{id}, meta)` with exactly the 7 fields of the rules. */
   putScreenshotMeta(id: string, meta: ScreenshotMeta): Promise<void>;
+  /** The person's absences (`where uid ==`), spec 2026-10-22-solicitud-ausencias. */
+  listAbsences(uid: string): Promise<WithId<Absence>[]>;
+  /** New `absences/{autoId}` (a pending request); returns its id. Online only: not queued. */
+  createAbsence(data: Absence): Promise<string>;
+  /** Withdraws a request (the rules allow it only while pending). */
+  deleteAbsence(id: string): Promise<void>;
 }

@@ -498,7 +498,7 @@ function clip(pieces: readonly Piece[], w: Interval): Piece[] {
 const sec = (ms: number): number => Math.floor(Math.max(0, ms) / 1000);
 
 /** The fields of an absence that decide which instants it justifies. */
-export type AbsenceSpan = Pick<Absence, 'startDate' | 'endDate' | 'startTime' | 'endTime'>;
+export type AbsenceSpan = Pick<Absence, 'startDate' | 'endDate' | 'startTime' | 'endTime' | 'status'>;
 
 /** Union of intervals, sorted (touching intervals are joined). */
 export function mergeIntervals(list: readonly Interval[]): Interval[] {
@@ -515,8 +515,9 @@ export function mergeIntervals(list: readonly Interval[]): Interval[] {
 /**
  * Justified instants of `date` (spec 2026-10-22-ausencias-justificadas),
  * merged and sorted: the whole calendar day for an absence of whole days,
- * `[startTime, endTime)` for an absence by hours. Malformed absences are
- * ignored.
+ * `[startTime, endTime)` for an absence by hours. Malformed absences, and
+ * requests still pending or rejected (spec 2026-10-22-solicitud-ausencias),
+ * are ignored.
  */
 export function absenceIntervalsForDay(
   date: string,
@@ -525,6 +526,7 @@ export function absenceIntervalsForDay(
 ): Interval[] {
   const raw: Interval[] = [];
   for (const a of absences) {
+    if (a.status === 'pending' || a.status === 'rejected') continue;
     if (!isValidDateKey(a.startDate) || !isValidDateKey(a.endDate) || date < a.startDate || date > a.endDate) continue;
     if (a.startTime === null && a.endTime === null) {
       raw.push(zonedDayBounds(date, timeZone));

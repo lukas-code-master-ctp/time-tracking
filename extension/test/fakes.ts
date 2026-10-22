@@ -1,12 +1,14 @@
 /** Fakes for the Remote (Firestore/Storage), AuthService, capture and image processing, plus an App factory. */
 import {
   CONSENT_VERSION,
+  type Absence,
   type ActiveBreak,
   type ActivitySlot,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
   type UserProfile,
+  type WithId,
 } from '@timetracking/shared';
 import { App } from '../src/background/app';
 import { JoinError, type AuthService, type AuthUser } from '../src/background/auth';
@@ -26,6 +28,8 @@ export type BackendCall =
   | { op: 'uploadScreenshot'; path: string; size: number }
   | { op: 'screenshotExists'; path: string }
   | { op: 'putScreenshotMeta'; id: string; meta: ScreenshotMeta }
+  | { op: 'createAbsence'; id: string; data: Absence }
+  | { op: 'deleteAbsence'; id: string }
   | { op: 'putBreak'; docId: string; data: ActiveBreak };
 
 export const ORG: OrgConfig = {
@@ -46,6 +50,8 @@ export class FakeBackend implements Remote {
   failures: string[] = [];
   activity = new Map<string, ActivitySlot>();
   sessions = new Map<string, Session>();
+  /** `absences/{id}` (spec 2026-10-22-solicitud-ausencias). */
+  absences = new Map<string, Absence>();
   org: OrgConfig | null = { ...ORG };
   orgFetches = 0;
   /** Raw `config/schedule` (null = missing). */
@@ -151,6 +157,27 @@ export class FakeBackend implements Remote {
     if (existing && JSON.stringify(existing) !== JSON.stringify(meta)) throw new BackendError('permission-denied');
     this.calls.push({ op: 'putScreenshotMeta', id, meta });
     this.screenshots.set(id, meta);
+  }
+
+  async listAbsences(uid: string): Promise<WithId<Absence>[]> {
+    this.check();
+    return [...this.absences.entries()].filter(([, a]) => a.uid === uid).map(([id, a]) => ({ ...structuredClone(a), id }));
+  }
+  async createAbsence(data: Absence): Promise<string> {
+    this.check();
+    // firestore.rules: the person's own request, pending.
+    if (data.status !== 'pending' || data.createdBy !== data.uid) throw new BackendError('permission-denied');
+    const id = `abs-${this.absences.size + 1}`;
+    this.calls.push({ op: 'createAbsence', id, data });
+    this.absences.set(id, structuredClone(data));
+    return id;
+  }
+  async deleteAbsence(id: string): Promise<void> {
+    this.check();
+    const a = this.absences.get(id);
+    if (a && a.status !== 'pending') throw new BackendError('permission-denied');
+    this.calls.push({ op: 'deleteAbsence', id });
+    this.absences.delete(id);
   }
 
   /** What autoCloseStaleSessions does on the server. */

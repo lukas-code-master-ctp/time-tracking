@@ -158,8 +158,16 @@ export interface ActiveBreak {
 export type AbsenceType = 'vacation' | 'medical' | 'errand' | 'permission' | 'other';
 
 /**
+ * A request made by the person from the extension is `pending` until an
+ * admin approves or rejects it; what an admin records is `approved`. Only
+ * approved absences justify time.
+ */
+export type AbsenceStatus = 'pending' | 'approved' | 'rejected';
+
+/**
  * `absences/{autoId}` — a justified absence (spec 2026-10-22-ausencias-justificadas),
- * written by an admin. Whole days: `startDate..endDate` (inclusive) with both
+ * recorded by an admin or requested by the person (spec
+ * 2026-10-22-solicitud-ausencias). Whole days: `startDate..endDate` (inclusive) with both
  * times null. By hours: one day (`startDate == endDate`) and
  * `startTime < endTime`. Dates `YYYY-MM-DD` and times `HH:MM` in America/Santiago.
  */
@@ -172,10 +180,13 @@ export interface Absence {
   endTime: string | null;
   /** Free comment ('' when none; required for `other`). Max 500 characters. */
   note: string;
+  /** Missing in documents written before the requests (= approved): read it with `absenceStatus`. */
+  status?: AbsenceStatus;
   createdAt: EpochMs;
+  /** uid of the admin who recorded it, or of the person who requested it. */
   createdBy: string;
   updatedAt: EpochMs;
-  /** uid of the admin who last changed it. */
+  /** uid of who last changed it (the admin who approved or rejected a request). */
   updatedBy: string;
 }
 

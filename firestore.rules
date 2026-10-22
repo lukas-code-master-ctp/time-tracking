@@ -12,7 +12,9 @@ rules_version = '2';
 // - `breaks` (active breaks, spec 2026-10-21-pausa-activa) are written once
 //   by their owner and never changed.
 // - `absences` (justified absences, spec 2026-10-22-ausencias-justificadas)
-//   are created, changed and deleted only by an admin; the person reads hers.
+//   are recorded, changed and deleted by an admin. The person reads hers,
+//   requests new ones as `pending` and withdraws them while still pending
+//   (spec 2026-10-22-solicitud-ausencias); only an admin approves or rejects.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -443,7 +445,7 @@ service cloud.firestore {
     // At most 366 days (compared through timestamps of the dates).
     function validAbsence(d) {
       return d.keys().hasOnly(['uid', 'type', 'startDate', 'endDate', 'startTime', 'endTime', 'note',
-                                'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+                                'status', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['uid', 'type', 'startDate', 'endDate', 'startTime', 'endTime', 'note',
                             'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
         && d.uid is string && exists(userPath(d.uid))
@@ -458,6 +460,8 @@ service cloud.firestore {
                 && d.startDate == d.endDate))
         && d.note is string && d.note.size() <= 500
         && (d.type != 'other' || d.note.trim().size() > 0)
+        // Optional: documents recorded before the requests have none (= approved).
+        && (!('status' in d) || d.status in ['pending', 'approved', 'rejected'])
         && d.createdAt is int && d.createdBy is string
         && d.updatedAt is int
         && d.updatedBy == request.auth.uid;
@@ -465,16 +469,26 @@ service cloud.firestore {
 
     match /absences/{id} {
       allow read: if isAdmin() || (isActive() && ownsExisting());
-      allow create: if isAdmin()
-        && validAbsence(incoming())
-        && incoming().createdBy == request.auth.uid;
+      allow create: if (isAdmin()
+          && validAbsence(incoming())
+          && incoming().createdBy == request.auth.uid)
+        // The person's own request from the extension: pending, by and for herself.
+        || (isActive()
+          && validAbsence(incoming())
+          && incoming().uid == request.auth.uid
+          && incoming().createdBy == request.auth.uid
+          && incoming().status == 'pending'
+          && notFuture(incoming().createdAt)
+          && incoming().updatedAt == incoming().createdAt);
       // The person and the creation stay; the rest may change.
       allow update: if isAdmin()
         && validAbsence(incoming())
         && incoming().uid == resource.data.uid
         && incoming().createdAt == resource.data.createdAt
         && incoming().createdBy == resource.data.createdBy;
-      allow delete: if isAdmin();
+      // The person withdraws her own request while it is still pending.
+      allow delete: if isAdmin()
+        || (isActive() && ownsExisting() && resource.data.get('status', 'approved') == 'pending');
     }
 
     // Anything else is denied.
