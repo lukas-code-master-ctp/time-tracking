@@ -46,7 +46,10 @@ function describe(b: TimelineBlock): string {
 export function Timeline({ timeline, onOpenScreenshot }: Props) {
   const [active, setActive] = useState<TimelineBlock | null>(null);
   const [pinned, setPinned] = useState<number | null>(null);
-  const shown = active ?? timeline.rows.flatMap((r) => r.blocks).find((b) => b.slotStart === pinned) ?? null;
+  // A clicked block stays in the detail until another one is clicked: hover only previews while nothing is
+  // pinned, so moving the pointer to "Ver captura de este bloque" across other cells doesn't change it.
+  const pinnedBlock = timeline.rows.flatMap((r) => r.blocks).find((b) => b.slotStart === pinned) ?? null;
+  const shown = pinnedBlock ?? active;
   const withSchedule = timeline.rows.some((r) => r.blocks.some((b) => b.schedule !== null));
   const withBreaks = timeline.rows.some((r) => r.blocks.some((b) => b.breaks.length > 0));
   const withAbsences = timeline.rows.some((r) => r.blocks.some((b) => b.absence !== null));
@@ -69,7 +72,7 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
                   onMouseEnter={() => setActive(b)}
                   onFocus={() => setActive(b)}
                   onBlur={() => setActive(null)}
-                  onClick={() => setPinned((p) => (p === b.slotStart ? null : b.slotStart))}
+                  onClick={() => setPinned(b.slotStart)}
                 >
                   {b.marks.map((m) => (
                     <span
@@ -105,7 +108,7 @@ export function Timeline({ timeline, onOpenScreenshot }: Props) {
         {shown ? (
           <BlockDetail block={shown} onOpenScreenshot={onOpenScreenshot} />
         ) : (
-          <p className="muted small">Pasa el cursor o toca un bloque para ver su detalle.</p>
+          <p className="muted small">Pasa el cursor sobre un bloque para ver su detalle, o haz clic para dejarlo fijo.</p>
         )}
       </div>
 

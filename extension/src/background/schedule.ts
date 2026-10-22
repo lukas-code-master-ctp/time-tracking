@@ -120,6 +120,19 @@ export function lunchPauses(schedule: EffectiveSchedule | null, startedAt: numbe
   return out;
 }
 
+/** Length of the day assumed by the `daily` active breaks without a schedule. */
+export const NO_SCHEDULE_BREAK_DAY_MS = 9 * 3_600_000;
+
+/**
+ * Working windows of today for the `daily` active breaks (spec
+ * 2026-10-22-pausa-activa-veces-al-dia): the schedule's, lunch excluded;
+ * without a schedule, 9 hours from the start of the work day.
+ */
+export function breakWindows(schedule: EffectiveSchedule | null, now: number, dayStartedAt: number | null): { start: number; end: number }[] {
+  if (schedule) return planOf(schedule, dateKey(now, DEFAULT_TIME_ZONE)).work;
+  return dayStartedAt === null ? [] : [{ start: dayStartedAt, end: dayStartedAt + NO_SCHEDULE_BREAK_DAY_MS }];
+}
+
 export type ScheduleViewState = 'work' | 'lunch' | 'off' | 'holiday' | 'dayOff';
 
 /** Schedule state for the popup (null = no schedule: the popup shows nothing new). */

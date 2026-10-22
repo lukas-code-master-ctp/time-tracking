@@ -37,11 +37,14 @@ export interface OrgConfig {
   /**
    * "Pausa activa" (spec 2026-10-21-pausa-activa): the extension reminds the
    * person to take a short break with an exercise after `activeBreakIntervalMinutes`
-   * of continuous work; the break lasts `activeBreakMinutes`. All three are
-   * optional (missing = off / defaults): read them with `readActiveBreakSettings`.
+   * of continuous work or, with `activeBreakMode: 'daily'`, `activeBreaksPerDay`
+   * times a day spread over the schedule; the break lasts `activeBreakMinutes`.
+   * All optional (missing = off / defaults): read them with `readActiveBreakSettings`.
    */
   activeBreaksEnabled?: boolean;
+  activeBreakMode?: 'interval' | 'daily';
   activeBreakIntervalMinutes?: number;
+  activeBreaksPerDay?: number;
   activeBreakMinutes?: number;
   updatedAt: EpochMs;
   /** uid of the admin who last changed it (or 'system'). */

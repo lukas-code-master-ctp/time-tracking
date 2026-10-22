@@ -267,6 +267,29 @@ describe('Timeline', () => {
     expect(detail).toHaveTextContent('docs.google.com');
     expect(detail).toHaveTextContent('Fuera de Chrome1 min');
   });
+
+  it('a clicked block stays in the detail while the pointer crosses other blocks', async () => {
+    const t = buildTimeline(day.from, day.to, [
+      slot('ana', at(9, 10), 600, 540, { domains: { 'docs.google.com': 600 } }),
+      slot('ana', at(9, 20), 600, 120, { domains: { 'mail.google.com': 600 } }),
+    ]);
+    render(<Timeline timeline={t} />);
+    const cells = screen.getAllByTestId('timeline-cell');
+    const detail = screen.getByTestId('timeline-detail');
+    await userEvent.click(cells[1]!);
+    expect(cells[1]).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.hover(cells[2]!);
+    await userEvent.hover(cells[0]!);
+    expect(detail).toHaveTextContent('docs.google.com');
+    expect(cells[1]).toHaveClass('selected');
+    expect(cells[2]).not.toHaveClass('selected');
+    // Clicking it again keeps it pinned; clicking another block moves the selection.
+    await userEvent.click(cells[1]!);
+    expect(detail).toHaveTextContent('docs.google.com');
+    await userEvent.click(cells[2]!);
+    expect(detail).toHaveTextContent('mail.google.com');
+    expect(cells[1]).toHaveAttribute('aria-pressed', 'false');
+  });
 });
 
 describe('Timeline with meetings', () => {
@@ -390,6 +413,11 @@ describe('SettingsForm', () => {
     await userEvent.click(screen.getByLabelText(/Recordar pausas activas/));
     await userEvent.selectOptions(screen.getByLabelText('Cada cuánto'), '90');
     await userEvent.selectOptions(screen.getByLabelText('Duración de la pausa'), '3');
+    // x times a day instead of the continuous work.
+    await userEvent.selectOptions(screen.getByLabelText('Frecuencia'), 'daily');
+    expect(screen.queryByLabelText('Cada cuánto')).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText('Veces al día'), '4');
+    expect(screen.getByText(/Se reparten en partes iguales/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(onSave).toHaveBeenCalledWith({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -398,7 +426,9 @@ describe('SettingsForm', () => {
       screenshotRetentionDays: '30',
       pauseTimerAtLunch: true,
       activeBreaksEnabled: true,
+      activeBreakMode: 'daily',
       activeBreakIntervalMinutes: 90,
+      activeBreaksPerDay: 4,
       activeBreakMinutes: 3,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');

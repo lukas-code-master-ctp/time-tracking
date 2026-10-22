@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_BREAK_EXERCISES,
   breakDocId,
+  dailyBreakTargets,
   exerciseAt,
   exerciseById,
   readActiveBreakSettings,
@@ -9,17 +10,26 @@ import {
 
 describe('active breaks', () => {
   it('reads the settings of config/org: off and defaults when missing or invalid', () => {
-    expect(readActiveBreakSettings(null)).toEqual({ enabled: false, intervalMinutes: 60, durationMinutes: 5 });
+    const defaults = { enabled: false, mode: 'interval', intervalMinutes: 60, perDay: 3, durationMinutes: 5 };
+    expect(readActiveBreakSettings(null)).toEqual(defaults);
     expect(readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 90, activeBreakMinutes: 3 })).toEqual({
+      ...defaults,
       enabled: true,
       intervalMinutes: 90,
       durationMinutes: 3,
     });
-    expect(readActiveBreakSettings({ activeBreaksEnabled: 'true', activeBreakIntervalMinutes: 5, activeBreakMinutes: 2.5 })).toEqual({
-      enabled: false,
-      intervalMinutes: 60,
-      durationMinutes: 5,
-    });
+    expect(
+      readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakMode: 'daily', activeBreaksPerDay: 4, activeBreakMinutes: 10 }),
+    ).toEqual({ ...defaults, enabled: true, mode: 'daily', perDay: 4, durationMinutes: 10 });
+    expect(
+      readActiveBreakSettings({
+        activeBreaksEnabled: 'true',
+        activeBreakMode: 'weekly',
+        activeBreakIntervalMinutes: 5,
+        activeBreaksPerDay: 13,
+        activeBreakMinutes: 2.5,
+      }),
+    ).toEqual(defaults);
   });
 
   it('rotates the exercises; unique ids that fit the rules (≤ 40 chars)', () => {
@@ -30,6 +40,20 @@ describe('active breaks', () => {
     expect(exerciseAt(ACTIVE_BREAK_EXERCISES.length + 1)).toBe(ACTIVE_BREAK_EXERCISES[1]);
     expect(exerciseById('vista')?.title).toBe('Descansa la vista (20-20-20)');
     expect(exerciseById('nope')).toBeNull();
+  });
+
+  it('daily targets split the working time of the day in perDay + 1 parts (lunch excluded)', () => {
+    const h = (n: number) => n * 3_600_000;
+    // 9–13 and 14–18: 8 h of work.
+    const work = [
+      { start: h(9), end: h(13) },
+      { start: h(14), end: h(18) },
+    ];
+    expect(dailyBreakTargets(work, 3)).toEqual([h(11), h(14), h(16)]);
+    expect(dailyBreakTargets(work, 1)).toEqual([h(14)]);
+    expect(dailyBreakTargets([{ start: h(9), end: h(18) }], 2)).toEqual([h(12), h(15)]);
+    expect(dailyBreakTargets([], 3)).toEqual([]);
+    expect(dailyBreakTargets(work, 0)).toEqual([]);
   });
 
   it('breakDocId is uid_promptedAt', () => {

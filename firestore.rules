@@ -99,7 +99,8 @@ service cloud.firestore {
     function validOrgConfig(d) {
       return d.keys().hasOnly(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                                 'screenshotRetentionDays', 'pauseTimerAtLunch',
-                                'activeBreaksEnabled', 'activeBreakIntervalMinutes',
+                                'activeBreaksEnabled', 'activeBreakMode',
+                                'activeBreakIntervalMinutes', 'activeBreaksPerDay',
                                 'activeBreakMinutes', 'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
@@ -116,6 +117,10 @@ service cloud.firestore {
         && (!('activeBreakIntervalMinutes' in d)
             || (d.activeBreakIntervalMinutes is int
                 && d.activeBreakIntervalMinutes >= 15 && d.activeBreakIntervalMinutes <= 240))
+        && (!('activeBreakMode' in d) || d.activeBreakMode in ['interval', 'daily'])
+        && (!('activeBreaksPerDay' in d)
+            || (d.activeBreaksPerDay is int
+                && d.activeBreaksPerDay >= 1 && d.activeBreaksPerDay <= 12))
         && (!('activeBreakMinutes' in d)
             || (d.activeBreakMinutes is int
                 && d.activeBreakMinutes >= 1 && d.activeBreakMinutes <= 15))
