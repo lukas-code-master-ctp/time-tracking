@@ -390,6 +390,11 @@ describe('SettingsForm', () => {
     await userEvent.click(screen.getByLabelText(/Recordar pausas activas/));
     await userEvent.selectOptions(screen.getByLabelText('Cada cuánto'), '90');
     await userEvent.selectOptions(screen.getByLabelText('Duración de la pausa'), '3');
+    // x times a day instead of the continuous work.
+    await userEvent.selectOptions(screen.getByLabelText('Frecuencia'), 'daily');
+    expect(screen.queryByLabelText('Cada cuánto')).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText('Veces al día'), '4');
+    expect(screen.getByText(/Se reparten en partes iguales/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(onSave).toHaveBeenCalledWith({
       allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -398,7 +403,9 @@ describe('SettingsForm', () => {
       screenshotRetentionDays: '30',
       pauseTimerAtLunch: true,
       activeBreaksEnabled: true,
+      activeBreakMode: 'daily',
       activeBreakIntervalMinutes: 90,
+      activeBreaksPerDay: 4,
       activeBreakMinutes: 3,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');

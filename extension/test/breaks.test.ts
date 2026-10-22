@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_BREAK_EXERCISES, zonedDateTimeToMs, type ActiveBreakSettings } from '@timetracking/shared';
 import {
   BREAK_SNOOZE_MS,
+  DAILY_MIN_GAP_MS,
   answerBreak,
   breakDoc,
   breakStateFromJSON,
@@ -13,16 +14,17 @@ import {
   type BreakState,
   type BreakTickInput,
 } from '../src/background/breaks';
+import { NO_SCHEDULE_BREAK_DAY_MS, breakWindows, type EffectiveSchedule } from '../src/background/schedule';
 import { PULSE_ALARM } from '../src/background/session';
 import { isPopupRequest } from '../src/messages';
 import { ORG, createHarness, type Harness } from './fakes';
 
 const MIN = 60_000;
 const T0 = zonedDateTimeToMs('2026-10-05', '09:00');
-const SETTINGS: ActiveBreakSettings = { enabled: true, intervalMinutes: 60, durationMinutes: 5 };
+const SETTINGS: ActiveBreakSettings = { enabled: true, mode: 'interval', intervalMinutes: 60, perDay: 3, durationMinutes: 5 };
 
 function input(now: number, over: Partial<BreakTickInput> = {}): BreakTickInput {
-  return { now, uid: 'u1', settings: SETTINGS, optedOut: false, sessionId: 's1', measuring: true, idle: 'active', inMeeting: false, ...over };
+  return { now, uid: 'u1', settings: SETTINGS, optedOut: false, sessionId: 's1', measuring: true, idle: 'active', inMeeting: false, windows: [], ...over };
 }
 
 /** Ticks every 30 s from `from` to `to` (inclusive), like the pulse; returns the state and the reminders shown. */
@@ -124,6 +126,68 @@ describe('active breaks (pure)', () => {
     expect(isPopupRequest({ type: 'breaks.answer', answer: 'taken' })).toBe(true);
     expect(isPopupRequest({ type: 'breaks.answer', answer: 'skipped' })).toBe(false);
     expect(isPopupRequest({ type: 'breaks.setEnabled', enabled: 'no' })).toBe(false);
+  });
+});
+
+describe('active breaks, x times a day (pure)', () => {
+  const DAILY: ActiveBreakSettings = { ...SETTINGS, mode: 'daily', perDay: 3 };
+  const at = (time: string) => zonedDateTimeToMs('2026-10-05', time);
+  // 09:00–13:00 and 14:00–18:00: targets 11:00, 14:00 and 16:00.
+  const WINDOWS = [
+    { start: at('09:00'), end: at('13:00') },
+    { start: at('14:00'), end: at('18:00') },
+  ];
+  const lunch = (t: number) => (t >= at('13:00') && t < at('14:00') ? { measuring: false } : {});
+  const daily = (over: (t: number) => Partial<BreakTickInput> = () => ({})) => (t: number) => ({
+    settings: DAILY,
+    windows: WINDOWS,
+    ...lunch(t),
+    ...over(t),
+  });
+
+  it('reminds at the targets spread over the schedule, whatever the continuous work', () => {
+    const { state, prompts } = run(null, at('09:00'), at('18:00'), daily());
+    expect(prompts).toEqual([at('11:00'), at('14:00'), at('16:00')]);
+    expect(nextBreakAt(state, DAILY, WINDOWS)).toBeNull();
+    expect(nextBreakAt(run(null, at('09:00'), at('11:30'), daily()).state, DAILY, WINDOWS)).toBe(at('14:00'));
+  });
+
+  it('drops the targets passed with the work day closed or away for a break, late ones keep a gap', () => {
+    // Work day opened at 15:00: the 11:00 and 14:00 targets are dropped.
+    const late = (t: number) => (t < at('15:00') ? { sessionId: null } : {});
+    expect(run(null, at('09:00'), at('18:00'), daily(late)).prompts).toEqual([at('16:00')]);
+    // Away 10:58–11:05 (7 min ≥ 5): it was a break.
+    const away = (t: number) => (t >= at('10:58') && t < at('11:05') ? { idle: 'idle' as const } : {});
+    expect(run(null, at('09:00'), at('13:00'), daily(away)).prompts).toEqual([]);
+    // Away 10:58–11:02 (4 min): the reminder comes back with the person.
+    const short = (t: number) => (t >= at('10:58') && t < at('11:02') ? { idle: 'idle' as const } : {});
+    expect(run(null, at('09:00'), at('13:00'), daily(short)).prompts).toEqual([at('11:02')]);
+    // In a meeting 15:40–16:20: right after it; the next target is not sooner than 30 min.
+    const four = { ...DAILY, perDay: 4 }; // 10:36, 12:12, 14:48, 16:24
+    const meeting = (t: number) => (t >= at('14:40') && t < at('16:20') ? { inMeeting: true } : {});
+    const r = run(null, at('09:00'), at('18:00'), daily((t) => ({ settings: four, ...meeting(t) })));
+    expect(r.prompts).toEqual([at('10:36'), at('12:12'), at('16:20'), at('16:20') + DAILY_MIN_GAP_MS]);
+  });
+
+  it('windows: the schedule of today without lunch; without a schedule, 9 h from the start of the work day', () => {
+    const day = { start: '09:00', end: '18:00', lunchStart: '13:00', lunchEnd: '14:00' };
+    const schedule: EffectiveSchedule = {
+      week: { mon: day, tue: day, wed: day, thu: day, fri: day, sat: null, sun: null },
+      holidays: [],
+      toleranceMinutes: 10,
+      remindersEnabled: false,
+    };
+    expect(breakWindows(schedule, at('10:00'), null)).toEqual(WINDOWS);
+    expect(breakWindows(null, at('10:00'), at('08:30'))).toEqual([{ start: at('08:30'), end: at('08:30') + NO_SCHEDULE_BREAK_DAY_MS }]);
+    expect(breakWindows(null, at('10:00'), null)).toEqual([]);
+  });
+
+  it('"En 10 min" brings the reminder back after the snooze', () => {
+    const { state } = run(null, at('09:00'), at('11:00'), daily());
+    const later = answerBreak(state, at('11:00'), 'postponed', at('11:01'), 5);
+    expect(run(later.state, at('11:01') + 30_000, at('11:20'), daily()).prompts).toEqual([at('11:11')]);
+    const taken = answerBreak(state, at('11:00'), 'taken', at('11:01'), 5);
+    expect(run(taken.state, at('11:01') + 30_000, at('13:00'), daily()).prompts).toEqual([]);
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from '
 import {
   ACTIVE_BREAK_DURATION_OPTIONS,
   ACTIVE_BREAK_INTERVAL_OPTIONS,
+  ACTIVE_BREAK_PER_DAY_OPTIONS,
   MAX_ALLOWED_DOMAINS,
   allowedDomainsOr,
   emailDomain,
@@ -192,29 +193,59 @@ export function SettingsForm({ config, adminEmail = null, onSave }: FormProps) {
           <span>
             <span className="strong">Recordar pausas activas</span>
             <span className="muted small block">
-              La extensión avisa a cada persona que tome una pausa breve con un ejercicio sugerido después de un rato de
-              trabajo continuo (no durante reuniones ni la colación). Si se alejó del computador lo que dura la pausa, ya
-              cuenta como pausa. Cada persona puede desactivarlo en su extensión. Las pausas que marca como tomadas se ven
-              en su línea de tiempo.
+              La extensión avisa a cada persona que tome una pausa breve con un ejercicio sugerido, después de un rato de
+              trabajo continuo o un número de veces al día repartidas en su horario (nunca durante reuniones ni la
+              colación). Si se alejó del computador lo que dura la pausa, ya cuenta como pausa. Cada persona puede
+              desactivarlo en su extensión. Las pausas que marca como tomadas se ven en su línea de tiempo.
             </span>
           </span>
         </label>
         <div className="field-row">
           <div className="field">
-            <label htmlFor={`${id}-breaks-every`}>Cada cuánto</label>
+            <label htmlFor={`${id}-breaks-mode`}>Frecuencia</label>
             <select
-              id={`${id}-breaks-every`}
-              value={form.activeBreakIntervalMinutes}
+              id={`${id}-breaks-mode`}
+              value={form.activeBreakMode}
               disabled={!form.activeBreaksEnabled}
-              onChange={(e) => set('activeBreakIntervalMinutes', Number(e.target.value))}
+              onChange={(e) => set('activeBreakMode', e.target.value === 'daily' ? 'daily' : 'interval')}
             >
-              {withCurrent(ACTIVE_BREAK_INTERVAL_OPTIONS, form.activeBreakIntervalMinutes).map((m) => (
-                <option key={m} value={m}>
-                  {m} min de trabajo continuo
-                </option>
-              ))}
+              <option value="interval">Según el trabajo continuo</option>
+              <option value="daily">Veces al día</option>
             </select>
           </div>
+          {form.activeBreakMode === 'daily' ? (
+            <div className="field">
+              <label htmlFor={`${id}-breaks-per-day`}>Veces al día</label>
+              <select
+                id={`${id}-breaks-per-day`}
+                value={form.activeBreaksPerDay}
+                disabled={!form.activeBreaksEnabled}
+                onChange={(e) => set('activeBreaksPerDay', Number(e.target.value))}
+              >
+                {withCurrent(ACTIVE_BREAK_PER_DAY_OPTIONS, form.activeBreaksPerDay).map((n) => (
+                  <option key={n} value={n}>
+                    {n} {n === 1 ? 'vez' : 'veces'} al día
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor={`${id}-breaks-every`}>Cada cuánto</label>
+              <select
+                id={`${id}-breaks-every`}
+                value={form.activeBreakIntervalMinutes}
+                disabled={!form.activeBreaksEnabled}
+                onChange={(e) => set('activeBreakIntervalMinutes', Number(e.target.value))}
+              >
+                {withCurrent(ACTIVE_BREAK_INTERVAL_OPTIONS, form.activeBreakIntervalMinutes).map((m) => (
+                  <option key={m} value={m}>
+                    {m} min de trabajo continuo
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="field">
             <label htmlFor={`${id}-breaks-len`}>Duración de la pausa</label>
             <select
@@ -231,6 +262,13 @@ export function SettingsForm({ config, adminEmail = null, onSave }: FormProps) {
             </select>
           </div>
         </div>
+        {form.activeBreakMode === 'daily' ? (
+          <p className="muted small">
+            Se reparten en partes iguales dentro del horario de cada persona, sin contar la colación. Por ejemplo, con
+            horario de 09:00 a 18:00, colación de 13:00 a 14:00 y 3 veces al día: cerca de las 11:00, 14:00 y 16:00. Sin
+            horario, se reparten en 9 horas desde que inicia la jornada.
+          </p>
+        ) : null}
       </fieldset>
 
       <fieldset aria-describedby={`${id}-domains-help${errors.allowedDomains ? ` ${id}-domains-err` : ''}`}>
