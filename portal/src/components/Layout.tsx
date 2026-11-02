@@ -16,6 +16,15 @@ const NAV_BOTTOM = [
   { to: '/configuracion', label: 'Configuración', end: false, icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.5 7.5 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.5 7.5 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z' },
 ];
 
+/** The icon shows the current theme; clicking cycles system → light → dark. */
+const THEME_ICON: Record<ThemeChoice, string> = {
+  system: 'M4 5h16v11H4zM9 20h6M12 16v4',
+  light: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+  dark: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z',
+};
+
+const SIGN_OUT_ICON = 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9';
+
 function Icon({ d }: { d: string }) {
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -83,21 +92,33 @@ export function Layout() {
             <NavList items={NAV_BOTTOM} />
           </nav>
           <div className="sidebar-footer">
-            <div className="me">
-              <span className="avatar" aria-hidden="true">
-                {initials(profile.displayName || profile.email)}
-              </span>
-              <span className="person-text">
-                <span className="person-name">{profile.displayName || profile.email}</span>
-                <span className="person-email">{profile.email}</span>
-              </span>
-            </div>
-            <button type="button" className="btn small-btn" onClick={() => setTheme(nextTheme)}>
-              {THEME_LABEL[theme]}
-            </button>
-            <button type="button" className="btn small-btn" onClick={() => void signOut()}>
-              Cerrar sesión
-            </button>
+            <span className="avatar" aria-hidden="true">
+              {initials(profile.displayName || profile.email)}
+            </span>
+            <span className="person-text" title={profile.displayName ? `${profile.displayName}\n${profile.email}` : profile.email}>
+              <span className="person-name">{profile.displayName || profile.email}</span>
+              {profile.displayName && <span className="person-email">{profile.email}</span>}
+            </span>
+            <span className="footer-actions">
+              <button
+                type="button"
+                className="footer-icon-btn"
+                aria-label={`${THEME_LABEL[theme]}. Cambiar tema`}
+                title={`${THEME_LABEL[theme]} (clic para cambiar)`}
+                onClick={() => setTheme(nextTheme)}
+              >
+                <Icon d={THEME_ICON[theme]} />
+              </button>
+              <button
+                type="button"
+                className="footer-icon-btn"
+                aria-label="Cerrar sesión"
+                title="Cerrar sesión"
+                onClick={() => void signOut()}
+              >
+                <Icon d={SIGN_OUT_ICON} />
+              </button>
+            </span>
           </div>
         </div>
       </aside>
