@@ -380,21 +380,53 @@ a {
   margin-top: auto;
 }
 
+/* The account: one row (avatar, name, theme and sign-out icons). */
 .sidebar-footer {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 4px 8px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
 }
 
-.me {
+.sidebar-footer .person-text {
+  flex: 1;
+}
+
+.sidebar-footer .person-name {
+  font-size: 14px;
+}
+
+.footer-actions {
   display: flex;
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-  padding: 0 4px 4px;
+  flex: none;
+}
+
+.footer-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.footer-icon-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.footer-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .content {
