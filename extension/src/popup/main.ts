@@ -249,6 +249,14 @@ function renderConsent(s: StatusView): void {
   );
 }
 
+/** "Qué se mide" stays open across re-renders once the person opens it. */
+let measureOpen = false;
+
+/**
+ * Layout (one thing per level): who is signed in; the work day (state, clock,
+ * today's schedule, the one big action); an active break waiting for an
+ * answer; today's numbers in one row; what is measured (folded); footer.
+ */
 function renderReady(s: StatusView): void {
   const on = s.session !== null;
   root.append(
@@ -258,19 +266,25 @@ function renderReady(s: StatusView): void {
         el('strong', { textContent: s.profile?.displayName || 'Registro de jornada' }),
         el('span', { className: 'small muted', textContent: s.user?.email ?? '' }),
       ]),
-      el('span', { className: `pill${on ? ' on' : ''}`, textContent: on ? 'EN JORNADA' : 'FUERA DE JORNADA' }),
     ]),
   );
 
-  // Timer + big button
+  // Work day: state + schedule, clock, today's hours, the big button.
   const pauses = s.session?.pauses ?? [];
   const paused = (now: number): boolean => pauses.some((p) => now >= p.start && now < p.end);
+  const stateText = (now: number): string => (!on ? 'Jornada no iniciada' : paused(now) ? 'En pausa (colación)' : 'En jornada');
+  const tone = !on ? 'idle' : s.schedule && !s.schedule.measuring ? 'warn' : 'on';
+  const state = el('span', { className: 'state-text', textContent: stateText(Date.now()) });
   const value = el('div', { className: 'value', textContent: on ? clock(workDayElapsed(s.session!.startedAt, Date.now(), pauses)) : '0:00:00' });
-  const timerLabel = (now: number): string => (!on ? 'Jornada no iniciada' : paused(now) ? 'Jornada en pausa (colación)' : 'Jornada en curso');
-  const label = el('div', { className: 'label small muted', textContent: timerLabel(Date.now()) });
-  const card = el('section', { className: 'card timer' }, [
+  const card = el('section', { className: `card workday ${tone}` }, [
+    el('div', { className: 'status' }, [
+      el('span', { className: 'dot', ariaHidden: 'true' }),
+      state,
+      s.schedule ? el('span', { className: 'sep', ariaHidden: 'true', textContent: '·' }) : null,
+      s.schedule ? el('span', { className: 'sched-label', textContent: s.schedule.label }) : null,
+    ]),
     value,
-    label,
+    s.schedule ? el('div', { className: 'small muted sched-today', textContent: s.schedule.today }) : null,
     on
       ? button('Cerrar jornada', 'stop big', () => void act({ type: 'session.stop' }))
       : button(inFlight === 'session.start' ? 'Iniciando…' : 'Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
@@ -280,88 +294,71 @@ function renderReady(s: StatusView): void {
     timer = setInterval(() => {
       const now = Date.now();
       value.textContent = clock(workDayElapsed(startedAt, now, pauses));
-      label.textContent = timerLabel(now);
+      state.textContent = stateText(now);
     }, 1000);
   }
   root.append(card);
 
-  // Working hours: only when the organization configured a schedule.
-  if (s.schedule) {
-    root.append(
-      el('section', { className: `card schedule${s.schedule.measuring ? '' : ' paused'}` }, [
-        el('div', { className: 'state', textContent: s.schedule.label }),
-        el('div', { className: 'small muted', textContent: s.schedule.today }),
-      ]),
-    );
-  }
-
   if (s.breaks) root.append(renderBreaks(s.breaks, on));
 
-  // Today
+  // Today, in one row.
+  const stat = (label: string, text: string, title = ''): HTMLElement =>
+    el('div', { className: 'stat', title }, [
+      el('div', { className: 'stat-label', textContent: label }),
+      el('div', { className: 'stat-value', textContent: text }),
+    ]);
   root.append(
-    el('section', { className: 'stats' }, [
-      el('div', { className: 'card stat' }, [
-        el('div', { className: 'small muted', textContent: 'Horas de hoy' }),
-        el('div', { className: 'value', textContent: hoursMinutes(s.today.trackedSeconds) }),
-      ]),
-      el('div', { className: 'card stat' }, [
-        el('div', { className: 'small muted', textContent: 'Actividad de hoy' }),
-        el('div', {
-          className: 'value',
-          textContent: percent(s.today.activeSeconds, s.today.trackedSeconds, s.today.meetingSeconds),
-        }),
-      ]),
-      el('div', { className: 'card stat wide' }, [
-        el('div', { className: 'small muted', textContent: 'En reunión hoy' }),
-        el('div', { className: 'value', textContent: hoursMinutes(s.today.meetingSeconds) }),
-        el('div', {
-          className: 'small muted',
-          textContent: 'Tiempo en reuniones web sin usar teclado ni mouse. No sube ni baja tu actividad.',
-        }),
-      ]),
+    el('section', { className: 'card today', ariaLabel: 'Hoy' }, [
+      stat('Horas hoy', hoursMinutes(s.today.trackedSeconds)),
+      stat('Actividad', percent(s.today.activeSeconds, s.today.trackedSeconds, s.today.meetingSeconds)),
+      stat(
+        'Reuniones',
+        hoursMinutes(s.today.meetingSeconds),
+        'Tiempo en reuniones web sin usar teclado ni mouse. No sube ni baja tu actividad.',
+      ),
     ]),
   );
 
-  // What is measured (spec 4)
-  const yes = (t = 'Sí') => el('span', { className: 'yes', textContent: `✓ ${t}` });
+  // What is measured (spec 4): the state always visible, the list folded.
+  const yes = (t = 'Sí') => el('span', { className: 'yes', textContent: t });
   const no = (t = 'No') => el('span', { className: 'no', textContent: t });
   const cap = s.capture;
-  root.append(
-    el('section', { className: 'card measure' }, [
-      el('h2', { textContent: 'Qué se mide' }),
-      el('ul', {}, [
-        el('li', {}, [el('span', { textContent: 'Actividad (teclado/mouse)' }), yes()]),
-        el('li', {}, [el('span', { textContent: 'Sitios web y tiempo fuera de Chrome' }), yes()]),
-        el('li', {}, [el('span', { textContent: 'Reuniones web (Meet, Zoom, Teams…)' }), yes()]),
-        el('li', {}, [el('span', { textContent: 'Capturas de la pestaña visible' }), cap?.screenshots ? yes() : no()]),
-        cap?.screenshots
-          ? el('li', {}, [el('span', { textContent: 'Capturas difuminadas' }), cap.blur ? yes() : no()])
-          : null,
-      ]),
-      el('p', { className: 'small muted foot' }, [
-        on
-          ? s.schedule && !s.schedule.measuring
-            ? 'Tu jornada sigue iniciada, pero ahora no se mide nada. '
-            : s.schedule
-              ? 'Se mide solo con tu jornada iniciada y dentro de tu horario. '
-              : 'Se mide solo mientras tu jornada está iniciada. '
-          : 'Ahora no se está midiendo nada. ',
-        (() => {
-          const l = el('button', { type: 'button', className: 'link', textContent: 'Ver aviso' });
-          l.addEventListener('click', openConsent);
-          return l;
-        })(),
-      ]),
+  const now =
+    on
+      ? s.schedule && !s.schedule.measuring
+        ? 'Tu jornada sigue iniciada, pero ahora no se mide nada.'
+        : s.schedule
+          ? 'Se mide solo con tu jornada iniciada y dentro de tu horario.'
+          : 'Se mide solo mientras tu jornada está iniciada.'
+      : 'Ahora no se está midiendo nada.';
+  const notice = el('button', { type: 'button', className: 'link', textContent: 'Ver aviso' });
+  notice.addEventListener('click', openConsent);
+  const measure = el('details', { className: 'card measure', open: measureOpen }, [
+    el('summary', {}, [
+      el('span', { className: 'measure-title', textContent: 'Qué se mide' }),
+      el('span', { className: 'small muted', textContent: now }),
     ]),
-  );
+    el('ul', {}, [
+      el('li', {}, [el('span', { textContent: 'Actividad (teclado/mouse)' }), yes()]),
+      el('li', {}, [el('span', { textContent: 'Sitios web y tiempo fuera de Chrome' }), yes()]),
+      el('li', {}, [el('span', { textContent: 'Reuniones web (Meet, Zoom, Teams…)' }), yes()]),
+      el('li', {}, [el('span', { textContent: 'Capturas de la pestaña visible' }), cap?.screenshots ? yes() : no()]),
+      cap?.screenshots ? el('li', {}, [el('span', { textContent: 'Capturas difuminadas' }), cap.blur ? yes() : no()]) : null,
+    ]),
+    el('p', { className: 'small muted foot' }, ['Detalle completo en el ', notice, '.']),
+  ]);
+  measure.addEventListener('toggle', () => {
+    measureOpen = measure.open;
+  });
+  root.append(measure);
 
-  // Footer: sync + sign out
+  // Footer: sync, absences, sign out.
   const pending = s.pendingOps + s.pendingScreenshots;
   const syncText =
-    pending > 0 ? `${pending} envío(s) pendiente(s)` : s.lastSyncOkAt ? 'Todo enviado' : 'Sin envíos pendientes';
+    pending > 0 ? `${pending} por enviar` : s.lastSyncOkAt ? 'Todo enviado' : 'Sin envíos pendientes';
   const out = el('button', {
     type: 'button',
-    className: 'link',
+    className: 'link quiet',
     textContent: 'Cerrar sesión',
     disabled: busy || on,
     title: on ? 'Cierra tu jornada antes de cerrar sesión' : '',
@@ -371,39 +368,45 @@ function renderReady(s: StatusView): void {
   if (pending > 0) {
     sync.title = 'Se enviarán automáticamente cuando haya conexión';
   }
-  const absences = el('button', { type: 'button', className: 'link', textContent: 'Solicitar ausencia' });
+  const absences = el('button', { type: 'button', className: 'link quiet', textContent: 'Solicitar ausencia' });
   absences.addEventListener('click', () => void chrome.tabs.create({ url: chrome.runtime.getURL('absences.html') }));
-  root.append(el('footer', { className: 'footer muted' }, [sync, absences, out]));
+  root.append(el('footer', { className: 'footer small muted' }, [sync, el('span', { className: 'actions' }, [absences, out])]));
 }
 
-/** "Pausa activa" (spec 2026-10-21-pausa-activa). */
+/** "Pausa activa" (spec 2026-10-21-pausa-activa): a prompt when one is due, otherwise one quiet row. */
 function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLElement {
-  const toggle = el('input', { type: 'checkbox', id: 'breaks-enabled', checked: b.enabled, disabled: busy });
+  const toggle = el('input', { type: 'checkbox', id: 'breaks-enabled', checked: b.enabled, disabled: busy, role: 'switch' });
   toggle.addEventListener('change', () => void act({ type: 'breaks.setEnabled', enabled: toggle.checked }));
-  const every =
-    b.mode === 'daily'
-      ? `${b.perDay} ${b.perDay === 1 ? 'pausa' : 'pausas'} de ${b.durationMinutes} min al día, repartidas en tu horario.`
-      : `Cada ${b.intervalMinutes} min de trabajo continuo, una pausa de ${b.durationMinutes} min.`;
-  let body: (HTMLElement | string)[];
+  const sw = el('label', { className: 'switch', htmlFor: 'breaks-enabled', title: 'Recordarme las pausas activas' }, [
+    toggle,
+    el('span', { className: 'sr-only', textContent: 'Recordarme las pausas activas' }),
+  ]);
   if (b.pending) {
-    body = [
-      el('div', { className: 'state', textContent: b.pending.title }),
+    return el('section', { className: 'card breaks due', role: 'status' }, [
+      el('div', { className: 'breaks-head' }, [el('span', { className: 'eyebrow', textContent: 'Pausa activa' })]),
+      el('div', { className: 'breaks-title', textContent: b.pending.title }),
       el('p', { className: 'small', textContent: b.pending.text }),
       el('div', { className: 'row' }, [
         button('Tomé la pausa', 'primary', () => void act({ type: 'breaks.answer', answer: 'taken' })),
         button('En 10 min', '', () => void act({ type: 'breaks.answer', answer: 'postponed' })),
       ]),
-    ];
-  } else if (!b.enabled) {
-    body = [el('p', { className: 'small muted', textContent: 'Desactivaste los recordatorios de pausa activa en este equipo.' })];
-  } else {
-    const next = on && b.nextAt !== null ? `Próxima pausa cerca de las ${timeOfDay(b.nextAt)}. ` : '';
-    body = [el('p', { className: 'small muted', textContent: `${next}${every}` })];
+    ]);
   }
-  return el('section', { className: `card breaks${b.pending ? ' due' : ''}` }, [
-    el('h2', { textContent: 'Pausa activa' }),
-    ...body,
-    el('label', { className: 'switch small', htmlFor: 'breaks-enabled' }, [toggle, ' Recordarme las pausas activas']),
+  const every =
+    b.mode === 'daily'
+      ? `${b.perDay} ${b.perDay === 1 ? 'pausa' : 'pausas'} de ${b.durationMinutes} min al día`
+      : `${b.durationMinutes} min cada ${b.intervalMinutes} min de trabajo`;
+  const detail = !b.enabled
+    ? 'Recordatorios desactivados en este equipo'
+    : on && b.nextAt !== null
+      ? `Próxima cerca de las ${timeOfDay(b.nextAt)}`
+      : every.charAt(0).toUpperCase() + every.slice(1);
+  return el('section', { className: `card breaks${b.enabled ? '' : ' off'}` }, [
+    el('div', { className: 'breaks-text', title: every.charAt(0).toUpperCase() + every.slice(1) }, [
+      el('div', { className: 'breaks-name', textContent: 'Pausa activa' }),
+      el('div', { className: 'small muted', textContent: detail }),
+    ]),
+    sw,
   ]);
 }
 

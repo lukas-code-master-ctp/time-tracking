@@ -20,10 +20,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.top {
-  padding: 2px 2px 4px;
+  padding: 2px 2px 0;
 }
 
 .top img {
@@ -51,64 +48,65 @@ body {
   white-space: nowrap;
 }
 
-.pill {
+/* Work day: state line, the one big number, today's schedule, the action. */
+.workday {
+  text-align: center;
+  padding: 16px 16px 16px;
+  display: grid;
+  gap: 2px;
+}
+
+.workday .status {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: 0.05em;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: var(--surface-2);
+  font-size: 12.5px;
+  font-weight: 650;
   color: var(--muted);
-  border: 1px solid var(--border);
-  white-space: nowrap;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
-.pill::before {
-  content: '';
-  width: 6px;
-  height: 6px;
+.workday .status .sep {
+  color: var(--border-strong);
+}
+
+.workday .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.6;
+  background: var(--border-strong);
 }
 
-.pill.on {
-  background: var(--ok-soft);
+.workday.on .state-text,
+.workday.on .sched-label {
   color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
 }
 
-/* Live dot while the work day is open. */
-.pill.on::before {
-  opacity: 1;
+.workday.on .dot {
+  background: var(--ok);
   animation: live 2s ease-in-out infinite;
+}
+
+.workday.warn .state-text,
+.workday.warn .sched-label {
+  color: var(--warn-text);
+}
+
+.workday.warn .dot {
+  background: #f59e0b;
 }
 
 @keyframes live {
   50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 25%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent);
   }
 }
 
-.timer {
-  text-align: center;
-  padding: 22px 16px 16px;
-  background:
-    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
-    var(--surface);
-}
-
-/* Work day open: the card turns green-tinted (the pill and the label say it too). */
-.timer:has(.stop) {
-  background:
-    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--ok) 12%, transparent), transparent 70%),
-    var(--surface);
-}
-
-.timer .value {
+.workday .value {
+  margin-top: 6px;
   font-size: 44px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -116,60 +114,221 @@ body {
   line-height: 1.05;
 }
 
-.timer .label {
+.workday.idle .value {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.workday .sched-today {
   margin-top: 4px;
-  font-weight: 550;
 }
 
-.timer .btn {
-  margin-top: 16px;
+.workday .btn {
+  margin-top: 14px;
 }
 
-.stats {
+/* Active breaks: one quiet row, or a prompt when one is due. */
+.breaks {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+}
+
+.breaks-text {
+  flex: 1;
+  min-width: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 1px;
+}
+
+.breaks-name {
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.breaks.off .breaks-name {
+  color: var(--muted);
+}
+
+.breaks.due {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.breaks .eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.breaks-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.breaks .row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.breaks .row .btn {
+  flex: 1;
+  min-height: 38px;
+}
+
+/* iOS-style switch on a real checkbox (keyboard and screen readers keep working). */
+.switch {
+  flex: none;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.switch input {
+  appearance: none;
+  margin: 0;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.18s var(--ease);
+}
+
+.switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.25);
+  transition: transform 0.18s var(--ease);
+}
+
+.switch input:checked {
+  background: var(--accent);
+}
+
+.switch input:checked::after {
+  transform: translateX(14px);
+}
+
+.switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.switch input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Today: three numbers in one card, split by hairlines. */
+.today {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 12px 0;
 }
 
 .stat {
   display: grid;
   gap: 2px;
-  padding: 12px 14px;
+  padding: 0 12px;
+  min-width: 0;
 }
 
-.stat > .small.muted:first-child {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.stat + .stat {
+  border-left: 1px solid var(--border);
 }
 
-.stat.wide {
-  grid-column: 1 / -1;
-}
-
-.stat .value {
-  font-size: 20px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.measure h2 {
-  font-size: 10.5px;
-  font-weight: 700;
+.stat-label {
+  font-size: 11.5px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 8px;
+  white-space: nowrap;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* What is measured: summary always visible, list folded. */
+.measure {
+  padding: 0;
+}
+
+.measure summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  row-gap: 1px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+}
+
+.measure summary::-webkit-details-marker {
+  display: none;
+}
+
+.measure summary::after {
+  content: '';
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.18s var(--ease);
+}
+
+.measure[open] summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.measure summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.measure-title {
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.measure summary .small {
+  grid-column: 1;
 }
 
 .measure ul {
   list-style: none;
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0;
+  padding: 0 14px;
 }
 
 .measure li {
@@ -178,54 +337,71 @@ body {
   align-items: center;
   gap: 8px;
   padding: 6px 0;
-  font-size: 13px;
+  font-size: 12.5px;
   border-top: 1px solid var(--border);
-}
-
-.measure li:first-child {
-  border-top: none;
 }
 
 .measure .yes,
 .measure .no {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  padding: 1px 8px;
-  border-radius: 999px;
   white-space: nowrap;
 }
 
 .measure .yes {
   color: var(--ok);
-  background: var(--ok-soft);
 }
 
 .measure .no {
   color: var(--muted);
-  background: var(--surface-2);
 }
 
 .measure .foot {
-  margin-top: 8px;
+  padding: 4px 14px 12px;
 }
 
 .footer {
-  padding: 2px 2px 0;
+  padding: 0 2px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+}
+
+.footer .actions {
+  display: inline-flex;
+  gap: 14px;
+}
+
+.footer > * {
+  white-space: nowrap;
+}
+
+.link.quiet {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.link.quiet:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.link.quiet:disabled {
+  opacity: 0.6;
+}
+
+.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .sync::before {
   content: '';
-  display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: 1px;
   background: var(--ok);
 }
 
@@ -265,74 +441,4 @@ form.stack label {
   font-size: 12px;
   color: var(--muted);
   text-align: left;
-}
-
-/* Working hours (spec 2026-09-30-horarios) */
-.schedule {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px 10px 16px;
-  border-left: 3px solid var(--ok);
-}
-
-.schedule .state {
-  font-weight: 700;
-  color: var(--ok);
-}
-
-.schedule.paused {
-  border-left-color: var(--warn-text);
-}
-
-.schedule.paused .state {
-  color: var(--warn-text);
-}
-
-.schedule.paused {
-  background: var(--warn-soft);
-}
-
-/* Active breaks (spec 2026-10-21-pausa-activa) */
-.breaks {
-  display: grid;
-  gap: 6px;
-  padding: 10px 14px 10px 16px;
-  border-left: 3px solid var(--accent);
-}
-
-.breaks h2 {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.breaks.due {
-  background: var(--accent-soft);
-}
-
-.breaks .state {
-  font-weight: 700;
-}
-
-.breaks p {
-  margin: 0;
-}
-
-.breaks .row {
-  display: flex;
-  gap: 8px;
-}
-
-.breaks .row .btn {
-  flex: 1;
-}
-
-.breaks .switch {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
 }
