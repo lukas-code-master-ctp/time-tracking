@@ -228,7 +228,7 @@ async function e2e(ctx: BrowserContext, popup: Page): Promise<void> {
     await page.goto(`http://127.0.0.1:${port}/ruta?token=secreto#x`);
     await popup.getByRole('button', { name: 'Iniciar jornada' }).click();
     await popup.getByRole('button', { name: 'Cerrar jornada' }).waitFor({ timeout: 15_000 });
-    await popup.getByText('EN JORNADA').waitFor();
+    await popup.getByText('En jornada', { exact: true }).waitFor();
     console.log('Jornada iniciada.');
 
     // 4. The admin enables blurred screenshots.
