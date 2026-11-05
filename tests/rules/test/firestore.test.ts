@@ -155,6 +155,12 @@ describe('config/org', () => {
     );
   });
 
+  it('moodPulseEnabled is optional and must be a bool', async () => {
+    const admin = db('admin');
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ moodPulseEnabled: true })));
+    await assertFails(admin.doc('config/org').set({ ...orgConfig(), moodPulseEnabled: 1 } as unknown as OrgConfig));
+  });
+
   it('active break settings are optional, with bounded integer minutes', async () => {
     const admin = db('admin');
     await assertSucceeds(
@@ -1136,6 +1142,66 @@ describe('absences', () => {
     await assertFails(db('alice').collection('absences').get());
     await assertFails(db('dave').doc('absences/a1').get());
     await assertSucceeds(db('admin').collection('absences').where('startDate', '<=', '2026-11-30').get());
+  });
+});
+
+// ---------- mood pulse ----------
+
+describe('mood pulse', () => {
+  const WEEK = '2026-W45';
+  /** One answer as the extension sends it: the day added to the vote + one counter. */
+  function answer(uid: string, dates: string[], counters: Record<string, number>, week = WEEK) {
+    const f = db(uid);
+    const b = f.batch();
+    b.set(f.doc(`moodVotes/${uid}_${week}`), { uid, week, dates });
+    b.set(f.doc(`moodWeeks/${week}`), counters, { merge: true });
+    return b.commit();
+  }
+
+  it('accepts one answer per person and day, adding one to one counter', async () => {
+    await assertSucceeds(answer('alice', ['2026-11-05'], { n4: 1 }));
+    await assertSucceeds(answer('bob', ['2026-11-05'], { n4: 2 }));
+    await assertSucceeds(answer('alice', ['2026-11-05', '2026-11-06'], { n2: 1 }));
+    // Same day again: the vote does not grow.
+    await assertFails(answer('alice', ['2026-11-05', '2026-11-06'], { n3: 1 }));
+    await assertFails(answer('alice', ['2026-11-06', '2026-11-05'], { n3: 1 }));
+  });
+
+  it('rejects counters without a new day, jumps, several counters or other fields', async () => {
+    await assertFails(db('alice').doc(`moodWeeks/${WEEK}`).set({ n4: 1 }));
+    await assertFails(answer('alice', ['2026-11-05'], { n4: 2 }));
+    await assertFails(answer('alice', ['2026-11-05'], { n4: 1, n5: 1 }));
+    await assertFails(answer('alice', ['2026-11-05'], { n6: 1 }));
+    await assertSucceeds(answer('alice', ['2026-11-05'], { n4: 1 }));
+    await assertFails(answer('bob', ['2026-11-05'], { n4: 3 }));
+    await assertFails(answer('bob', ['2026-11-05'], { n4: 0 }));
+    await assertFails(answer('bob', ['2026-11-05'], { n4: 2, n1: 1 }));
+    await assertFails(answer('bob', ['2026-11-05'], { n3: 1 }, '2026-45'));
+    await assertFails(answer('dave', ['2026-11-05'], { n3: 1 }));
+  });
+
+  it('a vote only grows, belongs to its owner and has valid dates', async () => {
+    const vote = (uid: string, dates: string[], week = WEEK) => ({ uid, week, dates });
+    await assertFails(db('bob').doc(`moodVotes/alice_${WEEK}`).set(vote('alice', ['2026-11-05'])));
+    await assertFails(db('alice').doc(`moodVotes/alice_2026-W46`).set(vote('alice', ['2026-11-05'])));
+    await assertFails(db('alice').doc(`moodVotes/alice_${WEEK}`).set(vote('alice', ['2026-11-5'])));
+    await assertFails(db('alice').doc(`moodVotes/alice_${WEEK}`).set(vote('alice', ['2026-11-05', '2026-11-06'])));
+    await assertSucceeds(db('alice').doc(`moodVotes/alice_${WEEK}`).set(vote('alice', ['2026-11-05'])));
+    await assertFails(db('alice').doc(`moodVotes/alice_${WEEK}`).set(vote('alice', ['2026-11-06'])));
+    await assertFails(db('alice').doc(`moodVotes/alice_${WEEK}`).delete());
+  });
+
+  it('admins read only the counters; nobody reads someone else\'s vote', async () => {
+    await seed(env, {
+      [`moodWeeks/${WEEK}`]: { n3: 4 },
+      [`moodVotes/alice_${WEEK}`]: { uid: 'alice', week: WEEK, dates: ['2026-11-05'] },
+    });
+    await assertSucceeds(db('admin').collection('moodWeeks').get());
+    await assertFails(db('alice').doc(`moodWeeks/${WEEK}`).get());
+    await assertSucceeds(db('alice').doc(`moodVotes/alice_${WEEK}`).get());
+    await assertFails(db('admin').doc(`moodVotes/alice_${WEEK}`).get());
+    await assertFails(db('admin').collection('moodVotes').get());
+    await assertFails(db('bob').doc(`moodVotes/alice_${WEEK}`).get());
   });
 });
 

@@ -24,6 +24,7 @@ import type { PopupRequest, StatusView } from '../messages';
 import { clock, el, hoursMinutes, percent, send, workDayElapsed } from '../ui/dom';
 import { usesGoogleAccountChooser } from '../browser';
 import { ALLOWED_DOMAINS } from '../env';
+import { MOOD_OPTIONS, type MoodScore } from '@timetracking/shared';
 
 const root = document.getElementById('app') as HTMLElement;
 let busy = false;
@@ -302,6 +303,7 @@ function renderReady(s: StatusView): void {
 
   if (s.announcements.length > 0) root.append(renderAnnouncement(s.announcements));
 
+  if (!on && s.mood?.pending) root.append(renderMood());
   if (s.breaks) root.append(renderBreaks(s.breaks, on));
 
   // Today, in one row.
@@ -374,6 +376,39 @@ function renderReady(s: StatusView): void {
   const absences = el('button', { type: 'button', className: 'link quiet', textContent: 'Solicitar ausencia' });
   absences.addEventListener('click', () => void chrome.tabs.create({ url: chrome.runtime.getURL('absences.html') }));
   root.append(el('footer', { className: 'footer small muted' }, [sync, el('span', { className: 'actions' }, [absences, out])]));
+}
+
+/** Mood pulse (spec 2026-11-05-pulso-de-animo): one click after closing the work day. */
+function renderMood(): HTMLElement {
+  const faces = MOOD_OPTIONS.map((o) => {
+    const b = el('button', { type: 'button', className: 'mood-face', disabled: busy, title: o.label, ariaLabel: o.label }, [
+      el('span', { className: 'mood-emoji', ariaHidden: 'true', textContent: o.emoji }),
+      el('span', { className: 'mood-label', textContent: o.label }),
+    ]);
+    b.addEventListener('click', () => void answerMood(o.score));
+    return b;
+  });
+  const skip = el('button', { type: 'button', className: 'link quiet', textContent: 'Omitir', disabled: busy });
+  skip.addEventListener('click', () => void answerMood(null));
+  const group = el('div', { className: 'mood-faces', role: 'group' }, faces);
+  group.setAttribute('aria-labelledby', 'mood-title');
+  return el('section', { className: 'card mood', role: 'status' }, [
+    el('div', { className: 'mood-title', id: 'mood-title', textContent: '¿Cómo estuvo tu día?' }),
+    group,
+    el('div', { className: 'mood-foot small muted' }, [
+      el('span', { textContent: 'Es anónimo: tu empresa solo ve el resumen semanal del equipo.' }),
+      skip,
+    ]),
+  ]);
+}
+
+async function answerMood(score: MoodScore | null): Promise<void> {
+  await act({ type: 'mood.answer', score });
+  if (score !== null && !lastError) {
+    lastInfo = '¡Gracias! Tu respuesta se guardó sin tu nombre.';
+    lastRendered = key();
+    render();
+  }
 }
 
 /** "Pausa activa" (spec 2026-10-21-pausa-activa): a prompt when one is due, otherwise one quiet row. */

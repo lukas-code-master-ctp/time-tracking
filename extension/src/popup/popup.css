@@ -227,6 +227,82 @@ body {
   min-height: 38px;
 }
 
+/* Mood pulse: five faces after closing the work day. */
+.mood {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.mood-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.mood-faces {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.mood-face {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.mood-face:hover:not(:disabled) {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.mood-face:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mood-face:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mood-emoji {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.mood-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mood-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-face {
+    transition: none;
+  }
+  .mood-face:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
 /* iOS-style switch on a real checkbox (keyboard and screen readers keep working). */
 .switch {
   flex: none;

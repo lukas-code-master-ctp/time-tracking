@@ -12,3 +12,4 @@ export * from './holidays-cl.js';
 export * from './breaks.js';
 export * from './absences.js';
 export * from './announcements.js';
+export * from './mood.js';

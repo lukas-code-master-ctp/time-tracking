@@ -46,6 +46,12 @@ export interface OrgConfig {
   activeBreakIntervalMinutes?: number;
   activeBreaksPerDay?: number;
   activeBreakMinutes?: number;
+  /**
+   * "Pulso de ánimo" (spec 2026-11-05-pulso-de-animo): the extension asks
+   * "¿Cómo estuvo tu día?" when the work day is closed. Optional (missing =
+   * off): read it with `readMoodPulseEnabled`.
+   */
+  moodPulseEnabled?: boolean;
   updatedAt: EpochMs;
   /** uid of the admin who last changed it (or 'system'). */
   updatedBy: string;
