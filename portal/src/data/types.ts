@@ -10,6 +10,7 @@ import type {
   AnnouncementRead,
   Celebration,
   Invitation,
+  MoodWeek,
   OrgConfig,
   PersonSchedule,
   Role,
@@ -92,6 +93,8 @@ export interface DataSource {
   listCelebrations(): Promise<WithId<Celebration>[]>;
   /** Writes the whole `celebrations/{uid}`. */
   saveCelebration(uid: string, celebration: Celebration): Promise<void>;
+  /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
+  listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
   /** Download URL of a Storage object (admins may read every screenshot). */
   screenshotUrl(storagePath: string): Promise<string>;
 }

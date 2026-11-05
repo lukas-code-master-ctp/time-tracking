@@ -9,6 +9,7 @@ import {
   type AnnouncementRead,
   type Celebration,
   type Invitation,
+  type MoodWeek,
   type OrgConfig,
   type PersonSchedule,
   type ScheduleConfig,
@@ -39,6 +40,8 @@ export interface FakeDb {
   announcementReads?: AnnouncementRead[];
   /** Birthdays and hire dates (optional: most tests have none). */
   celebrations?: WithId<Celebration>[];
+  /** Mood pulse counters (optional). */
+  moodWeeks?: WithId<MoodWeek>[];
 }
 
 export function emptyDb(): FakeDb {
@@ -85,6 +88,7 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
       db.screenshots.filter((s) => s.uid === uid && s.takenAt >= range.from && s.takenAt < range.to),
     listAbsences: async (fromDate, toDate, uid) =>
       (db.absences ?? []).filter((a) => (!uid || a.uid === uid) && absenceOverlapsRange(a, fromDate, toDate)),
+    listMoodWeeks: async () => db.moodWeeks ?? [],
     listPendingAbsences: async () => (db.absences ?? []).filter((a) => a.status === 'pending'),
     saveAbsence: async (id, absence) => {
       const newId = id ?? `abs-${(db.absences ?? []).length + 1}`;

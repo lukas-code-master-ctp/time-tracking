@@ -29,7 +29,13 @@ describe('org config', () => {
     activeBreakIntervalMinutes: 60,
     activeBreaksPerDay: 3,
     activeBreakMinutes: 5,
+    moodPulseEnabled: false,
   };
+
+  it('adds moodPulseEnabled only when on', () => {
+    expect(buildOrgConfig({ ...form, moodPulseEnabled: true }, 'uid-admin', NOW).moodPulseEnabled).toBe(true);
+    expect('moodPulseEnabled' in buildOrgConfig(form, 'uid-admin', NOW)).toBe(false);
+  });
 
   it('builds the 6 fields the rules require, plus pauseTimerAtLunch only when on', () => {
     const cfg = buildOrgConfig({ ...form, allowedDomains: [' ImpulseAI.cl ', '@compratuparcela.cl', 'impulseai.cl'] }, 'uid-admin', NOW + 0.7);
@@ -123,6 +129,7 @@ describe('org config', () => {
       activeBreakIntervalMinutes: 60,
       activeBreaksPerDay: 3,
       activeBreakMinutes: 5,
+      moodPulseEnabled: false,
     });
   });
 
@@ -146,6 +153,7 @@ describe('org config', () => {
       activeBreakIntervalMinutes: 60,
       activeBreaksPerDay: 3,
       activeBreakMinutes: 5,
+      moodPulseEnabled: false,
     });
     expect(orgConfigToForm({ ...legacy, pauseTimerAtLunch: true }, ['x.cl']).pauseTimerAtLunch).toBe(true);
   });

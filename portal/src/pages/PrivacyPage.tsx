@@ -129,6 +129,13 @@ export function PrivacyPage() {
               la hora y tu respuesta (pausa tomada, pospuesta u omitida); las pausas tomadas se ven en tu línea de
               tiempo. Puedes desactivar estos recordatorios desde la extensión.
             </li>
+            <li>
+              <strong>Pulso de ánimo, solo si tu empresa lo activa:</strong> al cerrar tu jornada, la extensión te
+              pregunta "¿Cómo estuvo tu día?" con cinco caras; puedes omitirla. Tu respuesta es{' '}
+              <strong>anónima</strong>: solo se suma a un contador semanal de todo el equipo, sin tu nombre ni el día, y
+              tu empresa no ve semanas con menos de 3 respuestas. Aparte se guarda, visible solo para ti, qué días de la
+              semana ya respondiste (no qué respondiste), para que se cuente una vez al día.
+            </li>
           </ul>
           <p>
             <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte recordatorios de

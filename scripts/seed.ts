@@ -38,6 +38,7 @@ import {
   SCHEDULE_CONFIG_DOC_ID,
   activityDocId,
   dateKey,
+  lastWeeks,
   screenshotStoragePath,
   type Celebration,
   type Invitation,
@@ -118,6 +119,21 @@ async function main(): Promise<void> {
     const schedule: ScheduleConfig = { ...SEED_SCHEDULE, holidays: [...SEED_SCHEDULE.holidays], updatedAt: now, updatedBy: admin.uid };
     await scheduleRef.set(schedule);
   }
+
+  // Mood pulse: anonymous counters of the last 8 weeks (replaced on every run;
+  // the oldest week has 2 answers, so the portal hides it).
+  const moodSamples = [
+    { n2: 1, n3: 1 },
+    { n3: 3, n4: 4, n5: 1 },
+    { n2: 1, n3: 2, n4: 5, n5: 2 },
+    { n1: 1, n2: 2, n3: 4, n4: 3 },
+    { n3: 2, n4: 6, n5: 3 },
+    { n2: 1, n3: 3, n4: 5, n5: 2 },
+    { n3: 2, n4: 5, n5: 4 },
+    { n3: 1, n4: 3, n5: 2 },
+  ];
+  const moodWeeks = lastWeeks(dateKey(now), moodSamples.length);
+  await Promise.all(moodWeeks.map((w, i) => db.doc(`${COLLECTIONS.moodWeeks}/${w}`).set(moodSamples[i]!)));
 
   const existingCreatedAt = async (uid: string, fallback: number): Promise<number> => {
     const v = (await db.doc(`${COLLECTIONS.users}/${uid}`).get()).get('createdAt') as unknown;

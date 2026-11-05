@@ -13,6 +13,7 @@ import {
   normalizeDomain,
   normalizeDomainList,
   readActiveBreakSettings,
+  readMoodPulseEnabled,
   type ActiveBreakMode,
   type Invitation,
   type OrgConfig,
@@ -38,6 +39,8 @@ export interface OrgConfigForm {
   activeBreakIntervalMinutes: number;
   activeBreaksPerDay: number;
   activeBreakMinutes: number;
+  /** Mood pulse when closing the work day (spec 2026-11-05-pulso-de-animo). */
+  moodPulseEnabled: boolean;
 }
 
 export type FieldErrors<K extends string> = Partial<Record<K, string>>;
@@ -114,6 +117,8 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
           activeBreakMinutes: form.activeBreakMinutes,
         }
       : {}),
+    // Only when on (rules before the mood pulse do not know the field).
+    ...(form.moodPulseEnabled ? { moodPulseEnabled: true } : {}),
     updatedAt: Math.floor(now),
     updatedBy: uid,
   };
@@ -128,6 +133,7 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
     screenshotRetentionDays: String(config?.screenshotRetentionDays ?? 90),
     pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
     ...activeBreaksForm(config),
+    moodPulseEnabled: readMoodPulseEnabled(config),
   };
 }
 

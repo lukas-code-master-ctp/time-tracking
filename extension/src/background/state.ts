@@ -74,6 +74,8 @@ export interface OrgConfigCache {
   pauseTimerAtLunch?: boolean;
   /** Active breaks of the organization. Missing in caches before 0.2.7 (= off). */
   activeBreaks?: ActiveBreakSettings;
+  /** Mood pulse of the organization. Missing in caches before 0.2.16 (= off). */
+  moodPulse?: boolean;
   fetchedAt: number;
 }
 
@@ -108,8 +110,30 @@ export interface Meta {
   breakOptOut: string[];
   /** Internal announcements of the signed-in user (announcements.ts). Missing before 0.2.14. */
   announcements: AnnouncementCache | null;
-  /** Team birthdays and anniversaries; null = not read yet. Missing before 0.2.15. */
+  /** Team birthdays and anniversaries; null = not read yet. Missing before 0.2.17. */
   celebrations: CelebrationsCache | null;
+  /**
+   * Mood pulse of today (spec 2026-11-05-pulso-de-animo): `pending` after the
+   * person closed the work day, until she answers or skips it; `done` after
+   * that (asked once a day). A state of another day or user counts as none.
+   * Missing before 0.2.16.
+   */
+  mood: MoodState | null;
+}
+
+export interface MoodState {
+  uid: string;
+  /** `YYYY-MM-DD` (America/Santiago). */
+  date: string;
+  status: 'pending' | 'done';
+}
+
+function moodStateFromJSON(raw: unknown): MoodState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Partial<MoodState>;
+  if (typeof m.uid !== 'string' || typeof m.date !== 'string') return null;
+  if (m.status !== 'pending' && m.status !== 'done') return null;
+  return { uid: m.uid, date: m.date, status: m.status };
 }
 
 export function defaultMeta(): Meta {
@@ -127,6 +151,7 @@ export function defaultMeta(): Meta {
     breakOptOut: [],
     announcements: null,
     celebrations: null,
+    mood: null,
   };
 }
 
@@ -239,6 +264,7 @@ export class StateStore {
       : [];
     this.meta.announcements = announcementCacheFromJSON(this.meta.announcements);
     this.meta.celebrations = celebrationsCacheFromJSON(this.meta.celebrations);
+    this.meta.mood = moodStateFromJSON(this.meta.mood);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);

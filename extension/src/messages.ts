@@ -8,7 +8,15 @@
  * popup / consent page → service worker (request/response):
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
-import type { Absence, AbsenceType, Role, UpcomingCelebration, UserStatus, WithId } from '@timetracking/shared';
+import {
+  isMoodScore,
+  type Absence,
+  type AbsenceType,
+  type Role,
+  type UpcomingCelebration,
+  type UserStatus,
+  type WithId,
+} from '@timetracking/shared';
 import type { ScheduleView } from './background/schedule';
 
 // ---------- content script ----------
@@ -45,6 +53,8 @@ export type PopupRequest =
   | { type: 'breaks.answer'; answer: 'taken' | 'postponed' }
   /** Turn the active break reminders on/off for the signed-in user on this device. */
   | { type: 'breaks.setEnabled'; enabled: boolean }
+  /** Mood pulse after closing the work day: a face 1–5, or null = "Omitir". */
+  | { type: 'mood.answer'; score: number | null }
   /** Absences page (spec 2026-10-22-solicitud-ausencias): the person's absences and requests. */
   | { type: 'absences.list' }
   /** Request an absence (pending until an admin decides). */
@@ -72,6 +82,7 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'sync.now',
   'breaks.answer',
   'breaks.setEnabled',
+  'mood.answer',
   'absences.list',
   'absences.request',
   'absences.cancel',
@@ -92,6 +103,10 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
     return answer === 'taken' || answer === 'postponed';
   }
   if (m.type === 'breaks.setEnabled') return typeof (msg as { enabled?: unknown }).enabled === 'boolean';
+  if (m.type === 'mood.answer') {
+    const score = (msg as { score?: unknown }).score;
+    return score === null || isMoodScore(score);
+  }
   if (m.type === 'absences.cancel' || m.type === 'announcements.ack') {
     const id = (msg as { id?: unknown }).id;
     return typeof id === 'string' && id !== '';
@@ -179,6 +194,12 @@ export interface StatusView {
    * signed-in person's own. [] when none or not read yet.
    */
   celebrations: (UpcomingCelebration & { self: boolean })[];
+  /**
+   * Mood pulse (spec 2026-11-05-pulso-de-animo); null = the organization has
+   * it off. `pending`: the person closed today's work day and has not answered
+   * "¿Cómo estuvo tu día?" nor skipped it.
+   */
+  mood: { pending: boolean } | null;
   /** Operations waiting to be uploaded. */
   pendingOps: number;
   /** Screenshots waiting to be uploaded. */

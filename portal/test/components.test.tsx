@@ -422,6 +422,7 @@ describe('SettingsForm', () => {
       activeBreakIntervalMinutes: 60,
       activeBreaksPerDay: 3,
       activeBreakMinutes: 5,
+      moodPulseEnabled: false,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });

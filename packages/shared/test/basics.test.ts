@@ -115,6 +115,8 @@ describe('collections', () => {
       announcements: 'announcements',
       announcementReads: 'announcementReads',
       celebrations: 'celebrations',
+      moodWeeks: 'moodWeeks',
+      moodVotes: 'moodVotes',
     });
   });
 

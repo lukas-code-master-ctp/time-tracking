@@ -57,6 +57,7 @@ import {
   type AnnouncementRead,
   type Celebration,
   type Invitation,
+  type MoodWeek,
   type OrgConfig,
   type PersonSchedule,
   type ScreenshotMeta,
@@ -298,6 +299,16 @@ export function createFirebaseBackend(): Backend {
         const snap = await getDocs(collection(db, COLLECTIONS.announcementReads));
         return snap.docs.map((d) => d.data() as AnnouncementRead);
       } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
+    async listMoodWeeks() {
+      try {
+        const snap = await getDocs(collection(db, COLLECTIONS.moodWeeks));
+        return snap.docs.map((d) => ({ ...(d.data() as MoodWeek), id: d.id }));
+      } catch (err) {
+        // Rules of the mood pulse not deployed yet: the page shows no answers.
         if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
         throw err;
       }

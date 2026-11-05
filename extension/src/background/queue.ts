@@ -10,10 +10,11 @@
  * - sessionClose: removes pending heartbeats of the same session.
  * - sessionCreate: one per session.
  * - break: one per answered active break reminder (`breakDocId`).
+ * - mood: one per person and day (mood pulse; the rules accept one answer a day).
  * Order is FIFO, so a session is created before its heartbeats and closed
  * after them.
  */
-import { activityDocId, breakDocId, type ActiveBreak, type ActivitySlot, type Session } from '@timetracking/shared';
+import { activityDocId, breakDocId, type ActiveBreak, type ActivitySlot, type MoodScore, type Session } from '@timetracking/shared';
 
 export type SyncOp =
   | { kind: 'sessionCreate'; uid: string; sessionId: string; session: Session }
@@ -21,7 +22,9 @@ export type SyncOp =
   | { kind: 'heartbeat'; uid: string; sessionId: string; at: number }
   | { kind: 'sessionClose'; uid: string; sessionId: string; endedAt: number }
   /** Active break answer (breaks.ts). No top-level `sessionId`: not a session operation. */
-  | { kind: 'break'; uid: string; data: ActiveBreak };
+  | { kind: 'break'; uid: string; data: ActiveBreak }
+  /** Mood pulse answer (spec 2026-11-05-pulso-de-animo): `date` is the person's day, `week` its ISO week. */
+  | { kind: 'mood'; uid: string; date: string; week: string; score: MoodScore };
 
 export interface QueueItem {
   /** Coalescing key, see {@link opKey}. */
@@ -61,6 +64,8 @@ export function opKey(op: SyncOp): string {
       return `create:${op.sessionId}`;
     case 'break':
       return `break:${breakDocId(op.uid, op.data.promptedAt)}`;
+    case 'mood':
+      return `mood:${op.uid}_${op.date}`;
   }
 }
 
@@ -122,7 +127,7 @@ export function queueFromJSON(raw: unknown): QueueState {
     if (!item || typeof item !== 'object') continue;
     const op = (item as QueueItem).op;
     if (!op || typeof op !== 'object' || typeof op.uid !== 'string') continue;
-    if (!['activity', 'heartbeat', 'sessionClose', 'sessionCreate', 'break'].includes(op.kind)) continue;
+    if (!['activity', 'heartbeat', 'sessionClose', 'sessionCreate', 'break', 'mood'].includes(op.kind)) continue;
     try {
       const key = opKey(op);
       q.items.push({

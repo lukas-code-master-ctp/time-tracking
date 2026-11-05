@@ -23,6 +23,7 @@ import {
   breakDocId,
   type ActiveBreak,
   type ActivitySlot,
+  type MoodScore,
   type Session,
 } from '@timetracking/shared';
 import { backoffMs, dropSessionOps, isSessionOp, removeItem, type QueueItem, type SyncOp } from './queue';
@@ -42,6 +43,12 @@ export interface Backend {
   closeSession(sessionId: string, endedAt: number): Promise<void>;
   /** `setDoc(breaks/{docId}, data)` with exactly the 8 fields of the rules. */
   putBreak(docId: string, data: ActiveBreak): Promise<void>;
+  /**
+   * One batch: adds `date` to `moodVotes/{uid_week}` and +1 to counter
+   * `n{score}` of `moodWeeks/{week}` (anonymous, see packages/shared/src/mood.ts).
+   * The rules refuse a second answer of the same day (`permission-denied`).
+   */
+  putMood(uid: string, week: string, date: string, score: MoodScore): Promise<void>;
 }
 
 /** Error with a Firebase-like code (`permission-denied`, `unavailable`…). */
@@ -183,6 +190,9 @@ export async function execOp(backend: Backend, op: SyncOp): Promise<void> {
       return;
     case 'break':
       await backend.putBreak(breakDocId(op.uid, op.data.promptedAt), op.data);
+      return;
+    case 'mood':
+      await backend.putMood(op.uid, op.week, op.date, op.score);
       return;
   }
 }

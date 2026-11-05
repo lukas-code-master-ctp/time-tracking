@@ -19,6 +19,10 @@ export const COLLECTIONS = {
   announcementReads: 'announcementReads',
   /** `celebrations/{uid}`: birthday and hire date (team birthdays and anniversaries). */
   celebrations: 'celebrations',
+  /** `moodWeeks/{YYYY-Www}`: anonymous counters of the mood pulse (mood.ts). */
+  moodWeeks: 'moodWeeks',
+  /** `moodVotes/{uid_YYYY-Www}`: days the person answered the mood pulse (never what). */
+  moodVotes: 'moodVotes',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

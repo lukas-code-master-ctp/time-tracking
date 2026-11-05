@@ -139,7 +139,7 @@ Spec `docs/specs/2026-11-05-comunicados.md`. Un administrador publica comunicado
 - **Popup**: tarjeta "Comunicado" bajo la jornada con el más antiguo sin confirmar ("1 de 3") y el botón "Confirmo que lo leí", que escribe `announcementReads/{id_uid}` en línea (sin cola: sin conexión muestra un error y la tarjeta sigue).
 - Los archivados no se muestran. Cerrar sesión olvida el caché.
 
-## Cumpleaños y aniversarios (0.2.15)
+## Cumpleaños y aniversarios (0.2.17)
 
 - `celebrations/{uid}` (spec `docs/specs/2026-11-05-cumpleanos-aniversarios.md`), registrado por un admin en el portal (Colaboradores › Cumpleaños). La extensión lo lee con `config/org`, como mucho cada 3 h (`CELEBRATIONS_REFRESH_MS`), y lo guarda en `tt.meta.celebrations`.
 - **Popup**: una fila bajo la pausa activa con la fecha más próxima de hoy a 7 días (fondo azul si es hoy); "+N" despliega las demás. Nada si no hay fechas.

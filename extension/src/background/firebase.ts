@@ -39,6 +39,9 @@ import {
   updateDoc,
   where,
   type Firestore,
+  arrayUnion,
+  increment,
+  writeBatch,
 } from 'firebase/firestore/lite';
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
 import {
@@ -49,11 +52,14 @@ import {
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
   readCelebration,
+  moodCountKey,
+  moodVoteDocId,
   type Absence,
   type ActiveBreak,
   type AnnouncementRead,
   type ActivitySlot,
   type Celebration,
+  type MoodScore,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
@@ -125,6 +131,14 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     },
     async putBreak(docId: string, data: ActiveBreak) {
       await setDoc(doc(db, COLLECTIONS.breaks, docId), data);
+    },
+    async putMood(uid: string, week: string, date: string, score: MoodScore) {
+      // Both writes or none: the rules let the counter grow only together
+      // with a new day in the person's vote.
+      const batch = writeBatch(db);
+      batch.set(doc(db, COLLECTIONS.moodVotes, moodVoteDocId(uid, week)), { uid, week, dates: arrayUnion(date) }, { merge: true });
+      batch.set(doc(db, COLLECTIONS.moodWeeks, week), { [moodCountKey(score)]: increment(1) }, { merge: true });
+      await batch.commit();
     },
     async fetchOrgConfig() {
       const snap = await getDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID));

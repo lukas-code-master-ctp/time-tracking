@@ -34,7 +34,8 @@ export type BackendCall =
   | { op: 'createAbsence'; id: string; data: Absence }
   | { op: 'deleteAbsence'; id: string }
   | { op: 'putBreak'; docId: string; data: ActiveBreak }
-  | { op: 'putAnnouncementRead'; docId: string; data: AnnouncementRead };
+  | { op: 'putAnnouncementRead'; docId: string; data: AnnouncementRead }
+  | { op: 'putMood'; uid: string; week: string; date: string; score: number };
 
 export const ORG: OrgConfig = {
   allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -127,6 +128,21 @@ export class FakeBackend implements Remote {
     if (existing && JSON.stringify(existing) !== JSON.stringify(data)) throw new BackendError('permission-denied');
     this.calls.push({ op: 'putBreak', docId, data });
     this.breaks.set(docId, data);
+  }
+  /** `moodVotes` days by `uid_week` and `moodWeeks` counters by week. */
+  moodVotes = new Map<string, string[]>();
+  moodWeeks = new Map<string, Record<string, number>>();
+  async putMood(uid: string, week: string, date: string, score: number): Promise<void> {
+    this.check();
+    const key = `${uid}_${week}`;
+    const dates = this.moodVotes.get(key) ?? [];
+    // One answer per person and day.
+    if (dates.includes(date)) throw new BackendError('permission-denied');
+    this.calls.push({ op: 'putMood', uid, week, date, score });
+    this.moodVotes.set(key, [...dates, date]);
+    const counters = this.moodWeeks.get(week) ?? {};
+    counters[`n${score}`] = (counters[`n${score}`] ?? 0) + 1;
+    this.moodWeeks.set(week, counters);
   }
   async fetchOrgConfig(): Promise<OrgConfig | null> {
     this.check();
