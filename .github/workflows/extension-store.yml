@@ -3,6 +3,10 @@
 # the run number as a 4th part (0.2.2 → 0.2.2.37), always higher than the last
 # upload. Bump package.json (e.g. 0.2.3) for a new minor/patch line.
 #
+# Chrome Web Store rejects an upload while another version is in review. Run it
+# by hand with "cancel_pending" to cancel that review and send this version
+# instead (it goes back to the end of the review queue).
+#
 # Repository secrets (Settings → Secrets and variables → Actions):
 #   CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN  OAuth client of the
 #     Chrome Web Store API (https://developer.chrome.com/docs/webstore/using-api)
@@ -20,6 +24,11 @@ on:
       - 'package-lock.json'
       - '.github/workflows/extension-store.yml'
   workflow_dispatch:
+    inputs:
+      cancel_pending:
+        description: 'Cancelar la versión que está en revisión y enviar esta en su lugar'
+        type: boolean
+        default: false
 
 concurrency:
   group: extension-store
@@ -82,6 +91,7 @@ jobs:
           CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CANCEL_PENDING: ${{ inputs.cancel_pending && 'true' || 'false' }}
         run: |
           set -euo pipefail
           for v in CLIENT_ID CLIENT_SECRET REFRESH_TOKEN PUBLISHER_ID; do
@@ -92,6 +102,17 @@ jobs:
             | jq -r .access_token)
           API=https://chromewebstore.googleapis.com
           ITEM="publishers/$PUBLISHER_ID/items/$EXTENSION_ID"
+
+          if [ "$CANCEL_PENDING" = "true" ]; then
+            echo "Cancelando la revisión pendiente…"
+            CANCEL=$(curl -sS -H "Authorization: Bearer $TOKEN" -X POST "$API/v2/$ITEM:cancelSubmission")
+            echo "$CANCEL"
+            # No pending review (already approved or cancelled) is fine: the
+            # upload below fails anyway if a review is still in the way.
+            if echo "$CANCEL" | jq -e '.error' >/dev/null; then
+              echo "::warning::No había una revisión pendiente que cancelar: $(echo "$CANCEL" | jq -r '.error.message')"
+            fi
+          fi
 
           echo "Subiendo $VERSION…"
           UPLOAD=$(curl -sS -H "Authorization: Bearer $TOKEN" -X POST -T extension.zip "$API/upload/v2/$ITEM:upload")
