@@ -51,6 +51,8 @@ export type PopupRequest =
   | { type: 'absences.request'; absence: AbsenceRequest }
   /** Withdraw a pending request. */
   | { type: 'absences.cancel'; id: string }
+  /** "Confirmo que lo leí" of an internal announcement (spec 2026-11-05-comunicados). */
+  | { type: 'announcements.ack'; id: string }
   /** Dev build only (e2e): run the 30-second pulse now. */
   | { type: 'debug.forcePulse' }
   /** Dev build only (e2e): refresh config/org and take this block's screenshot now. */
@@ -73,6 +75,7 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'absences.list',
   'absences.request',
   'absences.cancel',
+  'announcements.ack',
   // Dropped from the prod bundle (`__APP_ENV__` is replaced literally).
   ...(__APP_ENV__ === 'dev' ? (['auth.devSignIn', 'debug.forcePulse', 'debug.forceScreenshot'] as const) : []),
 ];
@@ -89,7 +92,10 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
     return answer === 'taken' || answer === 'postponed';
   }
   if (m.type === 'breaks.setEnabled') return typeof (msg as { enabled?: unknown }).enabled === 'boolean';
-  if (m.type === 'absences.cancel') return typeof (msg as { id?: unknown }).id === 'string';
+  if (m.type === 'absences.cancel' || m.type === 'announcements.ack') {
+    const id = (msg as { id?: unknown }).id;
+    return typeof id === 'string' && id !== '';
+  }
   if (m.type === 'absences.request') {
     const a = (msg as { absence?: unknown }).absence;
     return !!a && typeof a === 'object'; // the fields are validated by the worker (validateAbsence)
@@ -162,6 +168,11 @@ export interface StatusView {
     pending: { at: number; title: string; text: string } | null;
     nextAt: number | null;
   } | null;
+  /**
+   * Internal announcements the person has not confirmed yet, oldest first
+   * (spec 2026-11-05-comunicados); [] when there are none or before joining.
+   */
+  announcements: { id: string; title: string; body: string; authorName: string; createdAt: number }[];
   /**
    * Team birthdays and work anniversaries of today and the next 7 days
    * (spec 2026-11-05-cumpleanos-aniversarios), soonest first; `self`: the

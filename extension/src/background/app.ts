@@ -31,6 +31,8 @@ import {
   exerciseInstructions,
   readActiveBreakSettings,
   readPersonSchedule,
+  announcementReadId,
+  readAnnouncement,
   readScheduleConfig,
   upcomingCelebrations,
   validateAbsence,
@@ -49,6 +51,16 @@ import {
   type SignInResult,
   type StatusView,
 } from '../messages';
+import {
+  ANNOUNCEMENTS_LIMIT,
+  ANNOUNCEMENTS_POPUP_REFRESH_MS,
+  announcementNotificationId,
+  announcementNotificationText,
+  mergeAnnouncements,
+  parseAnnouncementNotificationId,
+  toNotify,
+  unreadAnnouncements,
+} from './announcements';
 import { AuthError, JoinError, withKeepAlive, type AuthService } from './auth';
 import {
   BREAK_BUTTONS,
@@ -177,6 +189,7 @@ export class App {
     chrome.notifications?.onButtonClicked.addListener((id, index) => {
       const promptAt = parseBreakNotificationId(id);
       if (promptAt !== null) void this.onBreakButton(promptAt, index).catch(logError('pausa activa'));
+      else if (parseAnnouncementNotificationId(id) !== null) void this.onReminderClicked(id).catch(logError('comunicado'));
       else void this.onReminderAction(id).catch(logError('recordatorio'));
     });
     chrome.notifications?.onClicked.addListener((id) => void this.onReminderClicked(id).catch(logError('recordatorio')));
@@ -277,10 +290,97 @@ export class App {
     await Promise.all([
       this.refreshOrgConfig(maxAgeMs).catch(logError('config/org')),
       this.refreshSchedule(maxAgeMs).catch(logError('config/schedule')),
+      this.refreshAnnouncements(maxAgeMs).catch(logError('comunicados')),
       this.refreshCelebrations(maxAgeMs === 0 ? 0 : Math.max(maxAgeMs, CELEBRATIONS_REFRESH_MS)).catch(
         logError('celebrations'),
       ),
     ]);
+  }
+
+  // ---------- internal announcements (spec 2026-11-05-comunicados) ----------
+
+  /**
+   * Reads the latest announcements and the person's confirmations when the
+   * cache is older than `maxAgeMs` (0 = always), for a joined, active user.
+   * Shows one notification for the announcements not notified yet on this
+   * device. On failure (offline, rules not deployed) the cache stays.
+   */
+  async refreshAnnouncements(maxAgeMs: number): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const due = await this.store.run(() => {
+      const uid = this.activeUid(user?.uid);
+      const cache = this.store.meta.announcements;
+      if (!uid) return false;
+      return !cache || cache.uid !== uid || this.now() - cache.fetchedAt >= maxAgeMs;
+    });
+    if (!user || !due) return;
+    let list: Awaited<ReturnType<Remote['listAnnouncements']>>;
+    let readIds: string[];
+    try {
+      [list, readIds] = await Promise.all([
+        this.backend.listAnnouncements(ANNOUNCEMENTS_LIMIT),
+        this.backend.listAnnouncementReads(user.uid),
+      ]);
+    } catch (err) {
+      console.warn(`[timetracking] no se pudieron leer los comunicados (${errorCode(err)})`);
+      return;
+    }
+    const valid = list.flatMap((raw) => {
+      const a = readAnnouncement(raw);
+      return a ? [{ ...a, id: raw.id }] : [];
+    });
+    const fresh = await this.store.run(async () => {
+      if (this.activeUid(user.uid) !== user.uid) return []; // signed out meanwhile
+      const cache = mergeAnnouncements(this.store.meta.announcements, user.uid, valid, readIds, this.now());
+      const out = toNotify(cache, user.uid);
+      cache.notified = [...cache.notified, ...out.map((a) => a.id)];
+      this.store.meta.announcements = cache;
+      await this.store.save('meta');
+      return out;
+    });
+    if (fresh.length > 0) await this.showAnnouncement(fresh);
+  }
+
+  private async showAnnouncement(fresh: { id: string; title: string; body: string; authorName: string; createdAt: number }[]): Promise<void> {
+    const { title, message } = announcementNotificationText(fresh);
+    try {
+      await chrome.notifications.create(announcementNotificationId(fresh[fresh.length - 1]!.id), {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+        title,
+        message,
+        buttons: [{ title: fresh.length === 1 ? 'Leer comunicado' : 'Ver comunicados' }],
+        priority: 2,
+        requireInteraction: true,
+      });
+    } catch (err) {
+      console.warn('[timetracking] no se pudo mostrar el comunicado', err);
+    }
+  }
+
+  /** "Confirmo que lo leí": writes the confirmation (online) and drops the notification. */
+  async acknowledgeAnnouncement(id: string): Promise<void> {
+    const uid = await this.memberUid();
+    const at = Math.round(this.now());
+    try {
+      await this.backend.putAnnouncementRead(announcementReadId(id, uid), { announcementId: id, uid, readAt: at });
+    } catch (err) {
+      console.warn('[timetracking] comunicado (confirmar)', err);
+      throw new AuthError(
+        'announcement-failed',
+        errorCode(err) === 'permission-denied'
+          ? 'Este comunicado ya no está disponible.'
+          : 'No se pudo confirmar la lectura. Revisa tu conexión y vuelve a intentarlo.',
+      );
+    }
+    await this.store.run(async () => {
+      const cache = this.store.meta.announcements;
+      if (!cache || cache.uid !== uid || cache.readIds.includes(id)) return;
+      cache.readIds = [...cache.readIds, id];
+      await this.store.save('meta');
+    });
+    await chrome.notifications.clear(announcementNotificationId(id)).catch(() => undefined);
   }
 
   /**
@@ -618,9 +718,15 @@ export class App {
     if (dropped) await chrome.notifications.clear(breakNotificationId(dropped.at)).catch(() => undefined);
   }
 
-  /** Click on the body of a reminder (or of an active break): the popup. */
+  /** Click on the body (or button) of a reminder, an active break or an announcement: the popup. */
   async onReminderClicked(notificationId: string): Promise<void> {
-    if (!parseReminderNotificationId(notificationId) && parseBreakNotificationId(notificationId) === null) return;
+    if (
+      !parseReminderNotificationId(notificationId) &&
+      parseBreakNotificationId(notificationId) === null &&
+      parseAnnouncementNotificationId(notificationId) === null
+    ) {
+      return;
+    }
     await chrome.notifications.clear(notificationId).catch(() => undefined);
     await this.openPopup();
   }
@@ -681,6 +787,8 @@ export class App {
       }
       switch (req.type) {
         case 'status':
+          // Fresh announcements for the open popup (shown on its next poll).
+          void this.refreshAnnouncements(ANNOUNCEMENTS_POPUP_REFRESH_MS).catch(logError('comunicados'));
           break;
         case 'session.start':
           await this.startWorkDay();
@@ -720,6 +828,9 @@ export class App {
         case 'absences.cancel':
           await this.cancelAbsence(req.id);
           return { ok: true, status: await this.status(), absences: await this.listAbsences() };
+        case 'announcements.ack':
+          await this.acknowledgeAnnouncement(req.id);
+          break;
         default:
           break;
       }
@@ -935,6 +1046,11 @@ export class App {
       this.store.meta.reminders = null;
       const pendingBreak = this.store.meta.breaks?.pending ?? null;
       this.store.meta.breaks = null;
+      const announcements = this.store.meta.announcements;
+      this.store.meta.announcements = null;
+      for (const a of announcements?.items ?? []) {
+        await chrome.notifications.clear(announcementNotificationId(a.id)).catch(() => undefined);
+      }
       if (pendingBreak) await chrome.notifications.clear(breakNotificationId(pendingBreak.at)).catch(() => undefined);
       await this.store.save('acc', 'meta');
       await this.ensureScheduleAlarm(null, this.now());
@@ -999,6 +1115,7 @@ export class App {
         capture: org ? { screenshots: org.screenshotsEnabled, blur: org.blurScreenshots } : null,
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
         breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
+        announcements: profile && user ? unreadAnnouncements(meta.announcements, this.activeUid(user.uid)) : [],
         celebrations: profile && user && meta.celebrations?.uid === user.uid
           ? upcomingCelebrations(meta.celebrations.items, dateKey(this.now(), DEFAULT_TIME_ZONE), CELEBRATIONS_DAYS_AHEAD).map(
               (c) => ({ ...c, self: c.uid === user.uid }),

@@ -6,6 +6,8 @@ import type {
   Absence,
   ActiveBreak,
   ActivitySlot,
+  Announcement,
+  AnnouncementRead,
   Celebration,
   Invitation,
   OrgConfig,
@@ -74,6 +76,18 @@ export interface DataSource {
   /** Writes the whole absence: a new document when `id` is null. Returns its id. */
   saveAbsence(id: string | null, absence: Absence): Promise<string>;
   deleteAbsence(id: string): Promise<void>;
+  /**
+   * Internal announcements (spec 2026-11-05-comunicados), newest first.
+   * `[]` while the rules are not deployed.
+   */
+  listAnnouncements(): Promise<WithId<Announcement>[]>;
+  /** Every read confirmation. `[]` while the rules are not deployed. */
+  listAnnouncementReads(): Promise<AnnouncementRead[]>;
+  /** Publishes a new announcement; returns its id. */
+  createAnnouncement(announcement: Announcement): Promise<string>;
+  /** Archives (a time) or brings back (null) an announcement. */
+  setAnnouncementArchived(id: string, archivedAt: number | null): Promise<void>;
+  deleteAnnouncement(id: string): Promise<void>;
   /** Every valid `celebrations/{uid}` (id = uid). `[]` while the rules are not deployed. */
   listCelebrations(): Promise<WithId<Celebration>[]>;
   /** Writes the whole `celebrations/{uid}`. */

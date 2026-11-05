@@ -8,6 +8,8 @@ import {
   CHILE_HOLIDAY_DATES,
   activityDocId,
   type Absence,
+  type Announcement,
+  type AnnouncementRead,
   type Celebration,
   type ActiveBreak,
   type ActivitySlot,
@@ -1197,5 +1199,89 @@ describe('unknown collections', () => {
   it('are denied, even for admin', async () => {
     await assertFails(db('admin').doc('otra/cosa').set({ a: 1 }));
     await assertFails(db('admin').doc('otra/cosa').get());
+  });
+});
+
+// ---------- announcements (spec 2026-11-05-comunicados) ----------
+
+function announcement(overrides: Partial<Announcement> = {}): Announcement {
+  return {
+    title: 'Nuevo reglamento interno',
+    body: 'Lee el reglamento actualizado.\nGracias.',
+    authorName: 'Recursos Humanos',
+    createdAt: NOW,
+    createdBy: 'admin',
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+function read(uid: string, overrides: Partial<AnnouncementRead> = {}): AnnouncementRead {
+  return { announcementId: 'n1', uid, readAt: NOW, ...overrides };
+}
+
+describe('announcements', () => {
+  it('an admin publishes, archives and deletes them', async () => {
+    const ref = db('admin').doc('announcements/n1');
+    await assertSucceeds(ref.set(announcement()));
+    await assertSucceeds(ref.update({ archivedAt: NOW + 1 }));
+    await assertSucceeds(ref.update({ archivedAt: null }));
+    // Published text is not edited.
+    await assertFails(ref.update({ title: 'Otro' }));
+    await assertSucceeds(ref.delete());
+  });
+
+  it('members, disabled admins and strangers cannot write them', async () => {
+    await assertFails(db('alice').doc('announcements/n1').set(announcement({ createdBy: 'alice' })));
+    await assertFails(db('eve').doc('announcements/n1').set(announcement({ createdBy: 'eve' })));
+    await assertFails(db(null).doc('announcements/n1').set(announcement()));
+    await seed(env, { 'announcements/n1': announcement() });
+    await assertFails(db('alice').doc('announcements/n1').update({ archivedAt: NOW }));
+    await assertFails(db('alice').doc('announcements/n1').delete());
+  });
+
+  it('rejects malformed announcements', async () => {
+    const put = (a: Partial<Announcement> & Record<string, unknown>) => db('admin').doc('announcements/n1').set({ ...announcement(), ...a });
+    await assertFails(put({ title: '  ' }));
+    await assertFails(put({ title: 'x'.repeat(121) }));
+    await assertFails(put({ body: '' }));
+    await assertFails(put({ body: 'x'.repeat(4001) }));
+    await assertFails(put({ authorName: '' }));
+    await assertFails(put({ createdBy: 'alice' }));
+    await assertFails(put({ archivedAt: NOW }));
+    await assertFails(put({ createdAt: Date.now() + 60 * 60 * 1000 }));
+    await assertFails(put({ extra: 1 }));
+  });
+
+  it('active people read them; disabled ones and strangers do not', async () => {
+    await seed(env, { 'announcements/n1': announcement() });
+    await assertSucceeds(db('alice').doc('announcements/n1').get());
+    await assertSucceeds(db('alice').collection('announcements').orderBy('createdAt', 'desc').limit(30).get());
+    await assertFails(db('dave').doc('announcements/n1').get());
+    await assertFails(db(null).doc('announcements/n1').get());
+  });
+
+  it('the person confirms the reading once, for herself', async () => {
+    await seed(env, { 'announcements/n1': announcement() });
+    const ref = db('alice').doc('announcementReads/n1_alice');
+    await assertSucceeds(ref.set(read('alice')));
+    // Same confirmation again (retry) is fine; a different one is not.
+    await assertSucceeds(ref.set(read('alice')));
+    await assertFails(ref.set(read('alice', { readAt: NOW + 1 })));
+    await assertFails(ref.delete());
+    // Not for someone else, not under another id, not for a missing announcement, not disabled.
+    await assertFails(db('alice').doc('announcementReads/n1_bob').set(read('bob')));
+    await assertFails(db('alice').doc('announcementReads/n2_alice').set(read('alice')));
+    await assertFails(db('alice').doc('announcementReads/n9_alice').set(read('alice', { announcementId: 'n9' })));
+    await assertFails(db('dave').doc('announcementReads/n1_dave').set(read('dave')));
+    await assertFails(db('alice').doc('announcementReads/n1_alice2').set({ ...read('alice'), extra: 1 }));
+  });
+
+  it('the person lists her own confirmations; an admin lists all of them', async () => {
+    await seed(env, { 'announcements/n1': announcement(), 'announcementReads/n1_alice': read('alice'), 'announcementReads/n1_bob': read('bob') });
+    await assertSucceeds(db('alice').collection('announcementReads').where('uid', '==', 'alice').get());
+    await assertFails(db('alice').collection('announcementReads').get());
+    await assertFails(db('alice').doc('announcementReads/n1_bob').get());
+    await assertSucceeds(db('admin').collection('announcementReads').get());
   });
 });

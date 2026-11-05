@@ -53,6 +53,8 @@ import {
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Announcement,
+  type AnnouncementRead,
   type Celebration,
   type Invitation,
   type OrgConfig,
@@ -260,6 +262,19 @@ export function createFirebaseBackend(): Backend {
     async deleteAbsence(id) {
       await deleteDoc(doc(db, COLLECTIONS.absences, id));
     },
+    async listAnnouncements() {
+      try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.announcements), orderBy('createdAt', 'desc')));
+        return snap.docs.map((d) => ({ ...(d.data() as Announcement), id: d.id }));
+      } catch (err) {
+        // Rules of the announcements not deployed yet: the page shows none.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+          console.warn('[timetracking] no se pudieron leer los comunicados', err);
+          return [];
+        }
+        throw err;
+      }
+    },
     async listCelebrations() {
       try {
         const snap = await getDocs(collection(db, COLLECTIONS.celebrations));
@@ -277,6 +292,26 @@ export function createFirebaseBackend(): Backend {
         }
         throw err;
       }
+    },
+    async listAnnouncementReads() {
+      try {
+        const snap = await getDocs(collection(db, COLLECTIONS.announcementReads));
+        return snap.docs.map((d) => d.data() as AnnouncementRead);
+      } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
+    async createAnnouncement(announcement) {
+      const target = doc(collection(db, COLLECTIONS.announcements));
+      await setDoc(target, announcement);
+      return target.id;
+    },
+    async setAnnouncementArchived(id, archivedAt) {
+      await updateDoc(doc(db, COLLECTIONS.announcements, id), { archivedAt });
+    },
+    async deleteAnnouncement(id) {
+      await deleteDoc(doc(db, COLLECTIONS.announcements, id));
     },
     async saveCelebration(uid, celebration) {
       await setDoc(doc(db, COLLECTIONS.celebrations, uid), celebration);

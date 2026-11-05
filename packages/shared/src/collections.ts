@@ -13,6 +13,10 @@ export const COLLECTIONS = {
   breaks: 'breaks',
   /** `absences/{autoId}`: justified absences (vacations, leave…). */
   absences: 'absences',
+  /** `announcements/{autoId}`: internal announcements from the portal. */
+  announcements: 'announcements',
+  /** `announcementReads/{announcementId_uid}`: read confirmations. */
+  announcementReads: 'announcementReads',
   /** `celebrations/{uid}`: birthday and hire date (team birthdays and anniversaries). */
   celebrations: 'celebrations',
 } as const;

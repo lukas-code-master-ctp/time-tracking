@@ -22,7 +22,7 @@ Lógica pura en `packages/shared/src/celebrations.ts` (`upcomingCelebrations`, `
 
 Colaboradores › **Cumpleaños** (`/colaboradores/fechas`): "Próximas fechas" de los 30 días siguientes y, por persona, día y mes del cumpleaños y fecha de ingreso con su botón Guardar.
 
-## Extensión (0.2.14)
+## Extensión (0.2.15)
 
 - Lee `celebrations` junto con `config/org` como mucho cada 3 horas (caché `tt.meta.celebrations`, se borra al cerrar sesión). Sin las reglas desplegadas la lectura se rechaza y no se muestra nada.
 - El popup muestra, bajo la pausa activa, una fila con la fecha más próxima de hoy a 7 días (destacada si es hoy: "Hoy es el cumpleaños de Ana", "¡Feliz cumpleaños!" si es la propia persona). Si hay más, un "+N" despliega el resto. Una sola fila para no pasar los 600 px del popup.

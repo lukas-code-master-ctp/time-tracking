@@ -5,6 +5,8 @@ import {
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Announcement,
+  type AnnouncementRead,
   type Celebration,
   type Invitation,
   type OrgConfig,
@@ -32,6 +34,9 @@ export interface FakeDb {
   breaks?: ActiveBreak[];
   /** Justified absences (optional: most tests have none). */
   absences?: WithId<Absence>[];
+  /** Internal announcements and their read confirmations (optional). */
+  announcements?: WithId<Announcement>[];
+  announcementReads?: AnnouncementRead[];
   /** Birthdays and hire dates (optional: most tests have none). */
   celebrations?: WithId<Celebration>[];
 }
@@ -88,6 +93,19 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     },
     deleteAbsence: async (id) => {
       db.absences = (db.absences ?? []).filter((a) => a.id !== id);
+    },
+    listAnnouncements: async () => [...(db.announcements ?? [])].sort((a, b) => b.createdAt - a.createdAt),
+    listAnnouncementReads: async () => [...(db.announcementReads ?? [])],
+    createAnnouncement: async (a) => {
+      const id = `ann-${(db.announcements ?? []).length + 1}`;
+      db.announcements = [...(db.announcements ?? []), { ...a, id }];
+      return id;
+    },
+    setAnnouncementArchived: async (id, archivedAt) => {
+      db.announcements = (db.announcements ?? []).map((a) => (a.id === id ? { ...a, archivedAt } : a));
+    },
+    deleteAnnouncement: async (id) => {
+      db.announcements = (db.announcements ?? []).filter((a) => a.id !== id);
     },
     listCelebrations: async () => [...(db.celebrations ?? [])],
     saveCelebration: async (uid, c) => {

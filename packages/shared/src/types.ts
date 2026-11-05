@@ -191,6 +191,33 @@ export interface Absence {
 }
 
 /**
+ * `announcements/{autoId}` — an internal announcement published by an admin
+ * in the portal (spec 2026-11-05-comunicados). Every active person sees it
+ * in the extension until they confirm they read it. Never edited: an admin
+ * archives it (`archivedAt`) to stop showing it, or deletes it.
+ */
+export interface Announcement {
+  /** 1–120 characters. */
+  title: string;
+  /** 1–4000 characters, plain text (line breaks kept). */
+  body: string;
+  /** Name shown as the sender ("Recursos Humanos", the admin's name…). Max 80. */
+  authorName: string;
+  createdAt: EpochMs;
+  /** uid of the admin who published it. */
+  createdBy: string;
+  /** When an admin archived it (null = shown in the extension). */
+  archivedAt: EpochMs | null;
+}
+
+/** `announcementReads/{announcementId_uid}` — "Confirmo que lo leí", written once by the person. */
+export interface AnnouncementRead {
+  announcementId: string;
+  uid: string;
+  readAt: EpochMs;
+}
+
+/**
  * `celebrations/{uid}` — birthday and hire date of a person (spec
  * 2026-11-05-cumpleanos-aniversarios), recorded by an admin in the portal and
  * readable by every active person, so the extension popup can show the
