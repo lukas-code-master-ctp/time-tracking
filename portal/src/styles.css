@@ -2356,3 +2356,101 @@ input[type='time'][aria-invalid='true'] {
   color: var(--muted);
   font-weight: 600;
 }
+
+/* ---------- Comunicados (spec 2026-11-05-comunicados) ---------- */
+
+.announcement-form {
+  display: grid;
+  gap: 14px;
+}
+
+.announcement-form .field {
+  max-width: 680px;
+}
+
+.announcement-form textarea {
+  min-height: 120px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.announcement-form textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.announcement-form textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.announcement-item .person-name {
+  overflow-wrap: anywhere;
+}
+
+.announcement-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.announcement-body {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.read-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.read-columns h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.read-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.read-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.read-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar.small-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+@media (max-width: 640px) {
+  .read-columns {
+    grid-template-columns: 1fr;
+  }
+}

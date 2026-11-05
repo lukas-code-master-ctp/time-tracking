@@ -4,6 +4,8 @@ import {
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Announcement,
+  type AnnouncementRead,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
@@ -30,7 +32,8 @@ export type BackendCall =
   | { op: 'putScreenshotMeta'; id: string; meta: ScreenshotMeta }
   | { op: 'createAbsence'; id: string; data: Absence }
   | { op: 'deleteAbsence'; id: string }
-  | { op: 'putBreak'; docId: string; data: ActiveBreak };
+  | { op: 'putBreak'; docId: string; data: ActiveBreak }
+  | { op: 'putAnnouncementRead'; docId: string; data: AnnouncementRead };
 
 export const ORG: OrgConfig = {
   allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -71,6 +74,10 @@ export class FakeBackend implements Remote {
   files = new Map<string, number>();
   screenshots = new Map<string, ScreenshotMeta>();
   breaks = new Map<string, ActiveBreak>();
+  /** `announcements/{id}` and `announcementReads/{id}` (spec 2026-11-05-comunicados). */
+  announcements = new Map<string, Announcement>();
+  announcementReads = new Map<string, AnnouncementRead>();
+  announcementFetches = 0;
 
   async currentUid(): Promise<string | null> {
     return this.uid;
@@ -178,6 +185,28 @@ export class FakeBackend implements Remote {
     if (a && a.status !== 'pending') throw new BackendError('permission-denied');
     this.calls.push({ op: 'deleteAbsence', id });
     this.absences.delete(id);
+  }
+
+  async listAnnouncements(max: number): Promise<WithId<unknown>[]> {
+    this.check();
+    this.announcementFetches++;
+    return [...this.announcements.entries()]
+      .map(([id, a]) => ({ ...structuredClone(a), id }))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, max);
+  }
+  async listAnnouncementReads(uid: string): Promise<string[]> {
+    this.check();
+    return [...this.announcementReads.values()].filter((r) => r.uid === uid).map((r) => r.announcementId);
+  }
+  async putAnnouncementRead(docId: string, data: AnnouncementRead): Promise<void> {
+    this.check();
+    // firestore.rules: the announcement exists; written once.
+    const existing = this.announcementReads.get(docId);
+    if (!this.announcements.has(data.announcementId)) throw new BackendError('permission-denied');
+    if (existing && JSON.stringify(existing) !== JSON.stringify(data)) throw new BackendError('permission-denied');
+    this.calls.push({ op: 'putAnnouncementRead', docId, data });
+    this.announcementReads.set(docId, data);
   }
 
   /** What autoCloseStaleSessions does on the server. */

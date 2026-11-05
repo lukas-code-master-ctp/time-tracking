@@ -112,6 +112,8 @@ describe('collections', () => {
       schedules: 'schedules',
       breaks: 'breaks',
       absences: 'absences',
+      announcements: 'announcements',
+      announcementReads: 'announcementReads',
     });
   });
 

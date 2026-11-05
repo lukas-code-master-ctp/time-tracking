@@ -2,7 +2,7 @@
  * Everything the service worker needs from Firebase, behind one interface
  * (Firestore/Storage in firebase.ts, a fake in the unit tests).
  */
-import type { Absence, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
+import type { Absence, AnnouncementRead, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
 import type { Backend } from './sync';
 
 export interface Remote extends Backend {
@@ -28,4 +28,10 @@ export interface Remote extends Backend {
   createAbsence(data: Absence): Promise<string>;
   /** Withdraws a request (the rules allow it only while pending). */
   deleteAbsence(id: string): Promise<void>;
+  /** Latest `announcements` (`orderBy createdAt desc`, at most `max`), raw (validated by the caller). Spec 2026-11-05-comunicados. */
+  listAnnouncements(max: number): Promise<WithId<unknown>[]>;
+  /** Ids of the announcements the person confirmed (`announcementReads where uid ==`). */
+  listAnnouncementReads(uid: string): Promise<string[]>;
+  /** `setDoc(announcementReads/{announcementId_uid})`. Online only: not queued. */
+  putAnnouncementRead(docId: string, data: AnnouncementRead): Promise<void>;
 }

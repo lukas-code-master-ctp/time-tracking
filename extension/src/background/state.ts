@@ -8,6 +8,7 @@
  * changes or overwrite each other's writes.
  */
 import { SlotAccumulator, type ActiveBreakSettings, type UserProfile } from '@timetracking/shared';
+import { announcementCacheFromJSON, type AnnouncementCache } from './announcements';
 import { breakStateFromJSON, type BreakState } from './breaks';
 import { dailyFromJSON, type DailySummary } from './daily';
 import { emptyQueue, queueFromJSON, type QueueState } from './queue';
@@ -90,6 +91,8 @@ export interface Meta {
   breaks: BreakState | null;
   /** Users who turned the active break reminders off on this device (kept across sign-outs). */
   breakOptOut: string[];
+  /** Internal announcements of the signed-in user (announcements.ts). Missing before 0.2.14. */
+  announcements: AnnouncementCache | null;
 }
 
 export function defaultMeta(): Meta {
@@ -105,6 +108,7 @@ export function defaultMeta(): Meta {
     reminders: null,
     breaks: null,
     breakOptOut: [],
+    announcements: null,
   };
 }
 
@@ -201,6 +205,7 @@ export class StateStore {
     this.meta.breakOptOut = Array.isArray(this.meta.breakOptOut)
       ? this.meta.breakOptOut.filter((u): u is string => typeof u === 'string')
       : [];
+    this.meta.announcements = announcementCacheFromJSON(this.meta.announcements);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);

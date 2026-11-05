@@ -9,7 +9,8 @@
  *   and today's schedule, only when configured), today's hours, activity
  *   (excluding meeting time) and time in web meetings, active breaks (when
  *   the organization turned them on: pending reminder, next one, on/off for
- *   this person), what is being
+ *   this person), internal announcements waiting for "Confirmo que lo
+ *   leí" (spec 2026-11-05-comunicados), what is being
  *   measured, pending uploads, sign out.
  *
  * Outside Chrome the popup closes when Google's window opens, so the result
@@ -299,6 +300,8 @@ function renderReady(s: StatusView): void {
   }
   root.append(card);
 
+  if (s.announcements.length > 0) root.append(renderAnnouncement(s.announcements));
+
   if (s.breaks) root.append(renderBreaks(s.breaks, on));
 
   // Today, in one row.
@@ -407,6 +410,26 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
       el('div', { className: 'small muted', textContent: detail }),
     ]),
     sw,
+  ]);
+}
+
+/**
+ * Internal announcement (spec 2026-11-05-comunicados): the oldest one not
+ * confirmed, with "1 de 3" when more are waiting. Plain text: textContent,
+ * line breaks kept by the CSS.
+ */
+function renderAnnouncement(list: StatusView['announcements']): HTMLElement {
+  const a = list[0]!;
+  const when = new Date(a.createdAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
+  return el('section', { className: 'card announcement', ariaLabel: 'Comunicado interno' }, [
+    el('div', { className: 'announcement-head' }, [
+      el('span', { className: 'eyebrow', textContent: 'Comunicado' }),
+      list.length > 1 ? el('span', { className: 'small muted', textContent: `1 de ${list.length}` }) : null,
+    ]),
+    el('div', { className: 'announcement-title', textContent: a.title }),
+    el('div', { className: 'small muted', textContent: `${a.authorName} · ${when}` }),
+    el('p', { className: 'small announcement-body', textContent: a.body }),
+    button(inFlight === 'announcements.ack' ? 'Confirmando…' : 'Confirmo que lo leí', 'primary', () => void act({ type: 'announcements.ack', id: a.id })),
   ]);
 }
 

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router';
 import { Layout } from './components/Layout';
 import { useSession } from './data/context';
 import { ActiveBreaksPage } from './pages/ActiveBreaksPage';
+import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { LoginPage, NoAccessPage, SplashPage } from './pages/LoginPage';
 import { MemberPage } from './pages/MemberPage';
@@ -31,6 +32,7 @@ export function App() {
             <Route path="colaboradores/invitaciones" element={<InvitationsPage />} />
             <Route path="invitaciones" element={<Navigate to="/colaboradores/invitaciones" replace />} />
             <Route path="pausa-activa" element={<ActiveBreaksPage />} />
+            <Route path="comunicados" element={<AnnouncementsPage />} />
             <Route path="configuracion" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
