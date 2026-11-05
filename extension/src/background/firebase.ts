@@ -51,12 +51,14 @@ import {
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
+  readCelebration,
   moodCountKey,
   moodVoteDocId,
   type Absence,
   type ActiveBreak,
   type AnnouncementRead,
   type ActivitySlot,
+  type Celebration,
   type MoodScore,
   type OrgConfig,
   type ScreenshotMeta,
@@ -187,6 +189,21 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     },
     async putAnnouncementRead(docId: string, data: AnnouncementRead) {
       await setDoc(doc(db, COLLECTIONS.announcementReads, docId), data);
+    },
+    async fetchCelebrations() {
+      try {
+        const snap = await getDocs(collection(db, COLLECTIONS.celebrations));
+        const out: (Celebration & { id: string })[] = [];
+        for (const d of snap.docs) {
+          const c = readCelebration(d.data());
+          if (c) out.push({ ...c, id: d.id });
+        }
+        return out;
+      } catch (err) {
+        // Rules not deployed yet: no celebrations.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
     },
   };
 }

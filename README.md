@@ -100,11 +100,11 @@ Desde la **extensión 0.2.16** ([spec](docs/specs/2026-11-05-pulso-de-animo.md))
 │                      │ ───────────────▶ │  screenshots                 │   invitaciones  │  - Configuración │
 └──────────────────────┘                  │ Cloud Storage (capturas)     │ ◀────────────── └──────────────────┘
                                           └──────────────────────────────┘
-                                                 │ correo (SMTP, opcional) ──▶ colaborador invitado
+                                                 │ correo (Resend, opcional) ▶ colaborador invitado
 ```
 
 - **Sin servidor propio**: la extensión y el portal escriben/leen Firestore y Storage directamente; las **reglas de seguridad** deciden qué puede hacer cada uno (un colaborador solo escribe y lee lo suyo; nadie cambia su propio rol).
-- **Cloud Functions** (región `southamerica-west1`, salvo las dos tareas programadas, que corren en `southamerica-east1` porque Cloud Scheduler no existe en Santiago): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación si `INVITE_EMAIL_ENABLED=true`; si no, solo lo registra en el log), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
+- **Cloud Functions** (región `southamerica-west1`, salvo las tareas programadas, que corren en `southamerica-east1` porque Cloud Scheduler no existe en Santiago): `joinOrg` (alta al primer login: valida dominio + invitación o admin inicial), `onInvitationWritten` (envía el correo de invitación con Resend si `EMAIL_ENABLED=true`; si no, solo lo registra en el log), `weeklyCelebrationsDigest` (lunes 8:00, resumen de cumpleaños y aniversarios de la semana a los administradores), `purgeOldScreenshots` (diaria, borra capturas más antiguas que la retención) y `autoCloseStaleSessions` (cada hora, cierra jornadas sin señal hace más de 30 min o abiertas más de 16 h).
 - Todos los tiempos se guardan como milisegundos epoch; los días se calculan en hora de Chile (`America/Santiago`).
 - Horario laboral: `config/schedule` (horario general: `week`, `holidays`, `toleranceMinutes`, `remindersEnabled`, `updatedAt`, `updatedBy`; lo escribe o borra solo un admin activo y lo lee cualquier usuario activo) y `schedules/{uid}` (excepción por persona: `week`, `updatedAt`, `updatedBy`; la escribe o borra solo un admin y la leen la propia persona y los admins). La lógica (tramos del día, pausa, cumplimiento) está en `packages/shared/src/schedule.ts` y la usan igual la extensión y el portal.
 
@@ -247,27 +247,25 @@ Como el ID coincide con el de la tienda, el login con Google funciona. Ojo: **lo
   ALLOWED_DOMAIN=impulseai.cl,compratuparcela.cl
   BOOTSTRAP_ADMINS=lukas@impulseai.cl
   EXTENSION_INSTALL_URL=https://chromewebstore.google.com/detail/.../<ID>
-  INVITE_EMAIL_ENABLED=false
+  EMAIL_ENABLED=false
+  EMAIL_FROM="Registro de jornada <no-responder@compratuparcela.cl>"
+  PORTAL_URL=https://<dominio del portal>
   ```
 
   - `ALLOWED_DOMAIN`: dominios permitidos separados por coma (de 1 a 10, sin `@`). Se usan hasta que exista `config/org`; el primer admin la crea con esta lista y desde entonces manda la lista de **Configuración → Dominios permitidos** del portal. Solo se aceptan correos exactos de esos dominios (no subdominios como `@sub.impulseai.cl`).
   - `BOOTSTRAP_ADMINS`: correos (separados por coma) que quedan como admin en su primer login sin invitación. Deben ser de un dominio permitido.
-  - `INVITE_EMAIL_ENABLED`: `true` o `false` (por defecto `false`). Con `false` (o sin la línea) no se envía el correo de invitación y el despliegue **no pide secretos SMTP**: `onInvitationWritten` se despliega igual y solo registra en el log el destinatario y el asunto. Comparte el enlace con **Copiar enlace de instalación** en Invitaciones. Para activar el correo más adelante: crea los secretos del paso 6, cambia a `true` y vuelve a desplegar.
+  - `EMAIL_ENABLED`: `true` o `false` (por defecto `false`; la línea antigua `INVITE_EMAIL_ENABLED=true` también vale). Con `false` no se envía ningún correo (invitación ni resumen semanal de cumpleaños) y el despliegue **no pide el secreto de Resend**: las funciones se despliegan igual y solo registran en el log el destinatario y el asunto. Comparte el enlace con **Copiar enlace de instalación** en Invitaciones. Para activar el correo: crea el secreto del paso 6, cambia a `true` y vuelve a desplegar.
+  - `EMAIL_FROM`: remitente en un dominio verificado en Resend. Sin él no se envía (solo se registra en el log).
+  - `PORTAL_URL` (opcional): enlace al portal en el resumen semanal.
 
-### 6. Secretos SMTP (correo de invitación, opcional)
+### 6. Correo con Resend (opcional)
 
-**Solo si pones `INVITE_EMAIL_ENABLED=true`** en el paso 5; con `false` sáltate este paso. Con `true`, la función de invitación declara los cinco secretos y `firebase deploy` exige que existan. Opciones recomendadas:
+**Solo si pones `EMAIL_ENABLED=true`** en el paso 5. Los correos (invitación y, los lunes a las 8:00, el resumen de cumpleaños y aniversarios de la semana para los administradores activos) se envían con la API de [Resend](https://resend.com):
 
-- Una cuenta de Workspace dedicada (p. ej. `no-responder@compratuparcela.cl`) con verificación en dos pasos y una **contraseña de aplicación**: host `smtp.gmail.com`, puerto `465`.
-- O el **SMTP relay** de Google Workspace (Consola de administración → Gmail → Enrutamiento → Servicio de relay SMTP): host `smtp-relay.gmail.com`, puerto `465` o `587`.
-
-```bash
-npx firebase functions:secrets:set SMTP_HOST     # smtp.gmail.com
-npx firebase functions:secrets:set SMTP_PORT     # 465
-npx firebase functions:secrets:set SMTP_USER     # no-responder@compratuparcela.cl
-npx firebase functions:secrets:set SMTP_PASS     # contraseña de aplicación
-npx firebase functions:secrets:set SMTP_FROM     # "Registro de jornada <no-responder@compratuparcela.cl>"
-```
+1. En Resend, agrega y verifica el dominio del remitente (p. ej. `compratuparcela.cl`: registros DNS SPF/DKIM que indica Resend).
+2. Crea una API key con permiso **Sending access**.
+3. Guárdala como secreto: `npx firebase functions:secrets:set RESEND_API_KEY --project prod`.
+4. Pon `EMAIL_ENABLED=true` y `EMAIL_FROM` en `functions/.env.<proyecto>` y despliega las funciones.
 
 Aunque el correo falle, el portal permite **copiar el enlace de instalación** para enviarlo por otro medio.
 
@@ -364,8 +362,8 @@ Medir la actividad de las personas trabajadoras tiene implicancias legales (Cód
 | Edge/Brave/Opera: la ventana de Google dice `redirect_uri_mismatch` | Falta `https://<ID>.chromiumapp.org/` en las URI de redireccionamiento del cliente web (paso 4.3). Una copia descomprimida con otro ID necesita su propia URI. |
 | El deploy pregunta "How many days do you want to keep container images…" y termina con "An unexpected error" | Es la política de limpieza de imágenes de las funciones. Configúrala una vez con `npx firebase functions:artifacts:setpolicy --location southamerica-west1 --days 7 --force --project prod` (y lo mismo con `--location southamerica-east1`) y vuelve a desplegar. |
 | El primer `firebase deploy` de functions falla con un error de permisos de Eventarc o de "service agent" | Es normal en proyectos nuevos: Google tarda unos minutos en crear los permisos de los disparadores. Espera 5–10 minutos y vuelve a correr el mismo `npx firebase deploy`. |
-| `firebase deploy` pide valores de `SMTP_*` o falla por secretos | `functions/.env.<proyecto>` tiene `INVITE_EMAIL_ENABLED=true` y faltan los secretos del paso 6 (`npx firebase functions:secrets:set …`). Si no quieres correo, pon `INVITE_EMAIL_ENABLED=false` y vuelve a desplegar. |
-| No llegan correos de invitación | Con `INVITE_EMAIL_ENABLED=false` (o sin la línea) no se envían: el log de `onInvitationWritten` dice "Correo de invitación desactivado". Con `true`, revisa los secretos SMTP y los logs (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |
+| `firebase deploy` pide `RESEND_API_KEY` o falla por secretos | `functions/.env.<proyecto>` tiene `EMAIL_ENABLED=true` (o `INVITE_EMAIL_ENABLED=true`) y falta el secreto del paso 6 (`npx firebase functions:secrets:set RESEND_API_KEY`). Si no quieres correo, pon `EMAIL_ENABLED=false` y vuelve a desplegar. |
+| No llegan correos | Con `EMAIL_ENABLED=false` (o sin la línea) no se envían: el log dice "… desactivado". Con `true`, revisa `EMAIL_FROM` (dominio verificado en Resend), el secreto `RESEND_API_KEY` y los logs (`npx firebase functions:log`). Mientras tanto, copia el enlace desde Invitaciones. |
 | El portal no muestra capturas | Capturas desactivadas en Configuración, o el colaborador estaba fuera de Chrome / en una página que no es http(s) en el instante sorteado. |
 | Jornada "En jornada" que ya terminó | Sin señal hace > 30 min el portal la muestra "Fuera"; el cierre automático la cierra en la próxima hora. |
 | Guardar el horario falla con "permisos" (`permission-denied`) | Faltan las reglas nuevas: `npx firebase deploy --only firestore:rules --project prod` (ver [Despliegue de horarios](#despliegue-de-horarios-orden-obligatorio-extensión-020)). |

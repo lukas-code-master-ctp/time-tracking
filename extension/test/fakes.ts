@@ -6,6 +6,7 @@ import {
   type ActivitySlot,
   type Announcement,
   type AnnouncementRead,
+  type Celebration,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
@@ -56,6 +57,8 @@ export class FakeBackend implements Remote {
   sessions = new Map<string, Session>();
   /** `absences/{id}` (spec 2026-10-22-solicitud-ausencias). */
   absences = new Map<string, Absence>();
+  celebrations = new Map<string, Celebration>();
+  celebrationFetches = 0;
   org: OrgConfig | null = { ...ORG };
   orgFetches = 0;
   /** Raw `config/schedule` (null = missing). */
@@ -182,6 +185,11 @@ export class FakeBackend implements Remote {
     this.screenshots.set(id, meta);
   }
 
+  async fetchCelebrations(): Promise<WithId<Celebration>[]> {
+    this.check();
+    this.celebrationFetches++;
+    return [...this.celebrations.entries()].map(([id, c]) => ({ ...structuredClone(c), id }));
+  }
   async listAbsences(uid: string): Promise<WithId<Absence>[]> {
     this.check();
     return [...this.absences.entries()].filter(([, a]) => a.uid === uid).map(([id, a]) => ({ ...structuredClone(a), id }));

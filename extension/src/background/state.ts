@@ -7,7 +7,14 @@
  * Chrome events (idle, tabs, alarms, messages) never interleave half-applied
  * changes or overwrite each other's writes.
  */
-import { SlotAccumulator, type ActiveBreakSettings, type UserProfile } from '@timetracking/shared';
+import {
+  SlotAccumulator,
+  readCelebration,
+  type ActiveBreakSettings,
+  type Celebration,
+  type UserProfile,
+  type WithId,
+} from '@timetracking/shared';
 import { announcementCacheFromJSON, type AnnouncementCache } from './announcements';
 import { breakStateFromJSON, type BreakState } from './breaks';
 import { dailyFromJSON, type DailySummary } from './daily';
@@ -72,6 +79,14 @@ export interface OrgConfigCache {
   fetchedAt: number;
 }
 
+/** Last `celebrations` read (spec 2026-11-05-cumpleanos-aniversarios). */
+export interface CelebrationsCache {
+  /** User that read them (readable by active users only). */
+  uid: string;
+  items: WithId<Celebration>[];
+  fetchedAt: number;
+}
+
 export interface Meta {
   /** Last time the current block + heartbeat were queued (every ~60 s). */
   lastCurrentSyncAt: number;
@@ -95,6 +110,8 @@ export interface Meta {
   breakOptOut: string[];
   /** Internal announcements of the signed-in user (announcements.ts). Missing before 0.2.14. */
   announcements: AnnouncementCache | null;
+  /** Team birthdays and anniversaries; null = not read yet. Missing before 0.2.17. */
+  celebrations: CelebrationsCache | null;
   /**
    * Mood pulse of today (spec 2026-11-05-pulso-de-animo): `pending` after the
    * person closed the work day, until she answers or skips it; `done` after
@@ -133,8 +150,23 @@ export function defaultMeta(): Meta {
     breaks: null,
     breakOptOut: [],
     announcements: null,
+    celebrations: null,
     mood: null,
   };
+}
+
+/** Rehydrates a stored {@link CelebrationsCache}; null when missing or broken. */
+export function celebrationsCacheFromJSON(raw: unknown): CelebrationsCache | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Partial<CelebrationsCache>;
+  if (typeof c.uid !== 'string' || typeof c.fetchedAt !== 'number' || !Array.isArray(c.items)) return null;
+  const items: WithId<Celebration>[] = [];
+  for (const it of c.items as unknown[]) {
+    const id = (it as { id?: unknown } | null)?.id;
+    const read = readCelebration(it);
+    if (read && typeof id === 'string') items.push({ ...read, id });
+  }
+  return { uid: c.uid, items, fetchedAt: c.fetchedAt };
 }
 
 /** Serializes async critical sections (FIFO). */
@@ -231,6 +263,7 @@ export class StateStore {
       ? this.meta.breakOptOut.filter((u): u is string => typeof u === 'string')
       : [];
     this.meta.announcements = announcementCacheFromJSON(this.meta.announcements);
+    this.meta.celebrations = celebrationsCacheFromJSON(this.meta.celebrations);
     this.meta.mood = moodStateFromJSON(this.meta.mood);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);

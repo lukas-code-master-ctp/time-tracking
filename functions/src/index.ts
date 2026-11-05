@@ -8,14 +8,13 @@
  *   Read from `process.env` on purpose: string params without a value would
  *   make the CLI prompt (and block `emulators:exec`).
  * - Param `EXTENSION_INSTALL_URL` (has a default, so it never prompts).
- * - Env `INVITE_EMAIL_ENABLED` (`true`/`false`, default `false`): invitation
- *   email is opt-in. Read at module load (the CLI loads `.env` before the
- *   deploy analysis). When not `true`, no secret is declared and the email is
- *   only logged (recipient and subject).
- * - Secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
- *   (Secret Manager), declared only with `INVITE_EMAIL_ENABLED=true`. Only
- *   `onInvitationWritten` binds them, and never in the emulator (which only
- *   logs the email).
+ * - Email (Resend, see core/email.ts): env `EMAIL_ENABLED` (`true`/`false`,
+ *   default `false`; the older `INVITE_EMAIL_ENABLED` also works) and
+ *   `EMAIL_FROM` (sender on a domain verified in Resend), secret
+ *   `RESEND_API_KEY` declared only when enabled and bound only outside the
+ *   emulator (which only logs). Used by `onInvitationWritten` and
+ *   `weeklyCelebrationsDigest`.
+ * - Env `PORTAL_URL` (optional): link to the portal in the weekly digest.
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -26,7 +25,6 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
-import nodemailer from 'nodemailer';
 import {
   COLLECTIONS,
   DEFAULT_TIME_ZONE,
@@ -34,21 +32,22 @@ import {
   SCHEDULER_REGION,
   emailKey,
   resolveConfig,
+  dateKey,
   type Invitation,
 } from '@timetracking/shared';
 import { joinOrgCore } from './core/join.js';
+import { buildInvitationEmail, shouldSendInvitationEmail } from './core/invitationEmail.js';
 import {
-  SMTP_SECRET_NAMES,
-  buildInvitationEmail,
+  RESEND_SECRET_NAME,
   deliverEmail,
-  isInviteEmailEnabled,
-  resolveSmtpConfig,
-  shouldBindSmtpSecrets,
-  shouldDeclareSmtpSecrets,
-  shouldSendInvitationEmail,
-  type SendMail,
-  type SmtpSecretName,
-} from './core/invitationEmail.js';
+  emailFrom,
+  isEmailEnabled,
+  resendSender,
+  shouldBindEmailSecret,
+  shouldDeclareEmailSecret,
+  type ResendConfig,
+} from './core/email.js';
+import { sendCelebrationsDigestCore } from './core/celebrationsDigest.js';
 import { purgeOldScreenshotsCore } from './core/purge.js';
 import { autoCloseStaleSessionsCore } from './core/autoClose.js';
 
@@ -63,28 +62,29 @@ const EXTENSION_INSTALL_URL = defineString('EXTENSION_INSTALL_URL', {
 const isEmulator = (): boolean => process.env.FUNCTIONS_EMULATOR === 'true';
 
 /** Decided once at module load (the CLI loads `functions/.env.<project>` before analysing for deploy). */
-const INVITE_EMAIL_ENABLED = isInviteEmailEnabled(process.env);
+const EMAIL_ENABLED = isEmailEnabled(process.env);
 
-// When email is disabled the secrets are not declared at all, so `firebase deploy`
-// does not require them in Secret Manager.
-const SMTP_SECRETS = shouldDeclareSmtpSecrets({ emailEnabled: INVITE_EMAIL_ENABLED })
-  ? (Object.fromEntries(SMTP_SECRET_NAMES.map((name) => [name, defineSecret(name)])) as Record<
-      SmtpSecretName,
-      ReturnType<typeof defineSecret>
-    >)
-  : null;
+// When email is disabled the secret is not declared at all, so `firebase deploy`
+// does not require it in Secret Manager.
+const RESEND_API_KEY = shouldDeclareEmailSecret({ emailEnabled: EMAIL_ENABLED }) ? defineSecret(RESEND_SECRET_NAME) : null;
 
-/** Secret value, or undefined when it is not available (disabled, or emulator without `.secret.local`). */
-function secretValue(name: SmtpSecretName): string | undefined {
-  if (!SMTP_SECRETS) return undefined;
+/** Secrets bound by the functions that send email (none when disabled or in the emulator). */
+const EMAIL_SECRETS = RESEND_API_KEY && shouldBindEmailSecret({ emailEnabled: EMAIL_ENABLED, isEmulator: isEmulator() }) ? [RESEND_API_KEY] : [];
+
+/** Resend settings, or null when something is missing (then the email is only logged). */
+function resendConfig(): ResendConfig | null {
+  if (!RESEND_API_KEY || isEmulator()) return null;
+  let apiKey: string | undefined;
   try {
-    const v = SMTP_SECRETS[name].value();
-    return v ? v : undefined;
+    apiKey = RESEND_API_KEY.value().trim() || undefined;
   } catch {
-    return undefined;
+    apiKey = undefined;
   }
+  const from = emailFrom(process.env);
+  return apiKey && from ? { apiKey, from } : null;
 }
 
+const sendEmail = resendSender();
 
 // ---------- joinOrg ----------
 
@@ -114,35 +114,16 @@ export const joinOrg = onCall(async (request) => {
 
 // ---------- onInvitationWritten ----------
 
-const sendMail: SendMail = async (smtp, message) => {
-  const transport = nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.secure,
-    auth: { user: smtp.user, pass: smtp.pass },
-  });
-  await transport.sendMail({
-    from: smtp.from,
-    to: message.to,
-    subject: message.subject,
-    text: message.text,
-    html: message.html,
-  });
-};
-
 export const onInvitationWritten = onDocumentWritten(
   {
     document: `${COLLECTIONS.invitations}/{invitationId}`,
     // Bound only when email is enabled and outside the emulator. The emulator never
     // sends, and binding would make it read them from Secret Manager (or ask for
     // `.secret.local`) on every invocation. Deploy/discovery runs without
-    // FUNCTIONS_EMULATOR and binds them only with INVITE_EMAIL_ENABLED=true.
+    // FUNCTIONS_EMULATOR and binds it only with EMAIL_ENABLED=true.
     // The function stays deployed when email is off: it just logs, so enabling
     // email later is only changing the variable and deploying again.
-    secrets:
-      SMTP_SECRETS && shouldBindSmtpSecrets({ emailEnabled: INVITE_EMAIL_ENABLED, isEmulator: isEmulator() })
-        ? Object.values(SMTP_SECRETS)
-        : [],
+    secrets: EMAIL_SECRETS,
   },
   async (event) => {
     const before = event.data?.before.data() as Invitation | undefined;
@@ -152,11 +133,12 @@ export const onInvitationWritten = onDocumentWritten(
     const to = emailKey(after?.email ?? event.params.invitationId);
     const message = buildInvitationEmail({ to, installUrl: EXTENSION_INSTALL_URL.value() });
     await deliverEmail({
+      label: 'Correo de invitación',
       message,
-      smtp: isEmulator() || !INVITE_EMAIL_ENABLED ? null : resolveSmtpConfig(secretValue),
+      config: resendConfig(),
       isEmulator: isEmulator(),
-      emailEnabled: INVITE_EMAIL_ENABLED,
-      sendMail,
+      emailEnabled: EMAIL_ENABLED,
+      send: sendEmail,
       logger,
     });
   },
@@ -185,5 +167,29 @@ export const autoCloseStaleSessions = onSchedule(
       closed: result.closed.length,
       conflicts: result.conflicts.length,
     });
+  },
+);
+
+// Spec 2026-11-05-cumpleanos-aniversarios: Mondays 08:00, the week's birthdays
+// and work anniversaries to the active admins.
+export const weeklyCelebrationsDigest = onSchedule(
+  {
+    schedule: 'every monday 08:00',
+    timeZone: DEFAULT_TIME_ZONE,
+    region: SCHEDULER_REGION,
+    secrets: EMAIL_SECRETS,
+  },
+  async () => {
+    const result = await sendCelebrationsDigestCore({
+      db: getFirestore(),
+      monday: dateKey(Date.now(), DEFAULT_TIME_ZONE),
+      portalUrl: process.env.PORTAL_URL?.trim() || null,
+      config: resendConfig(),
+      isEmulator: isEmulator(),
+      emailEnabled: EMAIL_ENABLED,
+      send: sendEmail,
+      logger,
+    });
+    logger.info('Resumen semanal de cumpleaños terminado', result);
   },
 );

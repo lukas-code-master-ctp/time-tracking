@@ -47,6 +47,7 @@ import {
   absenceOverlapsRange,
   emailKey,
   readAllowedDomains,
+  readCelebration,
   readPersonSchedule,
   readScheduleConfig,
   type Absence,
@@ -54,6 +55,7 @@ import {
   type ActivitySlot,
   type Announcement,
   type AnnouncementRead,
+  type Celebration,
   type Invitation,
   type MoodWeek,
   type OrgConfig,
@@ -274,6 +276,24 @@ export function createFirebaseBackend(): Backend {
         throw err;
       }
     },
+    async listCelebrations() {
+      try {
+        const snap = await getDocs(collection(db, COLLECTIONS.celebrations));
+        const out: WithId<Celebration>[] = [];
+        for (const d of snap.docs) {
+          const c = readCelebration(d.data());
+          if (c) out.push({ ...c, id: d.id });
+        }
+        return out;
+      } catch (err) {
+        // Rules of the celebrations not deployed yet: the page works without them.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+          console.warn('[timetracking] no se pudieron leer los cumpleaños y aniversarios', err);
+          return [];
+        }
+        throw err;
+      }
+    },
     async listAnnouncementReads() {
       try {
         const snap = await getDocs(collection(db, COLLECTIONS.announcementReads));
@@ -303,6 +323,9 @@ export function createFirebaseBackend(): Backend {
     },
     async deleteAnnouncement(id) {
       await deleteDoc(doc(db, COLLECTIONS.announcements, id));
+    },
+    async saveCelebration(uid, celebration) {
+      await setDoc(doc(db, COLLECTIONS.celebrations, uid), celebration);
     },
     screenshotUrl(storagePath) {
       return getDownloadURL(ref(storage, storagePath));

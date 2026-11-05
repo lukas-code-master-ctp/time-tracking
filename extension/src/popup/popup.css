@@ -562,3 +562,87 @@ form.stack label {
   color: var(--muted);
   text-align: left;
 }
+
+/* Team birthdays and work anniversaries (spec 2026-11-05-cumpleanos-aniversarios): one row, the rest folded. */
+.celebrations {
+  padding: 10px 12px 10px 14px;
+}
+
+.celebrations.has-today {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.celebrations summary {
+  list-style: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.celebrations summary::-webkit-details-marker {
+  display: none;
+}
+
+.celebrations summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.cel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 22px;
+}
+
+.cel-icon {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.cel-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cel-when {
+  flex: none;
+}
+
+.cel-more {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.has-today .cel-more {
+  background: var(--surface);
+}
+
+.celebrations[open] .cel-more {
+  visibility: hidden;
+}
+
+.cel-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+}
+
+.cel-list .cel-text {
+  font-weight: 550;
+}

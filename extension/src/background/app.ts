@@ -37,9 +37,11 @@ import {
   announcementReadId,
   readAnnouncement,
   readScheduleConfig,
+  upcomingCelebrations,
   validateAbsence,
   type Absence,
   type ActiveBreakSettings,
+  type Celebration,
   type OrgConfig,
   type UserProfile,
   type WithId,
@@ -101,6 +103,10 @@ import type { StateStore, StorageAreaLike } from './state';
 import { SyncEngine, errorCode } from './sync';
 import { Tracker } from './tracker';
 
+/** Team birthdays and anniversaries are re-read at most this often (they change rarely). */
+export const CELEBRATIONS_REFRESH_MS = 3 * 60 * 60_000;
+/** The popup shows the celebrations of today and the next days. */
+export const CELEBRATIONS_DAYS_AHEAD = 7;
 /** `config/org` is re-read at most this often from the pulse (spec: every 5 min). */
 export const ORG_CONFIG_REFRESH_MS = 5 * 60_000;
 /** …and when the worker wakes up, if older than this. */
@@ -290,6 +296,9 @@ export class App {
       this.refreshOrgConfig(maxAgeMs).catch(logError('config/org')),
       this.refreshSchedule(maxAgeMs).catch(logError('config/schedule')),
       this.refreshAnnouncements(maxAgeMs).catch(logError('comunicados')),
+      this.refreshCelebrations(maxAgeMs === 0 ? 0 : Math.max(maxAgeMs, CELEBRATIONS_REFRESH_MS)).catch(
+        logError('celebrations'),
+      ),
     ]);
   }
 
@@ -377,6 +386,34 @@ export class App {
       await this.store.save('meta');
     });
     await chrome.notifications.clear(announcementNotificationId(id)).catch(() => undefined);
+  }
+
+  /**
+   * Reads `celebrations` (spec 2026-11-05-cumpleanos-aniversarios) when the
+   * cache is older than `maxAgeMs`, for a joined user. On failure the
+   * previous cache stays.
+   */
+  async refreshCelebrations(maxAgeMs: number): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const due = await this.store.run(() => {
+      const { profile, profileUid, celebrations } = this.store.meta;
+      if (!user || !profile || profileUid !== user.uid) return false;
+      return !celebrations || celebrations.uid !== user.uid || this.now() - celebrations.fetchedAt >= maxAgeMs;
+    });
+    if (!user || !due) return;
+    let items;
+    try {
+      items = await this.backend.fetchCelebrations();
+    } catch (err) {
+      console.warn(`[timetracking] no se pudieron leer los cumpleaños (${errorCode(err)})`);
+      return;
+    }
+    await this.store.run(async () => {
+      if (this.store.meta.profileUid !== user.uid) return; // signed out meanwhile
+      this.store.meta.celebrations = { uid: user.uid, items, fetchedAt: this.now() };
+      await this.store.save('meta');
+    });
   }
 
   /**
@@ -1067,6 +1104,7 @@ export class App {
       this.store.meta.joinError = null;
       this.store.meta.org = null;
       this.store.meta.schedule = null;
+      this.store.meta.celebrations = null;
       this.store.meta.reminders = null;
       const pendingBreak = this.store.meta.breaks?.pending ?? null;
       this.store.meta.breaks = null;
@@ -1141,6 +1179,9 @@ export class App {
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
         breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
         announcements: profile && user ? unreadAnnouncements(meta.announcements, this.activeUid(user.uid)) : [],
+        celebrations: profile && user && meta.celebrations?.uid === user.uid
+          ? celebrationsView(meta.celebrations.items, user.uid, dateKey(this.now(), DEFAULT_TIME_ZONE))
+          : [],
         mood: this.moodView(profile && user ? user.uid : null, org?.moodPulse === true),
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
@@ -1150,6 +1191,26 @@ export class App {
       };
     });
   }
+}
+
+/**
+ * Celebrations for the popup: today's first, then those of tomorrow of the
+ * people the signed-in person is boss of (warned the day before), then the
+ * rest of the week, soonest first.
+ */
+export function celebrationsView(
+  items: WithId<Celebration>[],
+  uid: string,
+  today: string,
+): StatusView['celebrations'] {
+  const list = upcomingCelebrations(items, today, CELEBRATIONS_DAYS_AHEAD).map((c) => ({
+    ...c,
+    self: c.uid === uid,
+    managed: c.uid !== uid && c.managerUid === uid,
+  }));
+  const rank = (c: (typeof list)[number]): number => (c.daysAway === 0 ? 0 : c.managed && c.daysAway === 1 ? 1 : 2);
+  // Array.prototype.sort is stable: inside each group the order stays.
+  return list.sort((a, b) => rank(a) - rank(b));
 }
 
 function logError(what: string): (err: unknown) => void {

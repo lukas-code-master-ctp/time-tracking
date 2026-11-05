@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { useSession } from './data/context';
 import { ActiveBreaksPage } from './pages/ActiveBreaksPage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
+import { CelebrationsPage } from './pages/CelebrationsPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { LoginPage, NoAccessPage, SplashPage } from './pages/LoginPage';
 import { MemberPage } from './pages/MemberPage';
@@ -31,6 +32,7 @@ export function App() {
             <Route path="colaborador/:uid" element={<MemberPage />} />
             <Route path="colaboradores" element={<UsersPage />} />
             <Route path="colaboradores/invitaciones" element={<InvitationsPage />} />
+            <Route path="colaboradores/fechas" element={<CelebrationsPage />} />
             <Route path="invitaciones" element={<Navigate to="/colaboradores/invitaciones" replace />} />
             <Route path="pausa-activa" element={<ActiveBreaksPage />} />
             <Route path="comunicados" element={<AnnouncementsPage />} />

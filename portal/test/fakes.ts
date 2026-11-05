@@ -7,6 +7,7 @@ import {
   type ActivitySlot,
   type Announcement,
   type AnnouncementRead,
+  type Celebration,
   type Invitation,
   type MoodWeek,
   type OrgConfig,
@@ -37,6 +38,8 @@ export interface FakeDb {
   /** Internal announcements and their read confirmations (optional). */
   announcements?: WithId<Announcement>[];
   announcementReads?: AnnouncementRead[];
+  /** Birthdays and hire dates (optional: most tests have none). */
+  celebrations?: WithId<Celebration>[];
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
 }
@@ -107,6 +110,10 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     },
     deleteAnnouncement: async (id) => {
       db.announcements = (db.announcements ?? []).filter((a) => a.id !== id);
+    },
+    listCelebrations: async () => [...(db.celebrations ?? [])],
+    saveCelebration: async (uid, c) => {
+      db.celebrations = [...(db.celebrations ?? []).filter((x) => x.id !== uid), { ...c, id: uid }];
     },
     screenshotUrl: async (path) => `https://example.test/${encodeURIComponent(path)}`,
   };

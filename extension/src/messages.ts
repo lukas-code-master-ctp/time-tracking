@@ -8,7 +8,15 @@
  * popup / consent page → service worker (request/response):
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
-import { isMoodScore, type Absence, type AbsenceType, type Role, type UserStatus, type WithId } from '@timetracking/shared';
+import {
+  isMoodScore,
+  type Absence,
+  type AbsenceType,
+  type Role,
+  type UpcomingCelebration,
+  type UserStatus,
+  type WithId,
+} from '@timetracking/shared';
 import type { ScheduleView } from './background/schedule';
 
 // ---------- content script ----------
@@ -180,6 +188,13 @@ export interface StatusView {
    * (spec 2026-11-05-comunicados); [] when there are none or before joining.
    */
   announcements: { id: string; title: string; body: string; authorName: string; createdAt: number }[];
+  /**
+   * Team birthdays and work anniversaries of today and the next 7 days
+   * (spec 2026-11-05-cumpleanos-aniversarios), soonest first; `self`: the
+   * signed-in person's own; `managed`: the signed-in person is their boss
+   * (the popup warns them the day before). [] when none or not read yet.
+   */
+  celebrations: (UpcomingCelebration & { self: boolean; managed: boolean })[];
   /**
    * Mood pulse (spec 2026-11-05-pulso-de-animo); null = the organization has
    * it off. `pending`: the person closed today's work day and has not answered

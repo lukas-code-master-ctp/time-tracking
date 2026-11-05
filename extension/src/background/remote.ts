@@ -2,7 +2,7 @@
  * Everything the service worker needs from Firebase, behind one interface
  * (Firestore/Storage in firebase.ts, a fake in the unit tests).
  */
-import type { Absence, AnnouncementRead, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
+import type { Absence, AnnouncementRead, Celebration, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
 import type { Backend } from './sync';
 
 export interface Remote extends Backend {
@@ -34,4 +34,9 @@ export interface Remote extends Backend {
   listAnnouncementReads(uid: string): Promise<string[]>;
   /** `setDoc(announcementReads/{announcementId_uid})`. Online only: not queued. */
   putAnnouncementRead(docId: string, data: AnnouncementRead): Promise<void>;
+  /**
+   * Every valid `celebrations/{uid}` (spec 2026-11-05-cumpleanos-aniversarios);
+   * `[]` while the rules are not deployed (permission-denied).
+   */
+  fetchCelebrations(): Promise<WithId<Celebration>[]>;
 }

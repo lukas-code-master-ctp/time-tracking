@@ -8,6 +8,7 @@ import type {
   ActivitySlot,
   Announcement,
   AnnouncementRead,
+  Celebration,
   Invitation,
   MoodWeek,
   OrgConfig,
@@ -88,6 +89,10 @@ export interface DataSource {
   /** Archives (a time) or brings back (null) an announcement. */
   setAnnouncementArchived(id: string, archivedAt: number | null): Promise<void>;
   deleteAnnouncement(id: string): Promise<void>;
+  /** Every valid `celebrations/{uid}` (id = uid). `[]` while the rules are not deployed. */
+  listCelebrations(): Promise<WithId<Celebration>[]>;
+  /** Writes the whole `celebrations/{uid}`. */
+  saveCelebration(uid: string, celebration: Celebration): Promise<void>;
   /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
   listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
   /** Download URL of a Storage object (admins may read every screenshot). */
