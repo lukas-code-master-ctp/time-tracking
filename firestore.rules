@@ -18,6 +18,10 @@ rules_version = '2';
 // - `announcements` (spec 2026-11-05-comunicados) are published, archived
 //   and deleted by an admin and read by every active person, who confirms
 //   the reading once in `announcementReads`.
+// - Mood pulse (spec 2026-11-05-pulso-de-animo) is anonymous: `moodWeeks`
+//   holds only counters (admins read them); `moodVotes` says which days the
+//   person answered, never what (only she reads it). A counter grows by one
+//   only in the same write that adds a new day to the person's vote.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -106,7 +110,7 @@ service cloud.firestore {
                                 'screenshotRetentionDays', 'pauseTimerAtLunch',
                                 'activeBreaksEnabled', 'activeBreakMode',
                                 'activeBreakIntervalMinutes', 'activeBreaksPerDay',
-                                'activeBreakMinutes', 'updatedAt', 'updatedBy'])
+                                'activeBreakMinutes', 'moodPulseEnabled', 'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
         && validDomainList(d.allowedDomains)
@@ -129,6 +133,8 @@ service cloud.firestore {
         && (!('activeBreakMinutes' in d)
             || (d.activeBreakMinutes is int
                 && d.activeBreakMinutes >= 1 && d.activeBreakMinutes <= 15))
+        // Mood pulse (optional; spec 2026-11-05-pulso-de-animo).
+        && (!('moodPulseEnabled' in d) || d.moodPulseEnabled is bool)
         && d.screenshotRetentionDays is int
         && d.screenshotRetentionDays >= 1 && d.screenshotRetentionDays <= 3650
         && d.updatedAt is int
@@ -542,6 +548,90 @@ service cloud.firestore {
         && ownsExisting()
         && validAnnouncementRead(incoming(), docId)
         && changedKeys().size() == 0;
+      allow delete: if false;
+    }
+
+    // ---------- mood pulse (spec 2026-11-05-pulso-de-animo) ----------
+
+    // ISO week 'YYYY-Www' (isValidWeekKey in packages/shared/src/mood.ts).
+    function validWeekKey(w) {
+      return w is string && w.matches('[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])');
+    }
+
+    // 1–7 unique 'YYYY-MM-DD' strings (same technique as validHolidays).
+    function validVoteDates(list) {
+      return list is list && list.size() >= 1 && list.size() <= 7
+        && list.toSet().size() == list.size()
+        && list.join(',').size() == 11 * list.size() - 1
+        && list.join(',').matches(
+          '[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(,[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))*');
+    }
+
+    function votePath(week) {
+      return /databases/$(database)/documents/moodVotes/$(request.auth.uid + '_' + week);
+    }
+
+    // This write adds exactly one day to the caller's vote of `week`.
+    function addsOneVote(week) {
+      return existsAfter(votePath(week))
+        && ((!exists(votePath(week)) && getAfter(votePath(week)).data.dates.size() == 1)
+            || (exists(votePath(week))
+                && getAfter(votePath(week)).data.dates.size() == get(votePath(week)).data.dates.size() + 1));
+    }
+
+    function count(d, k) {
+      return d.get(k, 0);
+    }
+
+    // Counter k stays or grows by one.
+    function sameOrPlusOne(k) {
+      return incoming().get(k, 0) is int
+        && (count(incoming(), k) == count(resource.data, k)
+            || count(incoming(), k) == count(resource.data, k) + 1);
+    }
+
+    function validMoodKeys(d) {
+      return d.keys().hasOnly(['n1', 'n2', 'n3', 'n4', 'n5']);
+    }
+
+    match /moodWeeks/{week} {
+      allow read: if isAdmin();
+      // First answer of the week: one counter at 1.
+      allow create: if isActive() && validWeekKey(week)
+        && validMoodKeys(incoming()) && incoming().keys().size() == 1
+        && incoming()[incoming().keys()[0]] == 1
+        && addsOneVote(week);
+      // Exactly one counter grows by one.
+      allow update: if isActive() && validWeekKey(week)
+        && validMoodKeys(incoming())
+        && changedKeys().size() == 1
+        && sameOrPlusOne('n1') && sameOrPlusOne('n2') && sameOrPlusOne('n3')
+        && sameOrPlusOne('n4') && sameOrPlusOne('n5')
+        && addsOneVote(week);
+      allow delete: if false;
+    }
+
+    function validMoodVote(d, docId) {
+      return d.keys().hasOnly(['uid', 'week', 'dates'])
+        && d.keys().hasAll(['uid', 'week', 'dates'])
+        && d.uid == request.auth.uid
+        && validWeekKey(d.week)
+        && docId == d.uid + '_' + d.week
+        && validVoteDates(d.dates);
+    }
+
+    match /moodVotes/{docId} {
+      // Nobody else, not even an admin: it would tell who answered.
+      allow get: if isActive() && ownsExisting();
+      allow list: if false;
+      allow create: if isActive() && validMoodVote(incoming(), docId)
+        && incoming().dates.size() == 1;
+      // Only new days are added.
+      allow update: if isActive() && ownsExisting()
+        && validMoodVote(incoming(), docId)
+        && changedKeys().hasOnly(['dates'])
+        && incoming().dates.size() == resource.data.dates.size() + 1
+        && incoming().dates.hasAll(resource.data.dates);
       allow delete: if false;
     }
 

@@ -9,6 +9,7 @@ import type {
   Announcement,
   AnnouncementRead,
   Invitation,
+  MoodWeek,
   OrgConfig,
   PersonSchedule,
   Role,
@@ -87,6 +88,8 @@ export interface DataSource {
   /** Archives (a time) or brings back (null) an announcement. */
   setAnnouncementArchived(id: string, archivedAt: number | null): Promise<void>;
   deleteAnnouncement(id: string): Promise<void>;
+  /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
+  listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
   /** Download URL of a Storage object (admins may read every screenshot). */
   screenshotUrl(storagePath: string): Promise<string>;
 }

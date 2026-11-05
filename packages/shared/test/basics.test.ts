@@ -114,6 +114,8 @@ describe('collections', () => {
       absences: 'absences',
       announcements: 'announcements',
       announcementReads: 'announcementReads',
+      moodWeeks: 'moodWeeks',
+      moodVotes: 'moodVotes',
     });
   });
 

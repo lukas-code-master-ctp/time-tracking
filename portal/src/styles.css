@@ -41,6 +41,12 @@
   --sch-mark-halo: #ffffff;
   --radius: 14px;
   --radius-sm: 10px;
+  /* Mood pulse scale (1 = muy mal … 5 = muy bien), same in both themes. */
+  --mood-1: #d9534f;
+  --mood-2: #ef9a4a;
+  --mood-3: #8a94a3;
+  --mood-4: #5fb883;
+  --mood-5: #23864f;
   --shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
   --shadow-lg: 0 12px 32px -8px rgb(15 23 42 / 0.18), 0 4px 8px -4px rgb(15 23 42 / 0.08);
   --glass: rgb(255 255 255 / 0.78);
@@ -2452,5 +2458,96 @@ input[type='time'][aria-invalid='true'] {
 @media (max-width: 640px) {
   .read-columns {
     grid-template-columns: 1fr;
+/* ---------- Pulso de ánimo ---------- */
+
+.mood-legend {
+  display: flex;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.mood-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mood-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.mood-1 { background: var(--mood-1); }
+.mood-2 { background: var(--mood-2); }
+.mood-3 { background: var(--mood-3); }
+.mood-4 { background: var(--mood-4); }
+.mood-5 { background: var(--mood-5); }
+
+.mood-week {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 64px 96px;
+  align-items: center;
+  gap: 12px;
+}
+
+.mood-week-label {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mood-week-avg {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mood-week-n {
+  text-align: right;
+}
+
+.mood-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.mood-seg {
+  flex-basis: 0;
+  min-width: 4px;
+}
+
+.mood-avg {
+  white-space: nowrap;
+}
+
+.mood-up {
+  color: var(--ok);
+}
+
+.mood-down {
+  color: var(--danger-text);
+}
+
+@media (max-width: 560px) {
+  .mood-week {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+
+  .mood-week-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .mood-week-n {
+    display: none;
   }
 }

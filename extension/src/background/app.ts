@@ -29,7 +29,10 @@ import {
   dateKey,
   exerciseById,
   exerciseInstructions,
+  isoWeekKey,
   readActiveBreakSettings,
+  readMoodPulseEnabled,
+  type MoodScore,
   readPersonSchedule,
   announcementReadId,
   readAnnouncement,
@@ -274,6 +277,7 @@ export class App {
         blurScreenshots: config?.blurScreenshots !== false,
         pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
         activeBreaks: readActiveBreakSettings(config),
+        moodPulse: readMoodPulseEnabled(config),
         fetchedAt: this.now(),
       };
       await this.store.save('meta');
@@ -542,7 +546,7 @@ export class App {
         // lunchEnd only has a button in its "¿Retomar la jornada?" variant.
         await this.startWorkDay();
       } else if (reminder.kind === 'end') {
-        await this.session.stop();
+        await this.closeWorkDay();
       } else {
         await this.openPopup(); // lunchStart has no button
       }
@@ -682,6 +686,60 @@ export class App {
     if (dropped) await chrome.notifications.clear(breakNotificationId(dropped.at)).catch(() => undefined);
   }
 
+  // ---------- mood pulse ----------
+
+  /**
+   * Closes the work day by hand (popup or the "Cerrar jornada" reminder) and,
+   * when the organization has the mood pulse on, leaves "¿Cómo estuvo tu
+   * día?" pending for the popup, once a day. Automatic closes do not ask.
+   */
+  async closeWorkDay(): Promise<void> {
+    await this.session.stop();
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      const { meta } = this.store;
+      if (!uid || meta.org?.uid !== uid || meta.org.moodPulse !== true) return;
+      const date = dateKey(this.now(), DEFAULT_TIME_ZONE);
+      if (meta.mood?.uid === uid && meta.mood.date === date) return; // asked already today
+      meta.mood = { uid, date, status: 'pending' };
+      await this.store.save('meta');
+    });
+  }
+
+  /**
+   * Answer of the pending mood pulse: a face queues the anonymous counter
+   * (see packages/shared/src/mood.ts); null ("Omitir") sends nothing. Either
+   * way it is not asked again today.
+   */
+  async answerMood(score: MoodScore | null): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const queued = await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      const { meta } = this.store;
+      const today = dateKey(this.now(), DEFAULT_TIME_ZONE);
+      const mood = meta.mood;
+      if (!uid || !mood || mood.uid !== uid || mood.status !== 'pending' || mood.date !== today) return false;
+      meta.mood = { ...mood, status: 'done' };
+      if (score !== null) {
+        enqueueOp(this.store.queue, { kind: 'mood', uid, date: mood.date, week: isoWeekKey(mood.date), score });
+      }
+      await this.store.save('queue', 'meta');
+      return score !== null;
+    });
+    if (queued) void this.sync.kick();
+  }
+
+  /** Mood pulse for the popup (inside store.run); null when the organization has it off. */
+  private moodView(uid: string | null, enabled: boolean): StatusView['mood'] {
+    if (!uid || !enabled) return null;
+    const m = this.store.meta.mood;
+    const today = dateKey(this.now(), DEFAULT_TIME_ZONE);
+    return { pending: m !== null && m.uid === uid && m.date === today && m.status === 'pending' };
+  }
+
   /** Click on the body (or button) of a reminder, an active break or an announcement: the popup. */
   async onReminderClicked(notificationId: string): Promise<void> {
     if (
@@ -758,7 +816,10 @@ export class App {
           await this.startWorkDay();
           break;
         case 'session.stop':
-          await this.session.stop();
+          await this.closeWorkDay();
+          break;
+        case 'mood.answer':
+          await this.answerMood(req.score as MoodScore | null);
           break;
         case 'auth.signIn':
           await this.signIn();
@@ -1014,6 +1075,7 @@ export class App {
       for (const a of announcements?.items ?? []) {
         await chrome.notifications.clear(announcementNotificationId(a.id)).catch(() => undefined);
       }
+      this.store.meta.mood = null;
       if (pendingBreak) await chrome.notifications.clear(breakNotificationId(pendingBreak.at)).catch(() => undefined);
       await this.store.save('acc', 'meta');
       await this.ensureScheduleAlarm(null, this.now());
@@ -1079,6 +1141,7 @@ export class App {
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
         breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
         announcements: profile && user ? unreadAnnouncements(meta.announcements, this.activeUid(user.uid)) : [],
+        mood: this.moodView(profile && user ? user.uid : null, org?.moodPulse === true),
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,

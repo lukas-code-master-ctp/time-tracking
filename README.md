@@ -77,6 +77,14 @@ Desde la **extensión 0.2.0** ([spec](docs/specs/2026-09-30-horarios.md)). Sin h
 - Por eso la 0.2.0 pide el permiso nuevo **`notifications`**. Justificación para la ficha de Chrome Web Store (pestaña *Privacidad* → justificación de permisos): *"Se usa para mostrar recordatorios locales de inicio, colación y cierre del horario laboral que configura la empresa, a la hora exacta: al comienzo del horario, si la jornada no está iniciada ('¿Iniciar jornada?'); al inicio y al término de la colación; y al final, si sigue abierta ('¿Cerrar jornada?'), con un botón que lo hace. No se usa para publicidad ni se envían datos para mostrarlos."* Al actualizar desde la 0.1.x, Chrome puede mostrar la advertencia del permiso nuevo ("Mostrar notificaciones") y dejar la extensión desactivada hasta que la persona lo acepte; con la instalación forzada desde la consola de Google Workspace ([paso 8](#8-instalación-forzada-en-google-workspace-en-cada-organización)) se concede sin preguntar.
 - El aviso de consentimiento cambió (`CONSENT_VERSION = 2026-09-30.2`): explica que fuera del horario y en la colación no se mide. Para iniciar una jornada nueva hay que aceptarlo otra vez.
 
+## Pulso de ánimo
+
+Desde la **extensión 0.2.16** ([spec](docs/specs/2026-11-05-pulso-de-animo.md)). Se activa en el portal, página **Pulso de ánimo** (apagado por defecto, campo opcional `config/org.moodPulseEnabled`).
+
+- Cuando la persona **cierra su jornada a mano** (popup o botón "Cerrar jornada" del recordatorio), el popup pregunta **"¿Cómo estuvo tu día?"** con cinco caras (Muy mal … Muy bien) o **Omitir**. Una vez al día; si no responde, la pregunta desaparece al cambiar el día. Los cierres automáticos no preguntan.
+- **Anónimo**: la respuesta solo suma 1 a un contador de la semana ISO (`moodWeeks/{YYYY-Www}`, campos `n1`…`n5`), sin uid ni día. Aparte, `moodVotes/{uid_YYYY-Www}` guarda qué días respondió (no qué), lo lee solo la propia persona y permite a las reglas aceptar una respuesta por persona y día: el contador solo puede subir en el mismo lote que agrega un día nuevo a ese registro.
+- El portal muestra las últimas 12 semanas (distribución y promedio), el promedio de las últimas 4 frente a las 4 anteriores, y **oculta las semanas con menos de 3 respuestas**. Límite conocido: quien tenga acceso a la consola de Firebase podría cruzar la hora de escritura del contador con la de los cierres de jornada; desde el portal no se puede.
+
 ## Arquitectura
 
 ```
