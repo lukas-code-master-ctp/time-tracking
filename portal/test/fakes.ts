@@ -5,6 +5,7 @@ import {
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Celebration,
   type Invitation,
   type OrgConfig,
   type PersonSchedule,
@@ -31,6 +32,8 @@ export interface FakeDb {
   breaks?: ActiveBreak[];
   /** Justified absences (optional: most tests have none). */
   absences?: WithId<Absence>[];
+  /** Birthdays and hire dates (optional: most tests have none). */
+  celebrations?: WithId<Celebration>[];
 }
 
 export function emptyDb(): FakeDb {
@@ -85,6 +88,10 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     },
     deleteAbsence: async (id) => {
       db.absences = (db.absences ?? []).filter((a) => a.id !== id);
+    },
+    listCelebrations: async () => [...(db.celebrations ?? [])],
+    saveCelebration: async (uid, c) => {
+      db.celebrations = [...(db.celebrations ?? []).filter((x) => x.id !== uid), { ...c, id: uid }];
     },
     screenshotUrl: async (path) => `https://example.test/${encodeURIComponent(path)}`,
   };

@@ -8,7 +8,7 @@
  * popup / consent page → service worker (request/response):
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
-import type { Absence, AbsenceType, Role, UserStatus, WithId } from '@timetracking/shared';
+import type { Absence, AbsenceType, Role, UpcomingCelebration, UserStatus, WithId } from '@timetracking/shared';
 import type { ScheduleView } from './background/schedule';
 
 // ---------- content script ----------
@@ -162,6 +162,12 @@ export interface StatusView {
     pending: { at: number; title: string; text: string } | null;
     nextAt: number | null;
   } | null;
+  /**
+   * Team birthdays and work anniversaries of today and the next 7 days
+   * (spec 2026-11-05-cumpleanos-aniversarios), soonest first; `self`: the
+   * signed-in person's own. [] when none or not read yet.
+   */
+  celebrations: (UpcomingCelebration & { self: boolean })[];
   /** Operations waiting to be uploaded. */
   pendingOps: number;
   /** Screenshots waiting to be uploaded. */

@@ -2356,3 +2356,109 @@ input[type='time'][aria-invalid='true'] {
   color: var(--muted);
   font-weight: 600;
 }
+
+/* Birthdays and work anniversaries (spec 2026-11-05-cumpleanos-aniversarios). */
+.celebration-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.celebration-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.celebration-list li:first-child {
+  border-top: none;
+}
+
+.celebration-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-size: 17px;
+}
+
+.celebration-list li.today .celebration-icon {
+  background: var(--accent-soft);
+}
+
+.celebration-text {
+  display: grid;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.celebration-text .muted {
+  font-size: 13px;
+}
+
+.celebration-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.celebration-birthday {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.celebration-birthday legend,
+.celebration-hire label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 0;
+}
+
+.celebration-birthday legend {
+  float: left;
+  width: 100%;
+}
+
+.celebration-birthday select:first-of-type {
+  width: 76px;
+}
+
+.celebration-birthday select:last-of-type {
+  width: 132px;
+}
+
+.celebration-hire {
+  display: grid;
+}
+
+.celebration-form .btn {
+  min-height: 38px;
+}
+
+.ok-text {
+  color: var(--ok);
+  font-weight: 600;
+  align-self: center;
+}
+
+.celebration-error {
+  flex-basis: 100%;
+  margin: 0;
+}

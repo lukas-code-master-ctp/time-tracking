@@ -131,6 +131,11 @@ Spec `docs/specs/2026-09-30-horarios.md`. Todo es local salvo dos lecturas; la l
   Los de colación usan `requireInteraction: false` (desaparecen solos); entrada y salida, `true`. Un día sin colación no tiene avisos de colación. Cada evento (`start`, `startAgain`, `lunchStart`, `lunchEnd`, `end`) se evalúa una sola vez por día (`tt.meta.reminders`; el registro de la 0.2.1, con solo `start`/`end`, se lee igual), la primera vez desde su hora exacta (pulso, alarma `tt-schedule` o despertar); si en ese momento no corresponde (estado de la jornada) o ya pasó el siguiente evento del día (p. ej. un despertar tardío después de la salida no muestra los de colación ni el de entrada), se da por atendido sin avisar. Los avisos informativos de colación (sin botón) además solo salen si se evalúan dentro de los 15 minutos siguientes a su hora (`INFO_REMINDER_WINDOW_MS`); "¿Retomar la jornada?" no tiene ese límite. El botón de un aviso de otro día solo abre el popup. Clic en la notificación abre el popup (o `popup.html` en una pestaña).
 - **Aviso**: `CONSENT_VERSION` `2026-09-30.2` agrega que fuera del horario y en la colación no se mide; hay que aceptarlo de nuevo para iniciar jornada. La detección de reuniones sigue activa con el aviso anterior (`2026-09-30`) para una jornada ya abierta.
 
+## Cumpleaños y aniversarios (0.2.14)
+
+- `celebrations/{uid}` (spec `docs/specs/2026-11-05-cumpleanos-aniversarios.md`), registrado por un admin en el portal (Colaboradores › Cumpleaños). La extensión lo lee con `config/org`, como mucho cada 3 h (`CELEBRATIONS_REFRESH_MS`), y lo guarda en `tt.meta.celebrations`.
+- **Popup**: una fila bajo la pausa activa con la fecha más próxima de hoy a 7 días (fondo azul si es hoy); "+N" despliega las demás. Nada si no hay fechas.
+
 ## Arquitectura
 
 ```

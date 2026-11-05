@@ -8,6 +8,7 @@ import { PeopleTabs } from '../components/PeopleTabs';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { formatRelativeDateTime } from '../lib/dates';
+import { withStatus } from '../lib/celebrations';
 import { errorMessage } from '../lib/messages';
 import { SOURCE_LABEL, buildPersonSchedule } from '../lib/schedule';
 import { useLoad } from '../lib/useLoad';
@@ -51,12 +52,23 @@ export function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  /** The extension stops (or starts again) showing the birthday of a deactivated (or reactivated) person. */
+  const syncCelebration = async (user: WithId<UserProfile>, status: UserStatus): Promise<void> => {
+    try {
+      const current = (await data.listCelebrations()).find((c) => c.id === user.id);
+      if (current) await data.saveCelebration(user.id, withStatus(current, { ...user, status }, me, Date.now()));
+    } catch (err) {
+      console.warn('[timetracking] no se pudo actualizar el cumpleaños', err);
+    }
+  };
+
   const apply = async (): Promise<void> => {
     if (!change) return;
     setBusy(true);
     setError(null);
     try {
       await data.updateUser(change.user.id, { role: change.role, status: change.status });
+      if (change.status !== change.user.status) await syncCelebration(change.user, change.status);
       setNotice(`Cambios guardados para ${change.user.displayName || change.user.email}.`);
       setChange(null);
       load.reload();

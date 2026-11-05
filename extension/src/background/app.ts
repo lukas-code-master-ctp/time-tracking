@@ -32,6 +32,7 @@ import {
   readActiveBreakSettings,
   readPersonSchedule,
   readScheduleConfig,
+  upcomingCelebrations,
   validateAbsence,
   type Absence,
   type ActiveBreakSettings,
@@ -86,6 +87,10 @@ import type { StateStore, StorageAreaLike } from './state';
 import { SyncEngine, errorCode } from './sync';
 import { Tracker } from './tracker';
 
+/** Team birthdays and anniversaries are re-read at most this often (they change rarely). */
+export const CELEBRATIONS_REFRESH_MS = 3 * 60 * 60_000;
+/** The popup shows the celebrations of today and the next days. */
+export const CELEBRATIONS_DAYS_AHEAD = 7;
 /** `config/org` is re-read at most this often from the pulse (spec: every 5 min). */
 export const ORG_CONFIG_REFRESH_MS = 5 * 60_000;
 /** …and when the worker wakes up, if older than this. */
@@ -272,7 +277,38 @@ export class App {
     await Promise.all([
       this.refreshOrgConfig(maxAgeMs).catch(logError('config/org')),
       this.refreshSchedule(maxAgeMs).catch(logError('config/schedule')),
+      this.refreshCelebrations(maxAgeMs === 0 ? 0 : Math.max(maxAgeMs, CELEBRATIONS_REFRESH_MS)).catch(
+        logError('celebrations'),
+      ),
     ]);
+  }
+
+  /**
+   * Reads `celebrations` (spec 2026-11-05-cumpleanos-aniversarios) when the
+   * cache is older than `maxAgeMs`, for a joined user. On failure the
+   * previous cache stays.
+   */
+  async refreshCelebrations(maxAgeMs: number): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const due = await this.store.run(() => {
+      const { profile, profileUid, celebrations } = this.store.meta;
+      if (!user || !profile || profileUid !== user.uid) return false;
+      return !celebrations || celebrations.uid !== user.uid || this.now() - celebrations.fetchedAt >= maxAgeMs;
+    });
+    if (!user || !due) return;
+    let items;
+    try {
+      items = await this.backend.fetchCelebrations();
+    } catch (err) {
+      console.warn(`[timetracking] no se pudieron leer los cumpleaños (${errorCode(err)})`);
+      return;
+    }
+    await this.store.run(async () => {
+      if (this.store.meta.profileUid !== user.uid) return; // signed out meanwhile
+      this.store.meta.celebrations = { uid: user.uid, items, fetchedAt: this.now() };
+      await this.store.save('meta');
+    });
   }
 
   /**
@@ -895,6 +931,7 @@ export class App {
       this.store.meta.joinError = null;
       this.store.meta.org = null;
       this.store.meta.schedule = null;
+      this.store.meta.celebrations = null;
       this.store.meta.reminders = null;
       const pendingBreak = this.store.meta.breaks?.pending ?? null;
       this.store.meta.breaks = null;
@@ -962,6 +999,11 @@ export class App {
         capture: org ? { screenshots: org.screenshotsEnabled, blur: org.blurScreenshots } : null,
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
         breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
+        celebrations: profile && user && meta.celebrations?.uid === user.uid
+          ? upcomingCelebrations(meta.celebrations.items, dateKey(this.now(), DEFAULT_TIME_ZONE), CELEBRATIONS_DAYS_AHEAD).map(
+              (c) => ({ ...c, self: c.uid === user.uid }),
+            )
+          : [],
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,

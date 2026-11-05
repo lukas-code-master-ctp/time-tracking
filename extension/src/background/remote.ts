@@ -2,7 +2,7 @@
  * Everything the service worker needs from Firebase, behind one interface
  * (Firestore/Storage in firebase.ts, a fake in the unit tests).
  */
-import type { Absence, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
+import type { Absence, Celebration, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
 import type { Backend } from './sync';
 
 export interface Remote extends Backend {
@@ -28,4 +28,9 @@ export interface Remote extends Backend {
   createAbsence(data: Absence): Promise<string>;
   /** Withdraws a request (the rules allow it only while pending). */
   deleteAbsence(id: string): Promise<void>;
+  /**
+   * Every valid `celebrations/{uid}` (spec 2026-11-05-cumpleanos-aniversarios);
+   * `[]` while the rules are not deployed (permission-denied).
+   */
+  fetchCelebrations(): Promise<WithId<Celebration>[]>;
 }

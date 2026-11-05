@@ -112,6 +112,7 @@ describe('collections', () => {
       schedules: 'schedules',
       breaks: 'breaks',
       absences: 'absences',
+      celebrations: 'celebrations',
     });
   });
 

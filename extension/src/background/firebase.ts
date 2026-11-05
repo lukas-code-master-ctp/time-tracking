@@ -46,9 +46,11 @@ import {
   FUNCTIONS_REGION,
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
+  readCelebration,
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Celebration,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
@@ -159,6 +161,21 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     },
     async deleteAbsence(id: string) {
       await deleteDoc(doc(db, COLLECTIONS.absences, id));
+    },
+    async fetchCelebrations() {
+      try {
+        const snap = await getDocs(collection(db, COLLECTIONS.celebrations));
+        const out: (Celebration & { id: string })[] = [];
+        for (const d of snap.docs) {
+          const c = readCelebration(d.data());
+          if (c) out.push({ ...c, id: d.id });
+        }
+        return out;
+      } catch (err) {
+        // Rules not deployed yet: no celebrations.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
     },
   };
 }

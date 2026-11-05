@@ -190,6 +190,27 @@ export interface Absence {
   updatedBy: string;
 }
 
+/**
+ * `celebrations/{uid}` — birthday and hire date of a person (spec
+ * 2026-11-05-cumpleanos-aniversarios), recorded by an admin in the portal and
+ * readable by every active person, so the extension popup can show the
+ * team's birthdays and work anniversaries. Members cannot read other
+ * `users` docs: the name is copied here.
+ */
+export interface Celebration {
+  /** Copy of `users/{uid}.displayName` (or the email) when it was saved. */
+  displayName: string;
+  /** `MM-DD` (no year: the age is never stored); null = not recorded. */
+  birthday: string | null;
+  /** `YYYY-MM-DD` in America/Santiago; null = not recorded. */
+  hireDate: string | null;
+  /** Copy of `users/{uid}.status == 'active'`: disabled people are not shown. */
+  active: boolean;
+  updatedAt: EpochMs;
+  /** uid of the admin who last changed it. */
+  updatedBy: string;
+}
+
 /** Day of the week, as used by the keys of `WeekSchedule`. */
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 

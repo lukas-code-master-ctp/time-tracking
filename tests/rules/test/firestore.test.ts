@@ -8,6 +8,7 @@ import {
   CHILE_HOLIDAY_DATES,
   activityDocId,
   type Absence,
+  type Celebration,
   type ActiveBreak,
   type ActivitySlot,
   type DaySchedule,
@@ -1134,6 +1135,59 @@ describe('absences', () => {
     await assertFails(db('alice').collection('absences').get());
     await assertFails(db('dave').doc('absences/a1').get());
     await assertSucceeds(db('admin').collection('absences').where('startDate', '<=', '2026-11-30').get());
+  });
+});
+
+// ---------- celebrations ----------
+
+function celebration(overrides: Partial<Celebration> = {}): Celebration {
+  return {
+    displayName: 'Alice',
+    birthday: '03-14',
+    hireDate: '2022-11-07',
+    active: true,
+    updatedAt: NOW,
+    updatedBy: 'admin',
+    ...overrides,
+  };
+}
+
+describe('celebrations', () => {
+  it('an admin records, changes and deletes them', async () => {
+    const ref = db('admin').doc('celebrations/alice');
+    await assertSucceeds(ref.set(celebration()));
+    await assertSucceeds(ref.set(celebration({ birthday: null, hireDate: null, active: false })));
+    await assertSucceeds(ref.set(celebration({ birthday: '02-29' })));
+    await assertSucceeds(ref.delete());
+  });
+
+  it('members, disabled admins and strangers cannot write them', async () => {
+    await assertFails(db('alice').doc('celebrations/alice').set(celebration({ updatedBy: 'alice' })));
+    await assertFails(db('eve').doc('celebrations/alice').set(celebration({ updatedBy: 'eve' })));
+    await assertFails(db(null).doc('celebrations/alice').set(celebration()));
+    await seed(env, { 'celebrations/alice': celebration() });
+    await assertFails(db('alice').doc('celebrations/alice').delete());
+  });
+
+  it('rejects malformed documents', async () => {
+    const put = (o: Partial<Celebration> & Record<string, unknown>, id = 'alice') =>
+      db('admin').doc(`celebrations/${id}`).set({ ...celebration(), ...o });
+    await assertFails(put({}, 'nobody'));
+    await assertFails(put({ birthday: '1990-03-14' }));
+    await assertFails(put({ birthday: '13-01' }));
+    await assertFails(put({ hireDate: '2022-13-07' }));
+    await assertFails(put({ active: 'yes' as never }));
+    await assertFails(put({ updatedBy: 'alice' }));
+    await assertFails(put({ displayName: 'x'.repeat(201) }));
+    await assertFails(put({ extra: 1 }));
+  });
+
+  it('every active person reads them', async () => {
+    await seed(env, { 'celebrations/alice': celebration(), 'celebrations/bob': celebration({ displayName: 'Bob' }) });
+    await assertSucceeds(db('alice').collection('celebrations').get());
+    await assertSucceeds(db('bob').doc('celebrations/alice').get());
+    await assertFails(db('dave').collection('celebrations').get());
+    await assertFails(db(null).collection('celebrations').get());
   });
 });
 

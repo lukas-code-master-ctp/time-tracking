@@ -13,6 +13,8 @@ export const COLLECTIONS = {
   breaks: 'breaks',
   /** `absences/{autoId}`: justified absences (vacations, leave…). */
   absences: 'absences',
+  /** `celebrations/{uid}`: birthday and hire date (team birthdays and anniversaries). */
+  celebrations: 'celebrations',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

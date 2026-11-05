@@ -6,6 +6,7 @@ import type {
   Absence,
   ActiveBreak,
   ActivitySlot,
+  Celebration,
   Invitation,
   OrgConfig,
   PersonSchedule,
@@ -73,6 +74,10 @@ export interface DataSource {
   /** Writes the whole absence: a new document when `id` is null. Returns its id. */
   saveAbsence(id: string | null, absence: Absence): Promise<string>;
   deleteAbsence(id: string): Promise<void>;
+  /** Every valid `celebrations/{uid}` (id = uid). `[]` while the rules are not deployed. */
+  listCelebrations(): Promise<WithId<Celebration>[]>;
+  /** Writes the whole `celebrations/{uid}`. */
+  saveCelebration(uid: string, celebration: Celebration): Promise<void>;
   /** Download URL of a Storage object (admins may read every screenshot). */
   screenshotUrl(storagePath: string): Promise<string>;
 }

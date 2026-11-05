@@ -9,7 +9,8 @@
  *   and today's schedule, only when configured), today's hours, activity
  *   (excluding meeting time) and time in web meetings, active breaks (when
  *   the organization turned them on: pending reminder, next one, on/off for
- *   this person), what is being
+ *   this person), team birthdays and work anniversaries (today and the
+ *   next 7 days, when recorded in the portal), what is being
  *   measured, pending uploads, sign out.
  *
  * Outside Chrome the popup closes when Google's window opens, so the result
@@ -300,6 +301,7 @@ function renderReady(s: StatusView): void {
   root.append(card);
 
   if (s.breaks) root.append(renderBreaks(s.breaks, on));
+  if (s.celebrations.length > 0) root.append(renderCelebrations(s.celebrations));
 
   // Today, in one row.
   const stat = (label: string, text: string, title = ''): HTMLElement =>
@@ -408,6 +410,79 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
     ]),
     sw,
   ]);
+}
+
+type CelebrationItem = StatusView['celebrations'][number];
+
+const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+/** "Hoy", "Mañana", "Vie 7". */
+function celebrationDay(c: CelebrationItem): string {
+  if (c.daysAway === 0) return 'Hoy';
+  if (c.daysAway === 1) return 'Mañana';
+  const d = new Date(Date.UTC(Number(c.date.slice(0, 4)), Number(c.date.slice(5, 7)) - 1, Number(c.date.slice(8, 10))));
+  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}`;
+}
+
+function yearsText(years: number | null): string {
+  const y = years ?? 0;
+  return `${y} ${y === 1 ? 'año' : 'años'}`;
+}
+
+/** One line: "Hoy es el cumpleaños de Ana", "Beto Díaz cumple 3 años en la empresa"… */
+function celebrationText(c: CelebrationItem): string {
+  const today = c.daysAway === 0;
+  if (c.kind === 'birthday') {
+    if (c.self) return today ? '¡Feliz cumpleaños!' : 'Tu cumpleaños';
+    return today ? `Hoy es el cumpleaños de ${c.name}` : `Cumpleaños de ${c.name}`;
+  }
+  if (c.self) return today ? `¡Feliz aniversario! ${yearsText(c.years)} en la empresa` : `Tu aniversario · ${yearsText(c.years)}`;
+  return today ? `${c.name} cumple ${yearsText(c.years)} en la empresa` : `${c.name} · ${yearsText(c.years)}`;
+}
+
+function celebrationRow(c: CelebrationItem, extra: HTMLElement | null = null): HTMLElement {
+  const text = celebrationText(c);
+  // Upcoming anniversaries are short on screen ("Beto · 3 años"): the full sentence for the tooltip and screen readers.
+  const full = c.kind === 'anniversary' && c.daysAway > 0 ? `${c.self ? 'Cumples' : `${c.name} cumple`} ${yearsText(c.years)} en la empresa` : text;
+  return el('span', { className: 'cel-row' }, [
+    el('span', { className: 'cel-icon', ariaHidden: 'true', textContent: c.kind === 'birthday' ? '🎂' : '🎉' }),
+    el('span', { className: 'cel-text', textContent: text, title: full, ariaLabel: full }),
+    c.daysAway > 0
+      ? el('span', {
+          className: 'small muted cel-when',
+          textContent: celebrationDay(c),
+        })
+      : null,
+    extra,
+  ]);
+}
+
+/** The rest of this week's celebrations stays open across re-renders once opened. */
+let celebrationsOpen = false;
+
+/**
+ * Team birthdays and work anniversaries (spec 2026-11-05-cumpleanos-aniversarios):
+ * one row with the soonest (highlighted when it is today); the rest of the
+ * week folds under it, so the popup keeps its height.
+ */
+function renderCelebrations(list: StatusView['celebrations']): HTMLElement {
+  const [first, ...rest] = list;
+  const today = first!.daysAway === 0;
+  const className = `card celebrations${today ? ' has-today' : ''}`;
+  if (rest.length === 0) {
+    return el('section', { className, ariaLabel: 'Cumpleaños y aniversarios' }, [celebrationRow(first!)]);
+  }
+  const more = el('span', { className: 'cel-more', textContent: `+${rest.length}`, title: `${rest.length} más esta semana` });
+  const details = el('details', { className, open: celebrationsOpen }, [
+    el('summary', { ariaLabel: `Cumpleaños y aniversarios: ${celebrationText(first!)}, y ${rest.length} más esta semana` }, [
+      celebrationRow(first!, more),
+    ]),
+    el('ul', { className: 'cel-list' }, rest.map((c) => el('li', {}, [celebrationRow(c)]))),
+  ]);
+  details.addEventListener('toggle', () => {
+    celebrationsOpen = details.open;
+  });
+  return details;
 }
 
 /** `14:35` (local time of the computer). */

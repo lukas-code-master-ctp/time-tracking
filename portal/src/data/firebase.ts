@@ -47,11 +47,13 @@ import {
   absenceOverlapsRange,
   emailKey,
   readAllowedDomains,
+  readCelebration,
   readPersonSchedule,
   readScheduleConfig,
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Celebration,
   type Invitation,
   type OrgConfig,
   type PersonSchedule,
@@ -257,6 +259,27 @@ export function createFirebaseBackend(): Backend {
     },
     async deleteAbsence(id) {
       await deleteDoc(doc(db, COLLECTIONS.absences, id));
+    },
+    async listCelebrations() {
+      try {
+        const snap = await getDocs(collection(db, COLLECTIONS.celebrations));
+        const out: WithId<Celebration>[] = [];
+        for (const d of snap.docs) {
+          const c = readCelebration(d.data());
+          if (c) out.push({ ...c, id: d.id });
+        }
+        return out;
+      } catch (err) {
+        // Rules of the celebrations not deployed yet: the page works without them.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+          console.warn('[timetracking] no se pudieron leer los cumpleaños y aniversarios', err);
+          return [];
+        }
+        throw err;
+      }
+    },
+    async saveCelebration(uid, celebration) {
+      await setDoc(doc(db, COLLECTIONS.celebrations, uid), celebration);
     },
     screenshotUrl(storagePath) {
       return getDownloadURL(ref(storage, storagePath));

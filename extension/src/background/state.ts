@@ -7,7 +7,14 @@
  * Chrome events (idle, tabs, alarms, messages) never interleave half-applied
  * changes or overwrite each other's writes.
  */
-import { SlotAccumulator, type ActiveBreakSettings, type UserProfile } from '@timetracking/shared';
+import {
+  SlotAccumulator,
+  readCelebration,
+  type ActiveBreakSettings,
+  type Celebration,
+  type UserProfile,
+  type WithId,
+} from '@timetracking/shared';
 import { breakStateFromJSON, type BreakState } from './breaks';
 import { dailyFromJSON, type DailySummary } from './daily';
 import { emptyQueue, queueFromJSON, type QueueState } from './queue';
@@ -69,6 +76,14 @@ export interface OrgConfigCache {
   fetchedAt: number;
 }
 
+/** Last `celebrations` read (spec 2026-11-05-cumpleanos-aniversarios). */
+export interface CelebrationsCache {
+  /** User that read them (readable by active users only). */
+  uid: string;
+  items: WithId<Celebration>[];
+  fetchedAt: number;
+}
+
 export interface Meta {
   /** Last time the current block + heartbeat were queued (every ~60 s). */
   lastCurrentSyncAt: number;
@@ -90,6 +105,8 @@ export interface Meta {
   breaks: BreakState | null;
   /** Users who turned the active break reminders off on this device (kept across sign-outs). */
   breakOptOut: string[];
+  /** Team birthdays and anniversaries; null = not read yet. Missing before 0.2.14. */
+  celebrations: CelebrationsCache | null;
 }
 
 export function defaultMeta(): Meta {
@@ -105,7 +122,22 @@ export function defaultMeta(): Meta {
     reminders: null,
     breaks: null,
     breakOptOut: [],
+    celebrations: null,
   };
+}
+
+/** Rehydrates a stored {@link CelebrationsCache}; null when missing or broken. */
+export function celebrationsCacheFromJSON(raw: unknown): CelebrationsCache | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Partial<CelebrationsCache>;
+  if (typeof c.uid !== 'string' || typeof c.fetchedAt !== 'number' || !Array.isArray(c.items)) return null;
+  const items: WithId<Celebration>[] = [];
+  for (const it of c.items as unknown[]) {
+    const id = (it as { id?: unknown } | null)?.id;
+    const read = readCelebration(it);
+    if (read && typeof id === 'string') items.push({ ...read, id });
+  }
+  return { uid: c.uid, items, fetchedAt: c.fetchedAt };
 }
 
 /** Serializes async critical sections (FIFO). */
@@ -201,6 +233,7 @@ export class StateStore {
     this.meta.breakOptOut = Array.isArray(this.meta.breakOptOut)
       ? this.meta.breakOptOut.filter((u): u is string => typeof u === 'string')
       : [];
+    this.meta.celebrations = celebrationsCacheFromJSON(this.meta.celebrations);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);
