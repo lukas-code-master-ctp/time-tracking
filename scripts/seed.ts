@@ -180,14 +180,15 @@ async function main(): Promise<void> {
     docs.push({ path: `${COLLECTIONS.schedules}/${uids[key]!}`, data: exception });
   }
   // Birthdays and anniversaries (spec 2026-11-05-cumpleanos-aniversarios):
-  // Ana's birthday today, Beto's third work anniversary in 3 days.
+  // Ana's birthday today, Beto's third work anniversary in 3 days (his boss: the admin).
   const today = dateKey(now);
   const inThreeDays = dateKey(now + 3 * DAY);
-  const celebrationOf = (displayName: string, birthday: string | null, hireDate: string | null): Celebration => ({
+  const celebrationOf = (displayName: string, birthday: string | null, hireDate: string | null, managerUid: string | null = null): Celebration => ({
     displayName,
     birthday,
     hireDate,
     active: true,
+    managerUid,
     updatedAt: now,
     updatedBy: admin.uid,
   });
@@ -195,7 +196,7 @@ async function main(): Promise<void> {
   if (ana) docs.push({ path: `${COLLECTIONS.celebrations}/${uids[ana.key]!}`, data: celebrationOf(ana.displayName, today.slice(5), '2024-03-04') });
   if (beto) {
     const hire = `${Number(inThreeDays.slice(0, 4)) - 3}${inThreeDays.slice(4)}`;
-    docs.push({ path: `${COLLECTIONS.celebrations}/${uids[beto.key]!}`, data: celebrationOf(beto.displayName, '07-21', hire) });
+    docs.push({ path: `${COLLECTIONS.celebrations}/${uids[beto.key]!}`, data: celebrationOf(beto.displayName, '07-21', hire, admin.uid) });
   }
   await writeAll(db, docs);
 

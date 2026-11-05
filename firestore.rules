@@ -562,13 +562,16 @@ service cloud.firestore {
       return d is string && d.matches('(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])');
     }
 
-    function validCelebration(d) {
-      return d.keys().hasOnly(['displayName', 'birthday', 'hireDate', 'active', 'updatedAt', 'updatedBy'])
+    function validCelebration(d, uid) {
+      return d.keys().hasOnly(['displayName', 'birthday', 'hireDate', 'active', 'managerUid', 'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['displayName', 'birthday', 'hireDate', 'active', 'updatedAt', 'updatedBy'])
         && d.displayName is string && d.displayName.size() <= 200
         && (d.birthday == null || validMonthDay(d.birthday))
         && (d.hireDate == null || validDateKey(d.hireDate))
         && d.active is bool
+        // Optional (documents before the bosses have none).
+        && (!('managerUid' in d) || d.managerUid == null
+            || (d.managerUid is string && d.managerUid != uid && exists(userPath(d.managerUid))))
         && d.updatedAt is int
         && d.updatedBy == request.auth.uid;
     }
@@ -577,7 +580,7 @@ service cloud.firestore {
       // Birthday (day and month, no year) and hire date of the team: every
       // active person reads them for the popup.
       allow read: if isActive();
-      allow create, update: if isAdmin() && exists(userPath(uid)) && validCelebration(incoming());
+      allow create, update: if isAdmin() && exists(userPath(uid)) && validCelebration(incoming(), uid);
       allow delete: if isAdmin();
     }
 

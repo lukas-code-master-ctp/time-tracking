@@ -41,6 +41,7 @@ import {
   validateAbsence,
   type Absence,
   type ActiveBreakSettings,
+  type Celebration,
   type OrgConfig,
   type UserProfile,
   type WithId,
@@ -1179,9 +1180,7 @@ export class App {
         breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
         announcements: profile && user ? unreadAnnouncements(meta.announcements, this.activeUid(user.uid)) : [],
         celebrations: profile && user && meta.celebrations?.uid === user.uid
-          ? upcomingCelebrations(meta.celebrations.items, dateKey(this.now(), DEFAULT_TIME_ZONE), CELEBRATIONS_DAYS_AHEAD).map(
-              (c) => ({ ...c, self: c.uid === user.uid }),
-            )
+          ? celebrationsView(meta.celebrations.items, user.uid, dateKey(this.now(), DEFAULT_TIME_ZONE))
           : [],
         mood: this.moodView(profile && user ? user.uid : null, org?.moodPulse === true),
         pendingOps: queue.items.length,
@@ -1192,6 +1191,26 @@ export class App {
       };
     });
   }
+}
+
+/**
+ * Celebrations for the popup: today's first, then those of tomorrow of the
+ * people the signed-in person is boss of (warned the day before), then the
+ * rest of the week, soonest first.
+ */
+export function celebrationsView(
+  items: WithId<Celebration>[],
+  uid: string,
+  today: string,
+): StatusView['celebrations'] {
+  const list = upcomingCelebrations(items, today, CELEBRATIONS_DAYS_AHEAD).map((c) => ({
+    ...c,
+    self: c.uid === uid,
+    managed: c.uid !== uid && c.managerUid === uid,
+  }));
+  const rank = (c: (typeof list)[number]): number => (c.daysAway === 0 ? 0 : c.managed && c.daysAway === 1 ? 1 : 2);
+  // Array.prototype.sort is stable: inside each group the order stays.
+  return list.sort((a, b) => rank(a) - rank(b));
 }
 
 function logError(what: string): (err: unknown) => void {

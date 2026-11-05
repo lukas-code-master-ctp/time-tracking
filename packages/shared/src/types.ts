@@ -239,6 +239,11 @@ export interface Celebration {
   hireDate: string | null;
   /** Copy of `users/{uid}.status == 'active'`: disabled people are not shown. */
   active: boolean;
+  /**
+   * uid of the person's boss ("jefatura"): their popup also warns the day
+   * before ("Mañana Juan está de cumpleaños"). Optional: missing = null.
+   */
+  managerUid?: string | null;
   updatedAt: EpochMs;
   /** uid of the admin who last changed it. */
   updatedBy: string;

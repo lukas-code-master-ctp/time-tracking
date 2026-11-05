@@ -191,9 +191,10 @@ export interface StatusView {
   /**
    * Team birthdays and work anniversaries of today and the next 7 days
    * (spec 2026-11-05-cumpleanos-aniversarios), soonest first; `self`: the
-   * signed-in person's own. [] when none or not read yet.
+   * signed-in person's own; `managed`: the signed-in person is their boss
+   * (the popup warns them the day before). [] when none or not read yet.
    */
-  celebrations: (UpcomingCelebration & { self: boolean })[];
+  celebrations: (UpcomingCelebration & { self: boolean; managed: boolean })[];
   /**
    * Mood pulse (spec 2026-11-05-pulso-de-animo); null = the organization has
    * it off. `pending`: the person closed today's work day and has not answered

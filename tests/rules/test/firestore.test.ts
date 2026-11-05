@@ -1188,6 +1188,12 @@ describe('celebrations', () => {
     await assertFails(put({ updatedBy: 'alice' }));
     await assertFails(put({ displayName: 'x'.repeat(201) }));
     await assertFails(put({ extra: 1 }));
+    // The boss: an existing person, not herself.
+    await assertSucceeds(put({ managerUid: 'bob' }));
+    await assertSucceeds(put({ managerUid: null }));
+    await assertFails(put({ managerUid: 'alice' }));
+    await assertFails(put({ managerUid: 'nobody' }));
+    await assertFails(put({ managerUid: 5 as never }));
   });
 
   it('every active person reads them', async () => {

@@ -57,7 +57,7 @@ export function CelebrationsPage() {
     <>
       <PageHeader
         title="Colaboradores"
-        subtitle="Registra el cumpleaños y la fecha de ingreso de cada persona. La extensión avisa al equipo el mismo día y durante la semana anterior."
+        subtitle="Registra el cumpleaños, la fecha de ingreso y la jefatura de cada persona. La extensión avisa al equipo el mismo día y durante la semana anterior, y a su jefatura el día antes. Los administradores reciben cada lunes a las 8:00 un correo con las fechas de la semana."
       />
       <PeopleTabs />
       {load.error && !load.data ? (
@@ -107,6 +107,7 @@ export function CelebrationsPage() {
                     key={u.id}
                     user={u}
                     current={load.data!.celebrations.get(u.id) ?? null}
+                    people={users.filter((p) => p.id !== u.id && p.status === 'active')}
                     today={today}
                     onSaved={load.reload}
                   />
@@ -115,7 +116,7 @@ export function CelebrationsPage() {
             )}
           </section>
           <p className="muted small footnote">
-            Del cumpleaños solo se guarda el día y el mes, nunca el año. Las personas desactivadas no aparecen en la extensión.
+            Del cumpleaños solo se guarda el día y el mes, nunca el año. Las personas desactivadas no aparecen en la extensión ni en el correo.
           </p>
         </>
       )}
@@ -126,11 +127,14 @@ export function CelebrationsPage() {
 function CelebrationRow({
   user,
   current,
+  people,
   today,
   onSaved,
 }: {
   user: WithId<UserProfile>;
   current: WithId<Celebration> | null;
+  /** Who can be the boss (the other active people). */
+  people: WithId<UserProfile>[];
   today: string;
   onSaved: () => void;
 }) {
@@ -223,6 +227,26 @@ function CelebrationRow({
             onChange={(e) => set({ hireDate: e.target.value })}
             aria-label={`Fecha de ingreso de ${name}`}
           />
+        </div>
+        <div className="celebration-hire">
+          <label htmlFor={`${id}-boss`}>Jefatura</label>
+          <select
+            id={`${id}-boss`}
+            className="celebration-boss"
+            value={form.managerUid}
+            onChange={(e) => set({ managerUid: e.target.value })}
+            aria-label={`Jefatura de ${name}`}
+          >
+            <option value="">Sin jefatura</option>
+            {form.managerUid && !people.some((p) => p.id === form.managerUid) ? (
+              <option value={form.managerUid}>Persona desactivada</option>
+            ) : null}
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.displayName || p.email}
+              </option>
+            ))}
+          </select>
         </div>
         <button type="submit" className="btn small-btn primary" disabled={busy || !dirty}>
           {busy ? 'Guardando…' : 'Guardar'}

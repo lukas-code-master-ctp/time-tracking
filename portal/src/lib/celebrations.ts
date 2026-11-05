@@ -12,9 +12,11 @@ export interface CelebrationForm {
   birthDay: string;
   /** `YYYY-MM-DD` or '' (none). */
   hireDate: string;
+  /** uid of the boss or '' (none). */
+  managerUid: string;
 }
 
-export const EMPTY_CELEBRATION_FORM: CelebrationForm = { birthMonth: '', birthDay: '', hireDate: '' };
+export const EMPTY_CELEBRATION_FORM: CelebrationForm = { birthMonth: '', birthDay: '', hireDate: '', managerUid: '' };
 
 export function celebrationToForm(c: Celebration | null | undefined): CelebrationForm {
   if (!c) return EMPTY_CELEBRATION_FORM;
@@ -22,6 +24,7 @@ export function celebrationToForm(c: Celebration | null | undefined): Celebratio
     birthMonth: c.birthday ? c.birthday.slice(0, 2) : '',
     birthDay: c.birthday ? c.birthday.slice(3, 5) : '',
     hireDate: c.hireDate ?? '',
+    managerUid: c.managerUid ?? '',
   };
 }
 
@@ -32,10 +35,11 @@ export function celebrationFormError(f: CelebrationForm, today: string): string 
   return issues[0]?.message ?? null;
 }
 
-function formFields(f: CelebrationForm): Pick<Celebration, 'birthday' | 'hireDate'> {
+function formFields(f: CelebrationForm): Pick<Celebration, 'birthday' | 'hireDate'> & { managerUid: string | null } {
   return {
     birthday: f.birthMonth && f.birthDay ? `${f.birthMonth}-${f.birthDay}` : null,
     hireDate: f.hireDate || null,
+    managerUid: f.managerUid || null,
   };
 }
 
@@ -57,5 +61,5 @@ export function withStatus(c: WithId<Celebration>, user: UserProfile, adminUid: 
 }
 
 export function sameForm(a: CelebrationForm, b: CelebrationForm): boolean {
-  return a.birthMonth === b.birthMonth && a.birthDay === b.birthDay && a.hireDate === b.hireDate;
+  return a.birthMonth === b.birthMonth && a.birthDay === b.birthDay && a.hireDate === b.hireDate && a.managerUid === b.managerUid;
 }

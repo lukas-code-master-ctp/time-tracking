@@ -52,6 +52,7 @@ export function readCelebration(raw: unknown): Celebration | null {
     birthday,
     hireDate,
     active: d.active !== false,
+    managerUid: typeof d.managerUid === 'string' && d.managerUid ? d.managerUid : null,
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : 0,
     updatedBy: typeof d.updatedBy === 'string' ? d.updatedBy : '',
   };
@@ -69,6 +70,8 @@ export interface UpcomingCelebration {
   daysAway: number;
   /** Anniversary: years in the company that day (1 or more). Birthday: null. */
   years: number | null;
+  /** uid of the person's boss, or null. */
+  managerUid: string | null;
 }
 
 function isLeap(year: number): boolean {
@@ -119,13 +122,15 @@ export function upcomingCelebrations(
     const name = c.displayName.trim() || 'Alguien del equipo';
     if (c.birthday && isValidBirthday(c.birthday)) {
       const date = nextOccurrence(c.birthday, today);
-      if (date <= last) out.push({ uid: c.id, name, kind: 'birthday', date, daysAway: daysBetween(today, date), years: null });
+      if (date <= last) {
+        out.push({ uid: c.id, name, kind: 'birthday', date, daysAway: daysBetween(today, date), years: null, managerUid: c.managerUid ?? null });
+      }
     }
     if (c.hireDate && isValidDateKey(c.hireDate)) {
       const date = nextOccurrence(c.hireDate.slice(5), today);
       const years = Number(date.slice(0, 4)) - Number(c.hireDate.slice(0, 4));
       if (date <= last && years >= 1) {
-        out.push({ uid: c.id, name, kind: 'anniversary', date, daysAway: daysBetween(today, date), years });
+        out.push({ uid: c.id, name, kind: 'anniversary', date, daysAway: daysBetween(today, date), years, managerUid: c.managerUid ?? null });
       }
     }
   }

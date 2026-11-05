@@ -491,6 +491,10 @@ function yearsText(years: number | null): string {
 /** One line: "Hoy es el cumpleaños de Ana", "Beto Díaz cumple 3 años en la empresa"… */
 function celebrationText(c: CelebrationItem): string {
   const today = c.daysAway === 0;
+  // The boss is warned the day before.
+  if (c.managed && c.daysAway === 1) {
+    return c.kind === 'birthday' ? `Mañana cumple años ${c.name}` : `Mañana ${c.name} cumple ${yearsText(c.years)}`;
+  }
   if (c.kind === 'birthday') {
     if (c.self) return today ? '¡Feliz cumpleaños!' : 'Tu cumpleaños';
     return today ? `Hoy es el cumpleaños de ${c.name}` : `Cumpleaños de ${c.name}`;
@@ -502,11 +506,18 @@ function celebrationText(c: CelebrationItem): string {
 function celebrationRow(c: CelebrationItem, extra: HTMLElement | null = null): HTMLElement {
   const text = celebrationText(c);
   // Upcoming anniversaries are short on screen ("Beto · 3 años"): the full sentence for the tooltip and screen readers.
-  const full = c.kind === 'anniversary' && c.daysAway > 0 ? `${c.self ? 'Cumples' : `${c.name} cumple`} ${yearsText(c.years)} en la empresa` : text;
+  const full =
+    c.managed && c.daysAway === 1
+      ? c.kind === 'birthday'
+        ? `Mañana ${c.name} está de cumpleaños`
+        : `Mañana ${c.name} cumple ${yearsText(c.years)} en la empresa`
+      : c.kind === 'anniversary' && c.daysAway > 0
+        ? `${c.self ? 'Cumples' : `${c.name} cumple`} ${yearsText(c.years)} en la empresa`
+        : text;
   return el('span', { className: 'cel-row' }, [
     el('span', { className: 'cel-icon', ariaHidden: 'true', textContent: c.kind === 'birthday' ? '🎂' : '🎉' }),
     el('span', { className: 'cel-text', textContent: text, title: full, ariaLabel: full }),
-    c.daysAway > 0
+    c.daysAway > 0 && !(c.managed && c.daysAway === 1)
       ? el('span', {
           className: 'small muted cel-when',
           textContent: celebrationDay(c),
@@ -526,7 +537,7 @@ let celebrationsOpen = false;
  */
 function renderCelebrations(list: StatusView['celebrations']): HTMLElement {
   const [first, ...rest] = list;
-  const today = first!.daysAway === 0;
+  const today = first!.daysAway === 0 || (first!.managed && first!.daysAway === 1);
   const className = `card celebrations${today ? ' has-today' : ''}`;
   if (rest.length === 0) {
     return el('section', { className, ariaLabel: 'Cumpleaños y aniversarios' }, [celebrationRow(first!)]);

@@ -2427,8 +2427,6 @@ input[type='time'][aria-invalid='true'] {
 }
 
 .read-list {
-/* Birthdays and work anniversaries (spec 2026-11-05-cumpleanos-aniversarios). */
-.celebration-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2460,6 +2458,9 @@ input[type='time'][aria-invalid='true'] {
 @media (max-width: 640px) {
   .read-columns {
     grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Pulso de ánimo ---------- */
 
 .mood-legend {
@@ -2554,6 +2555,14 @@ input[type='time'][aria-invalid='true'] {
   }
 }
 
+/* Birthdays and work anniversaries (spec 2026-11-05-cumpleanos-aniversarios). */
+.celebration-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
 .celebration-list li {
   display: flex;
   align-items: center;
@@ -2601,6 +2610,8 @@ input[type='time'][aria-invalid='true'] {
 }
 
 .celebration-birthday {
+  flex: none;
+  width: 214px;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -2635,6 +2646,10 @@ input[type='time'][aria-invalid='true'] {
 
 .celebration-hire {
   display: grid;
+}
+
+.celebration-boss {
+  width: 180px;
 }
 
 .celebration-form .btn {

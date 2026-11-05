@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Invitation } from '@timetracking/shared';
+import { buildInvitationEmail, shouldSendInvitationEmail } from '../../src/core/invitationEmail.js';
 import {
-  buildInvitationEmail,
   deliverEmail,
-  isInviteEmailEnabled,
-  resolveSmtpConfig,
-  shouldBindSmtpSecrets,
-  shouldDeclareSmtpSecrets,
-  shouldSendInvitationEmail,
-  type SmtpConfig,
-} from '../../src/core/invitationEmail.js';
+  emailFrom,
+  isEmailEnabled,
+  resendSender,
+  shouldBindEmailSecret,
+  shouldDeclareEmailSecret,
+  type ResendConfig,
+} from '../../src/core/email.js';
 
 const inv = (overrides: Partial<Invitation> = {}): Invitation => ({
   email: 'x@compratuparcela.cl',
@@ -68,128 +68,92 @@ describe('buildInvitationEmail', () => {
   });
 });
 
-describe('resolveSmtpConfig', () => {
-  const full: Record<string, string> = {
-    SMTP_HOST: 'smtp.test',
-    SMTP_PORT: '465',
-    SMTP_USER: 'u',
-    SMTP_PASS: 'p',
-    SMTP_FROM: 'From <f@t.cl>',
-  };
-  const withValues = (values: Record<string, string | undefined>) => (n: string) => values[n];
-
-  it('builds the config when every value is present', () => {
-    expect(resolveSmtpConfig(withValues(full))).toEqual({
-      host: 'smtp.test',
-      port: 465,
-      secure: true,
-      user: 'u',
-      pass: 'p',
-      from: 'From <f@t.cl>',
-    });
-    expect(resolveSmtpConfig(withValues({ ...full, SMTP_PORT: '587' }))?.secure).toBe(false);
-  });
-
-  it('returns null when a value is missing, blank or the port is invalid', () => {
-    for (const name of Object.keys(full)) {
-      expect(resolveSmtpConfig(withValues({ ...full, [name]: undefined }))).toBeNull();
-      expect(resolveSmtpConfig(withValues({ ...full, [name]: '  ' }))).toBeNull();
-    }
-    expect(resolveSmtpConfig(withValues({ ...full, SMTP_PORT: 'abc' }))).toBeNull();
-    expect(resolveSmtpConfig(withValues({ ...full, SMTP_PORT: '70000' }))).toBeNull();
-  });
-});
-
-describe('isInviteEmailEnabled', () => {
-  it('is enabled only with INVITE_EMAIL_ENABLED=true', () => {
-    expect(isInviteEmailEnabled({ INVITE_EMAIL_ENABLED: 'true' })).toBe(true);
-    expect(isInviteEmailEnabled({ INVITE_EMAIL_ENABLED: ' TRUE ' })).toBe(true);
+describe('isEmailEnabled / emailFrom', () => {
+  it('is enabled only with EMAIL_ENABLED=true (or the older INVITE_EMAIL_ENABLED=true)', () => {
+    expect(isEmailEnabled({ EMAIL_ENABLED: 'true' })).toBe(true);
+    expect(isEmailEnabled({ EMAIL_ENABLED: ' TRUE ' })).toBe(true);
+    expect(isEmailEnabled({ INVITE_EMAIL_ENABLED: 'true' })).toBe(true);
   });
 
   it('defaults to disabled (missing, empty, false or anything else)', () => {
-    expect(isInviteEmailEnabled({})).toBe(false);
-    expect(isInviteEmailEnabled({ INVITE_EMAIL_ENABLED: '' })).toBe(false);
-    expect(isInviteEmailEnabled({ INVITE_EMAIL_ENABLED: 'false' })).toBe(false);
-    expect(isInviteEmailEnabled({ INVITE_EMAIL_ENABLED: '1' })).toBe(false);
-    expect(isInviteEmailEnabled({ INVITE_EMAIL_ENABLED: 'yes' })).toBe(false);
+    expect(isEmailEnabled({})).toBe(false);
+    expect(isEmailEnabled({ EMAIL_ENABLED: '' })).toBe(false);
+    expect(isEmailEnabled({ EMAIL_ENABLED: 'false', INVITE_EMAIL_ENABLED: 'false' })).toBe(false);
+    expect(isEmailEnabled({ EMAIL_ENABLED: '1' })).toBe(false);
+  });
+
+  it('reads the sender', () => {
+    expect(emailFrom({ EMAIL_FROM: ' Registro <a@b.cl> ' })).toBe('Registro <a@b.cl>');
+    expect(emailFrom({})).toBeNull();
   });
 });
 
-describe('SMTP secrets declaration and binding', () => {
-  it('declares no secret when email is disabled, so deploy does not require them', () => {
-    expect(shouldDeclareSmtpSecrets({ emailEnabled: false })).toBe(false);
-    expect(shouldBindSmtpSecrets({ emailEnabled: false, isEmulator: false })).toBe(false);
-    expect(shouldBindSmtpSecrets({ emailEnabled: false, isEmulator: true })).toBe(false);
+describe('Resend secret declaration and binding', () => {
+  it('declares no secret when email is disabled, so deploy does not require it', () => {
+    expect(shouldDeclareEmailSecret({ emailEnabled: false })).toBe(false);
+    expect(shouldBindEmailSecret({ emailEnabled: false, isEmulator: false })).toBe(false);
   });
 
-  it('declares and binds them when email is enabled (deploy)', () => {
-    expect(shouldDeclareSmtpSecrets({ emailEnabled: true })).toBe(true);
-    expect(shouldBindSmtpSecrets({ emailEnabled: true, isEmulator: false })).toBe(true);
+  it('declares and binds it when enabled, never in the emulator', () => {
+    expect(shouldDeclareEmailSecret({ emailEnabled: true })).toBe(true);
+    expect(shouldBindEmailSecret({ emailEnabled: true, isEmulator: false })).toBe(true);
+    expect(shouldBindEmailSecret({ emailEnabled: true, isEmulator: true })).toBe(false);
+  });
+});
+
+describe('resendSender', () => {
+  const config: ResendConfig = { apiKey: 're_test', from: 'Registro <no-responder@compratuparcela.cl>' };
+  const message = { to: 'x@compratuparcela.cl', subject: 'S', text: 'T', html: '<p>H</p>' };
+
+  it('posts the email to the Resend API', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{"id":"1"}' });
+    await resendSender(fetchFn)(config, message);
+    expect(fetchFn).toHaveBeenCalledWith('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer re_test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: config.from, to: ['x@compratuparcela.cl'], subject: 'S', text: 'T', html: '<p>H</p>' }),
+    });
   });
 
-  it('never binds them in the emulator', () => {
-    expect(shouldBindSmtpSecrets({ emailEnabled: true, isEmulator: true })).toBe(false);
+  it('throws with the status on errors', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => 'domain not verified' });
+    await expect(resendSender(fetchFn)(config, message)).rejects.toThrow(/403: domain not verified/);
   });
 });
 
 describe('deliverEmail', () => {
   const message = buildInvitationEmail({ to: 'x@compratuparcela.cl', installUrl: 'https://e.test' });
-  const smtp: SmtpConfig = { host: 'h', port: 465, secure: true, user: 'u', pass: 'p', from: 'f@t.cl' };
+  const config: ResendConfig = { apiKey: 'k', from: 'f@t.cl' };
   const makeLogger = () => ({ info: vi.fn(), warn: vi.fn() });
+  const label = 'Correo de invitación';
 
   it('only logs recipient, subject and body in the emulator', async () => {
-    const sendMail = vi.fn();
+    const send = vi.fn();
     const logger = makeLogger();
-    await expect(deliverEmail({ message, smtp, isEmulator: true, emailEnabled: true, sendMail, logger })).resolves.toBe('logged');
-    expect(sendMail).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith(expect.any(String), {
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-    });
+    await expect(deliverEmail({ label, message, config, isEmulator: true, emailEnabled: true, send, logger })).resolves.toBe('logged');
+    expect(send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/emulador/), { to: message.to, subject: message.subject, text: message.text });
   });
 
-  it('only logs when SMTP is not configured', async () => {
-    const sendMail = vi.fn();
-    const logger = makeLogger();
-    await expect(deliverEmail({ message, smtp: null, isEmulator: false, emailEnabled: true, sendMail, logger })).resolves.toBe(
-      'logged',
-    );
-    expect(sendMail).not.toHaveBeenCalled();
-  });
-
-  it('sends with SMTP when configured', async () => {
-    const sendMail = vi.fn().mockResolvedValue(undefined);
-    const logger = makeLogger();
-    await expect(deliverEmail({ message, smtp, isEmulator: false, emailEnabled: true, sendMail, logger })).resolves.toBe('sent');
-    expect(sendMail).toHaveBeenCalledWith(smtp, message);
-  });
-
-  it('only logs recipient and subject (no body) when email is disabled, even with SMTP', async () => {
-    const sendMail = vi.fn();
-    const logger = makeLogger();
+  it('only logs when Resend is not configured', async () => {
+    const send = vi.fn();
     await expect(
-      deliverEmail({ message, smtp, isEmulator: false, emailEnabled: false, sendMail, logger }),
+      deliverEmail({ label, message, config: null, isEmulator: false, emailEnabled: true, send, logger: makeLogger() }),
     ).resolves.toBe('logged');
-    expect(sendMail).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/desactivado/), {
-      to: message.to,
-      subject: message.subject,
-    });
+    expect(send).not.toHaveBeenCalled();
   });
 
-  it('keeps the emulator behavior (logs the body) when email is disabled', async () => {
-    const sendMail = vi.fn();
+  it('sends when configured', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    await expect(deliverEmail({ label, message, config, isEmulator: false, emailEnabled: true, send, logger: makeLogger() })).resolves.toBe('sent');
+    expect(send).toHaveBeenCalledWith(config, message);
+  });
+
+  it('only logs recipient and subject (no body) when email is disabled', async () => {
+    const send = vi.fn();
     const logger = makeLogger();
-    await expect(
-      deliverEmail({ message, smtp: null, isEmulator: true, emailEnabled: false, sendMail, logger }),
-    ).resolves.toBe('logged');
-    expect(sendMail).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/emulador/), {
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-    });
+    await expect(deliverEmail({ label, message, config, isEmulator: false, emailEnabled: false, send, logger })).resolves.toBe('logged');
+    expect(send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/desactivado/), { to: message.to, subject: message.subject });
   });
 });

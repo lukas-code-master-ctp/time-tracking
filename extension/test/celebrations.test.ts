@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Celebration } from '@timetracking/shared';
-import { CELEBRATIONS_REFRESH_MS } from '../src/background/app';
+import { CELEBRATIONS_REFRESH_MS, celebrationsView } from '../src/background/app';
 import { createHarness, type Harness } from './fakes';
 
 // Thursday 2026-11-05 12:00 in Santiago.
@@ -40,6 +40,23 @@ describe('team birthdays and anniversaries (spec 2026-11-05-cumpleanos-aniversar
       ['Yo', 'birthday', 0, null, true],
       ['Ana', 'anniversary', 4, 3, false],
     ]);
+  });
+
+  it("puts tomorrow's celebrations of the boss's people right after today's", () => {
+    const items = [
+      { ...c('Ana', { birthday: '11-07' }), id: 'ana' },
+      { ...c('Beto', { birthday: '11-06', managerUid: 'boss' }), id: 'beto' },
+      { ...c('Carla', { birthday: '11-05' }), id: 'carla' },
+      { ...c('Dani', { birthday: '11-06' }), id: 'dani' },
+    ];
+    const view = celebrationsView(items, 'boss', '2026-11-05');
+    expect(view.map((x) => [x.name, x.daysAway, x.managed])).toEqual([
+      ['Carla', 0, false],
+      ['Beto', 1, true],
+      ['Dani', 1, false],
+      ['Ana', 2, false],
+    ]);
+    expect(celebrationsView(items, 'other', '2026-11-05').every((x) => !x.managed)).toBe(true);
   });
 
   it('re-reads them at most every few hours and keeps the cache when offline', async () => {

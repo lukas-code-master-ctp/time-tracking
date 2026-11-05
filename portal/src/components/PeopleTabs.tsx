@@ -11,7 +11,7 @@ export function PeopleTabs() {
         Invitaciones
       </NavLink>
       <NavLink to="/colaboradores/fechas" className={({ isActive }) => `tab${isActive ? ' active' : ''}`}>
-        Cumpleaños
+        Cumpleaños y aniversarios
       </NavLink>
     </nav>
   );

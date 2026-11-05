@@ -43,7 +43,7 @@ afterEach(() => {
 describe('celebrations form', () => {
   it('round-trips and validates', () => {
     const f = celebrationToForm({ displayName: 'Ana', birthday: '03-14', hireDate: '2022-01-10', active: true, updatedAt: 0, updatedBy: 'x' });
-    expect(f).toEqual({ birthMonth: '03', birthDay: '14', hireDate: '2022-01-10' });
+    expect(f).toEqual({ birthMonth: '03', birthDay: '14', hireDate: '2022-01-10', managerUid: '' });
     expect(celebrationFormError({ ...f, birthDay: '' }, '2026-11-05')).toMatch(/día y el mes/);
     expect(celebrationFormError({ ...f, birthMonth: '02', birthDay: '30' }, '2026-11-05')).toMatch(/cumpleaños/);
     expect(celebrationFormError({ ...f, hireDate: '2027-01-01' }, '2026-11-05')).toMatch(/futura/);
@@ -52,6 +52,7 @@ describe('celebrations form', () => {
       birthday: '03-14',
       hireDate: '2022-01-10',
       active: true,
+      managerUid: null,
       updatedAt: 5,
       updatedBy: 'admin-1',
     });
@@ -78,6 +79,13 @@ describe('CelebrationsPage', () => {
     await user.click(within(row).getByRole('button', { name: 'Guardar' }));
     expect(await within(row).findByText('Guardado')).toBeInTheDocument();
     expect(d.celebrations?.find((c) => c.id === ADMIN.id)).toMatchObject({ birthday: '03-14', hireDate: null, active: true });
+
+    // The boss of Ana.
+    const anaRow = screen.getByLabelText('Jefatura de Ana Pérez').closest('li')!;
+    await user.selectOptions(screen.getByLabelText('Jefatura de Ana Pérez'), 'Bruno Díaz');
+    await user.click(within(anaRow).getByRole('button', { name: 'Guardar' }));
+    expect(await within(anaRow).findByText('Guardado')).toBeInTheDocument();
+    expect(d.celebrations?.find((c) => c.id === 'ana')).toMatchObject({ birthday: '11-05', managerUid: 'bruno' });
   });
 
   it('deactivating a person hides their birthday', async () => {
