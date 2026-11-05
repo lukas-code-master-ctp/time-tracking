@@ -107,9 +107,10 @@ jobs:
             echo "Cancelando la revisión pendiente…"
             CANCEL=$(curl -sS -H "Authorization: Bearer $TOKEN" -X POST "$API/v2/$ITEM:cancelSubmission")
             echo "$CANCEL"
+            # No pending review (already approved or cancelled) is fine: the
+            # upload below fails anyway if a review is still in the way.
             if echo "$CANCEL" | jq -e '.error' >/dev/null; then
-              echo "::error::Chrome Web Store no canceló la revisión pendiente"
-              exit 1
+              echo "::warning::No había una revisión pendiente que cancelar: $(echo "$CANCEL" | jq -r '.error.message')"
             fi
           fi
 
