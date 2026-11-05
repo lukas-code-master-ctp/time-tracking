@@ -5,6 +5,8 @@ import {
   type Absence,
   type ActiveBreak,
   type ActivitySlot,
+  type Announcement,
+  type AnnouncementRead,
   type Invitation,
   type OrgConfig,
   type PersonSchedule,
@@ -31,6 +33,9 @@ export interface FakeDb {
   breaks?: ActiveBreak[];
   /** Justified absences (optional: most tests have none). */
   absences?: WithId<Absence>[];
+  /** Internal announcements and their read confirmations (optional). */
+  announcements?: WithId<Announcement>[];
+  announcementReads?: AnnouncementRead[];
 }
 
 export function emptyDb(): FakeDb {
@@ -85,6 +90,19 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     },
     deleteAbsence: async (id) => {
       db.absences = (db.absences ?? []).filter((a) => a.id !== id);
+    },
+    listAnnouncements: async () => [...(db.announcements ?? [])].sort((a, b) => b.createdAt - a.createdAt),
+    listAnnouncementReads: async () => [...(db.announcementReads ?? [])],
+    createAnnouncement: async (a) => {
+      const id = `ann-${(db.announcements ?? []).length + 1}`;
+      db.announcements = [...(db.announcements ?? []), { ...a, id }];
+      return id;
+    },
+    setAnnouncementArchived: async (id, archivedAt) => {
+      db.announcements = (db.announcements ?? []).map((a) => (a.id === id ? { ...a, archivedAt } : a));
+    },
+    deleteAnnouncement: async (id) => {
+      db.announcements = (db.announcements ?? []).filter((a) => a.id !== id);
     },
     screenshotUrl: async (path) => `https://example.test/${encodeURIComponent(path)}`,
   };

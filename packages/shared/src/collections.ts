@@ -13,6 +13,10 @@ export const COLLECTIONS = {
   breaks: 'breaks',
   /** `absences/{autoId}`: justified absences (vacations, leave…). */
   absences: 'absences',
+  /** `announcements/{autoId}`: internal announcements from the portal. */
+  announcements: 'announcements',
+  /** `announcementReads/{announcementId_uid}`: read confirmations. */
+  announcementReads: 'announcementReads',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -183,6 +183,50 @@ body {
   min-height: 38px;
 }
 
+/* Internal announcement waiting for "Confirmo que lo leí" (spec 2026-11-05-comunicados). */
+.announcement {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.announcement-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.announcement .eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.announcement-title {
+  font-weight: 700;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.announcement-body {
+  margin: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.announcement .btn {
+  margin-top: 4px;
+  min-height: 38px;
+}
+
 /* iOS-style switch on a real checkbox (keyboard and screen readers keep working). */
 .switch {
   flex: none;

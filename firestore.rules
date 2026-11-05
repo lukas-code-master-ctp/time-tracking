@@ -15,6 +15,9 @@ rules_version = '2';
 //   are recorded, changed and deleted by an admin. The person reads hers,
 //   requests new ones as `pending` and withdraws them while still pending
 //   (spec 2026-10-22-solicitud-ausencias); only an admin approves or rejects.
+// - `announcements` (spec 2026-11-05-comunicados) are published, archived
+//   and deleted by an admin and read by every active person, who confirms
+//   the reading once in `announcementReads`.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -489,6 +492,57 @@ service cloud.firestore {
       // The person withdraws her own request while it is still pending.
       allow delete: if isAdmin()
         || (isActive() && ownsExisting() && resource.data.get('status', 'approved') == 'pending');
+    }
+
+    // ---------- announcements (spec 2026-11-05-comunicados) ----------
+
+    // Same limits as packages/shared/src/announcements.ts.
+    function validAnnouncement(d) {
+      return d.keys().hasOnly(['title', 'body', 'authorName', 'createdAt', 'createdBy', 'archivedAt'])
+        && d.keys().hasAll(['title', 'body', 'authorName', 'createdAt', 'createdBy', 'archivedAt'])
+        && d.title is string && d.title.trim().size() > 0 && d.title.size() <= 120
+        && d.body is string && d.body.trim().size() > 0 && d.body.size() <= 4000
+        && d.authorName is string && d.authorName.trim().size() > 0 && d.authorName.size() <= 80
+        && d.createdAt is int && d.createdBy is string
+        && isNullableInt(d.archivedAt);
+    }
+
+    // Every active person reads them (the extension shows them); an admin
+    // publishes, archives/unarchives (nothing else changes) and deletes.
+    match /announcements/{id} {
+      allow read: if isActive();
+      allow create: if isAdmin()
+        && validAnnouncement(incoming())
+        && incoming().createdBy == request.auth.uid
+        && incoming().archivedAt == null
+        && notFuture(incoming().createdAt);
+      allow update: if isAdmin()
+        && validAnnouncement(incoming())
+        && changedKeys().hasOnly(['archivedAt']);
+      allow delete: if isAdmin();
+    }
+
+    function validAnnouncementRead(d, docId) {
+      return d.keys().hasOnly(['announcementId', 'uid', 'readAt'])
+        && d.keys().hasAll(['announcementId', 'uid', 'readAt'])
+        && d.uid == request.auth.uid
+        && d.announcementId is string && d.announcementId.size() > 0
+        && docId == d.announcementId + '_' + d.uid
+        && d.readAt is int && d.readAt >= 0 && notFuture(d.readAt);
+    }
+
+    // "Confirmo que lo leí": written once by the person, never changed.
+    match /announcementReads/{docId} {
+      allow read: if isAdmin() || (isActive() && ownsExisting());
+      allow create: if isActive()
+        && validAnnouncementRead(incoming(), docId)
+        && exists(/databases/$(database)/documents/announcements/$(incoming().announcementId));
+      // Re-sending the same confirmation is allowed; it cannot be changed.
+      allow update: if isActive()
+        && ownsExisting()
+        && validAnnouncementRead(incoming(), docId)
+        && changedKeys().size() == 0;
+      allow delete: if false;
     }
 
     // Anything else is denied.

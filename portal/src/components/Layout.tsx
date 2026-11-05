@@ -9,6 +9,7 @@ const NAV = [
   // People and their invitations: one page with two tabs (/colaboradores, /colaboradores/invitaciones).
   { to: '/colaboradores', label: 'Colaboradores', end: false, icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8v-1a7 7 0 0 1 14 0v1' },
   { to: '/pausa-activa', label: 'Pausa activa', end: false, icon: 'M3 12h4l3-8 4 16 3-8h4' },
+  { to: '/comunicados', label: 'Comunicados', end: false, icon: 'M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1Zm14-2a4 4 0 0 1 0 6M7 14l1 5h3' },
 ];
 
 /** At the bottom of the sidebar, above the account. */

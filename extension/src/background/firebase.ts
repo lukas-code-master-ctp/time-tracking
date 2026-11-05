@@ -32,6 +32,8 @@ import {
   getDoc,
   getDocs,
   getFirestore,
+  limit,
+  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -48,6 +50,7 @@ import {
   SCHEDULE_CONFIG_DOC_ID,
   type Absence,
   type ActiveBreak,
+  type AnnouncementRead,
   type ActivitySlot,
   type OrgConfig,
   type ScreenshotMeta,
@@ -159,6 +162,17 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     },
     async deleteAbsence(id: string) {
       await deleteDoc(doc(db, COLLECTIONS.absences, id));
+    },
+    async listAnnouncements(max: number) {
+      const snap = await getDocs(query(collection(db, COLLECTIONS.announcements), orderBy('createdAt', 'desc'), limit(max)));
+      return snap.docs.map((d) => ({ ...(d.data() as object), id: d.id }));
+    },
+    async listAnnouncementReads(uid: string) {
+      const snap = await getDocs(query(collection(db, COLLECTIONS.announcementReads), where('uid', '==', uid)));
+      return snap.docs.map((d) => (d.data() as AnnouncementRead).announcementId).filter((id) => typeof id === 'string');
+    },
+    async putAnnouncementRead(docId: string, data: AnnouncementRead) {
+      await setDoc(doc(db, COLLECTIONS.announcementReads, docId), data);
     },
   };
 }
