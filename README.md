@@ -250,8 +250,8 @@ Como el ID coincide con el de la tienda, el login con Google funciona. Ojo: **lo
   BOOTSTRAP_ADMINS=lukas@impulseai.cl
   EXTENSION_INSTALL_URL=https://chromewebstore.google.com/detail/.../<ID>
   EMAIL_ENABLED=false
-  EMAIL_FROM="Registro de jornada <no-responder@compratuparcela.cl>"
-  PORTAL_URL=https://<dominio del portal>
+  EMAIL_FROM="Mi Pega HR <notificaciones@mipegahr.cl>"
+  PORTAL_URL=https://app.mipegahr.cl
   ```
 
   - `ALLOWED_DOMAIN`: dominios permitidos separados por coma (de 1 a 10, sin `@`). Se usan hasta que exista `config/org`; el primer admin la crea con esta lista y desde entonces manda la lista de **Configuración → Dominios permitidos** del portal. Solo se aceptan correos exactos de esos dominios (no subdominios como `@sub.impulseai.cl`).
@@ -264,7 +264,7 @@ Como el ID coincide con el de la tienda, el login con Google funciona. Ojo: **lo
 
 **Solo si pones `EMAIL_ENABLED=true`** en el paso 5. Los correos (invitación y, los lunes a las 8:00, el resumen de cumpleaños y aniversarios de la semana para los administradores activos) se envían con la API de [Resend](https://resend.com):
 
-1. En Resend, agrega y verifica el dominio del remitente (p. ej. `compratuparcela.cl`: registros DNS SPF/DKIM que indica Resend).
+1. En Resend, agrega y verifica el dominio del remitente (`mipegahr.cl`, para enviar desde `notificaciones@mipegahr.cl`: registros DNS SPF/DKIM que indica Resend).
 2. Crea una API key con permiso **Sending access**.
 3. Guárdala como secreto: `npx firebase functions:secrets:set RESEND_API_KEY --project prod`.
 4. Pon `EMAIL_ENABLED=true` y `EMAIL_FROM` en `functions/.env.<proyecto>` y despliega las funciones.

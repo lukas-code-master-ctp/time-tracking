@@ -33,4 +33,4 @@ Colaboradores › **Cumpleaños y aniversarios** (`/colaboradores/fechas`): "Pr�
 ## Correo semanal (función `weeklyCelebrationsDigest`)
 
 - Cada lunes a las 8:00 (America/Santiago) un correo a todos los administradores activos con los cumpleaños y aniversarios de lunes a domingo, con su jefatura. Si la semana no tiene fechas, no se envía.
-- Se envía con **Resend** (API HTTP, `functions/src/core/email.ts`), igual que el correo de invitación, que deja de usar SMTP. Configuración: `EMAIL_ENABLED=true`, `EMAIL_FROM` (dominio verificado en Resend), `PORTAL_URL` opcional, secreto `RESEND_API_KEY`. Sin eso solo se registra en el log.
+- Se envía con **Resend** (API HTTP, `functions/src/core/email.ts`), igual que el correo de invitación, que deja de usar SMTP. Configuración: `EMAIL_ENABLED=true`, `EMAIL_FROM="Mi Pega HR <notificaciones@mipegahr.cl>"` (dominio `mipegahr.cl` verificado en Resend), `PORTAL_URL=https://app.mipegahr.cl`, secreto `RESEND_API_KEY`. Sin eso solo se registra en el log.
