@@ -286,7 +286,16 @@ summary {
   white-space: nowrap;
 }
 .brand-name span {
-  color: var(--tinta);
+  /* "HR" como insignia, igual que en la identidad de marca (marca/mi-pega-hr.html). */
+  display: inline-block;
+  margin-left: 4px;
+  padding: 3px 5px 2px;
+  border-radius: 5px;
+  background: var(--tinta);
+  color: var(--on-tinta);
+  font: 700 0.5em/1 var(--f-ui);
+  letter-spacing: 0.04em;
+  vertical-align: super;
 }
 .nav {
   display: flex;
