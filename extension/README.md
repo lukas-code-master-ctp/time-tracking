@@ -144,6 +144,10 @@ Spec `docs/specs/2026-11-05-comunicados.md`. Un administrador publica comunicado
 - `celebrations/{uid}` (spec `docs/specs/2026-11-05-cumpleanos-aniversarios.md`), registrado por un admin en el portal (Colaboradores › Cumpleaños). La extensión lo lee con `config/org`, como mucho cada 3 h (`CELEBRATIONS_REFRESH_MS`), y lo guarda en `tt.meta.celebrations`.
 - **Popup**: una fila bajo la pausa activa con la fecha más próxima de hoy a 7 días (fondo azul si es hoy); "+N" despliega las demás. Nada si no hay fechas.
 
+## Nombre Mi Pega HR (0.2.18)
+
+La extensión pasa a llamarse **Mi Pega HR** (`APP_NAME` en `build/manifest.ts`; `short_name` "Mi Pega"). Íconos nuevos (nota adhesiva amarilla con una "p"; verde con la jornada abierta), generados por `scripts/icons.ts`. Acento tinta en `src/ui/base.css` y Bricolage Grotesque (`@fontsource-variable/bricolage-grotesque`) para el nombre. `scripts/build.ts` sigue aceptando carpetas de builds anteriores con el nombre "Registro de jornada". Es la misma ficha de Chrome Web Store (mismo ID); el cambio de nombre pasa por la revisión normal.
+
 ## Arquitectura
 
 ```

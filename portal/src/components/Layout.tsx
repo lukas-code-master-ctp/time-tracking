@@ -68,7 +68,7 @@ export function Layout() {
       <header className="topbar">
         <span className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          Registro de jornada
+          Mi Pega HR
         </span>
         <button
           type="button"
@@ -84,7 +84,7 @@ export function Layout() {
         <div className="sidebar-inner">
           <span className="brand sidebar-brand">
             <span className="brand-mark" aria-hidden="true" />
-            Registro de jornada
+            Mi Pega HR
             <span className="brand-sub">Portal de administración</span>
           </span>
           <nav aria-label="Principal">

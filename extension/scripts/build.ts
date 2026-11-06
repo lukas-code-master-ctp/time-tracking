@@ -13,7 +13,7 @@ import { cpSync, existsSync, readFileSync, readdirSync, rmSync, statSync } from 
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { build } from 'vite';
 import { ROOT, missingFirebaseValues, outDirOf, resolveBuildConfig, type BuildTarget } from '../build/common.ts';
-import { ABSENCES_FILE, BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, DEV_EXTENSION_ID, ICONS, POPUP_FILE } from '../build/manifest.ts';
+import { ABSENCES_FILE, APP_NAME, BACKGROUND_FILE, CONSENT_FILE, CONTENT_FILE, DEV_EXTENSION_ID, ICONS, POPUP_FILE } from '../build/manifest.ts';
 import { PARTS, partConfig } from '../build/parts.ts';
 import { STORE_EXTENSION_ID, STORE_PUBLIC_KEY, extensionIdFromKey } from '../build/store-key.ts';
 
@@ -94,7 +94,8 @@ function assertSafeOutDir(dir: string): void {
   } catch {
     // No manifest (or unreadable): not a previous build.
   }
-  if (typeof name !== 'string' || !name.startsWith('Registro de jornada')) {
+  // Builds before 0.2.18 were called "Registro de jornada".
+  if (typeof name !== 'string' || !(name.startsWith(APP_NAME) || name.startsWith('Registro de jornada'))) {
     bad('la carpeta tiene archivos y no es un build anterior de la extensión; usa una carpeta nueva o vacía');
   }
 }

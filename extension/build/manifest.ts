@@ -21,6 +21,9 @@ export const DEV_PUBLIC_KEY =
 /** Extension ID derived from {@link DEV_PUBLIC_KEY}. */
 export const DEV_EXTENSION_ID = 'klmbbjhphdmmicdbbgkofkpgapcinbmd';
 
+/** Product name (2026-11-06, before: "Registro de jornada"). */
+export const APP_NAME = 'Mi Pega HR';
+
 export const BACKGROUND_FILE = 'background.js';
 export const CONTENT_FILE = 'content.js';
 export const POPUP_FILE = 'popup.html';
@@ -47,15 +50,15 @@ export function buildManifest(opts: ManifestOptions): chrome.runtime.ManifestV3 
   const dev = opts.appEnv === 'dev';
   const manifest: chrome.runtime.ManifestV3 = {
     manifest_version: 3,
-    name: dev ? 'Registro de jornada (DEV)' : 'Registro de jornada',
-    short_name: 'Jornada',
-    description: 'Registra tu jornada y tu nivel de actividad mientras la jornada está iniciada.',
+    name: dev ? `${APP_NAME} (DEV)` : APP_NAME,
+    short_name: 'Mi Pega',
+    description: 'Tu compañero de pega: registra tu jornada y tu actividad, y te avisa de pausas, ausencias, comunicados y cumpleaños.',
     version: opts.version,
     // 30-second chrome.alarms periods need Chrome 120+.
     minimum_chrome_version: '120',
     background: { service_worker: BACKGROUND_FILE, type: 'module' },
     icons: ICONS,
-    action: { default_popup: POPUP_FILE, default_title: 'Registro de jornada', default_icon: ICONS },
+    action: { default_popup: POPUP_FILE, default_title: APP_NAME, default_icon: ICONS },
     // unlimitedStorage: the offline screenshot queue (up to 20 JPEGs) exceeds the 10 MB default.
     // notifications: start/end reminders of the working hours (0.2.0).
     permissions: ['storage', 'unlimitedStorage', 'alarms', 'idle', 'tabs', 'identity', 'scripting', 'notifications'],

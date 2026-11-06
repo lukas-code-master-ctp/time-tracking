@@ -1,9 +1,10 @@
 /**
  * Generates the toolbar/extension icons (PNG) without dependencies:
- * `node scripts/icons.ts` → `icons/icon-{16,32,48,128}.png` (blue clock) and
- * `icons/icon-on-{16,32,48,128}.png` (green clock, shown while a work day is
- * open, next to the "ON" badge). The PNGs are committed; run this again only
- * to change the design.
+ * `node scripts/icons.ts` → `icons/icon-{16,32,48,128}.png` (Mi Pega HR logo:
+ * a yellow sticky note with an ink "p") and `icons/icon-on-{16,32,48,128}.png`
+ * (green note, shown while a work day is open, next to the "ON" badge). The
+ * shape follows `portal/public/favicon.svg` (64×64 viewBox). The PNGs are
+ * committed; run this again only to change the design.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,11 +14,16 @@ import { ROOT } from '../build/common.ts';
 type RGB = [number, number, number];
 
 const SIZES = [16, 32, 48, 128] as const;
-const VARIANTS: { prefix: string; color: RGB }[] = [
-  { prefix: 'icon', color: [37, 99, 235] }, // #2563eb
-  { prefix: 'icon-on', color: [22, 163, 74] }, // #16a34a
+interface Variant {
+  prefix: string;
+  note: RGB;
+  fold: RGB;
+}
+const VARIANTS: Variant[] = [
+  { prefix: 'icon', note: [255, 201, 60], fold: [230, 169, 31] }, // #ffc93c / #e6a91f
+  { prefix: 'icon-on', note: [52, 196, 106], fold: [35, 145, 80] }, // #34c46a / #239150
 ];
-const WHITE: RGB = [255, 255, 255];
+const INK: RGB = [38, 51, 107]; // #26336b
 
 // ---------- PNG encoder (RGBA 8-bit) ----------
 
@@ -74,21 +80,30 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-/** Color at a point, or null (transparent). Small sizes get thicker strokes. */
-function shade(x: number, y: number, size: number, color: RGB): RGB | null {
-  const r = Math.hypot(x, y);
-  if (r > 0.96) return null;
-  const small = size <= 16;
-  const face = small ? 0.62 : 0.7;
-  if (r > face) return color; // colored rim
-  const hand = small ? 0.17 : 0.11;
-  const hour = distToSegment(x, y, 0, 0, 0, small ? -0.4 : -0.44) <= hand;
-  const minute = distToSegment(x, y, 0, 0, small ? 0.38 : 0.46, 0) <= hand;
-  if (hour || minute) return color;
-  return WHITE;
+const TILT = (6 * Math.PI) / 180; // the note is rotated -6° in the SVG
+
+/**
+ * Color at a point, or null (transparent). (x, y) are in [-1, 1]; they are
+ * mapped to the SVG's 64×64 space and un-rotated before testing the shapes.
+ * Small sizes get a thicker "p" so it stays legible at 16 px.
+ */
+function shade(x: number, y: number, size: number, v: Variant): RGB | null {
+  const dx = x * 34;
+  const dy = y * 34;
+  const u = 32 + dx * Math.cos(TILT) - dy * Math.sin(TILT);
+  const w = 32 + dx * Math.sin(TILT) + dy * Math.cos(TILT);
+  if (u < 10 || u > 54 || w < 8 || w > 56 || u + w > 96) return null;
+  const half = size <= 16 ? 3.6 : size <= 32 ? 3.1 : 2.75;
+  const stem = distToSegment(u, w, 24, 22, 24, 46);
+  const top = distToSegment(u, w, 24, 22, 31.5, 22);
+  const bottom = distToSegment(u, w, 24, 37, 31.5, 37);
+  const bowl = u >= 31.5 ? Math.abs(Math.hypot(u - 31.5, w - 29.5) - 7.5) : Infinity;
+  if (Math.min(stem, top, bottom, bowl) <= half) return INK;
+  if (u >= 40 && w >= 42) return v.fold;
+  return v.note;
 }
 
-function render(size: number, color: RGB): Uint8Array {
+function render(size: number, v: Variant): Uint8Array {
   const SS = 4;
   const out = new Uint8Array(size * size * 4);
   for (let py = 0; py < size; py++) {
@@ -101,7 +116,7 @@ function render(size: number, color: RGB): Uint8Array {
         for (let sx = 0; sx < SS; sx++) {
           const x = ((px + (sx + 0.5) / SS) / size) * 2 - 1;
           const y = ((py + (sy + 0.5) / SS) / size) * 2 - 1;
-          const c = shade(x, y, size, color);
+          const c = shade(x, y, size, v);
           if (!c) continue;
           r += c[0];
           g += c[1];
@@ -126,7 +141,7 @@ mkdirSync(dir, { recursive: true });
 for (const v of VARIANTS) {
   for (const size of SIZES) {
     const file = join(dir, `${v.prefix}-${size}.png`);
-    writeFileSync(file, encodePng(size, render(size, v.color)));
+    writeFileSync(file, encodePng(size, render(size, v)));
     console.log(file);
   }
 }

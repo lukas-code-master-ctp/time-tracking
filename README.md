@@ -1,4 +1,6 @@
-# Registro de jornada y actividad
+# Mi Pega HR
+
+> **Mi Pega HR** (desde la extensión 0.2.18; antes "Registro de jornada"): tu compañero de pega. Empezó como registro de jornada y actividad y hoy suma pausa activa, ausencias, comunicados, pulso de ánimo y cumpleaños. Identidad de marca: logo de nota adhesiva amarilla con una "p" (`portal/public/favicon.svg`, íconos de la extensión generados con `npm run icons -w extension`), acento tinta `#26336b` (modo oscuro `#9aa8f0`), Plus Jakarta Sans para la interfaz y Bricolage Grotesque para el nombre y los títulos. Tono: cercano y chileno ("¿Partimos la pega?"), neutro en temas delicados (atrasos, ausencias), sin palabras de vigilancia.
 
 Herramienta interna, al estilo de Hubstaff pero más simple, para un equipo de unas 30 personas que trabaja con Google Workspace. Admite **varios dominios de Workspace** (hoy `@impulseai.cl` y `@compratuparcela.cl`, dos organizaciones distintas); la lista se edita en el portal (Configuración).
 

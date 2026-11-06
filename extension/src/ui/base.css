@@ -1,7 +1,9 @@
 /* Shared look of the popup and the consent page. Light/dark via prefers-color-scheme.
    Same design system as the portal (portal/src/styles.css): slate neutrals,
-   trust blue, Plus Jakarta Sans bundled with the extension (no network). */
+   Mi Pega HR ink accent, Plus Jakarta Sans (UI) and Bricolage Grotesque
+   (name and titles) bundled with the extension (no network). */
 @import '@fontsource-variable/plus-jakarta-sans/wght.css';
+@import '@fontsource-variable/bricolage-grotesque/wght.css';
 
 :root {
   color-scheme: light dark;
@@ -12,11 +14,11 @@
   --border-strong: #cbd5e1;
   --text: #0f172a;
   --muted: #475569;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-soft: #eff6ff;
+  --accent: #26336b;
+  --accent-hover: #1b2550;
+  --accent-soft: #e8ebf7;
   --accent-text: #ffffff;
-  --ring: rgb(37 99 235 / 0.28);
+  --ring: rgb(38 51 107 / 0.28);
   --ok: #15803d;
   --ok-soft: #dcfce7;
   --danger: #dc2626;
@@ -26,6 +28,7 @@
   --radius: 14px;
   --shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --font-display: 'Bricolage Grotesque Variable', 'Plus Jakarta Sans Variable', system-ui, sans-serif;
   --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font: 14px/1.45 var(--font);
 }
@@ -39,11 +42,11 @@
     --border-strong: #334563;
     --text: #f1f5f9;
     --muted: #9fb0c8;
-    --accent: #60a5fa;
-    --accent-hover: #93c5fd;
-    --accent-soft: #172554;
+    --accent: #9aa8f0;
+    --accent-hover: #bac4f6;
+    --accent-soft: #1f2540;
     --accent-text: #0b1120;
-    --ring: rgb(96 165 250 / 0.35);
+    --ring: rgb(154 168 240 / 0.35);
     --ok: #4ade80;
     --ok-soft: #13301f;
     --danger: #f87171;

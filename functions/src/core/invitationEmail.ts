@@ -24,11 +24,11 @@ export function shouldSendInvitationEmail(
 
 export function buildInvitationEmail(params: { to: string; installUrl: string }): EmailMessage {
   const { to, installUrl } = params;
-  const subject = 'Invitación al registro de jornada';
+  const subject = 'Invitación a Mi Pega HR';
   const text = [
     'Hola:',
     '',
-    'Te invitaron a usar el registro de jornada de la empresa.',
+    'Te invitaron a usar Mi Pega HR, el registro de jornada de la empresa.',
     '',
     'Para empezar:',
     `1. Instala la extensión de Chrome desde este enlace: ${installUrl}`,
@@ -47,7 +47,7 @@ export function buildInvitationEmail(params: { to: string; installUrl: string })
 <html lang="es">
 <body style="font-family: Arial, Helvetica, sans-serif; color: #1f2937; line-height: 1.5;">
   <p>Hola:</p>
-  <p>Te invitaron a usar el <strong>registro de jornada</strong> de la empresa.</p>
+  <p>Te invitaron a usar <strong>Mi Pega HR</strong>, el registro de jornada de la empresa.</p>
   <p>Para empezar:</p>
   <ol>
     <li>Instala la extensión de Chrome: <a href="${safeUrl}">${safeUrl}</a></li>
