@@ -8,7 +8,7 @@
  *   still works). Otherwise nothing is sent and no secret is declared, so
  *   `firebase deploy` does not ask for it.
  * - `EMAIL_FROM`: sender on a domain verified in Resend, e.g.
- *   `Mi Pega HR <no-responder@compratuparcela.cl>`.
+ *   `Mi Pega HR <notificaciones@mipegahr.cl>`.
  * - Secret `RESEND_API_KEY` (Secret Manager), declared only when email is on.
  */
 
