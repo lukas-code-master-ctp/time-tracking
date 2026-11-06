@@ -23,6 +23,32 @@ export function joinErrorMessage(reason: string, domains: readonly string[]): st
   }
 }
 
+/** Sign-in errors (Google popup or email/password), in Spanish. */
+export function authErrorMessage(err: unknown): string {
+  const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/invalid-login-credentials':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'El correo o la contraseña no coinciden. Si siempre entras con Google, usa ese botón o crea una contraseña con «¿Olvidaste tu contraseña?».';
+    case 'auth/invalid-email':
+      return 'Ese correo no es válido. Revísalo e inténtalo de nuevo.';
+    case 'auth/email-already-in-use':
+      return 'Ese correo ya tiene una cuenta. Inicia sesión, entra con Google o usa «¿Olvidaste tu contraseña?».';
+    case 'auth/weak-password':
+      return 'La contraseña es muy corta: usa al menos 8 caracteres.';
+    case 'auth/too-many-requests':
+      return 'Demasiados intentos seguidos. Espera unos minutos o restablece tu contraseña.';
+    case 'auth/user-disabled':
+      return 'Tu cuenta está desactivada. Habla con un administrador.';
+    case 'auth/operation-not-allowed':
+      return 'El inicio de sesión con correo todavía no está activado. Entra con Google por ahora.';
+    default:
+      return errorMessage(err);
+  }
+}
+
 /** Generic message for a failed read/write. */
 export function errorMessage(err: unknown): string {
   const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';

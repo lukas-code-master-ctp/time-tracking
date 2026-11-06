@@ -12,11 +12,17 @@ import { initializeApp } from 'firebase/app';
 import {
   GoogleAuthProvider,
   connectAuthEmulator,
+  createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithCredential,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  type ActionCodeSettings,
+  type User,
 } from 'firebase/auth';
 import {
   collection,
@@ -68,7 +74,7 @@ import {
 import { ALLOWED_DOMAINS, FIREBASE_CONFIG, googleLoginParams } from '../env';
 import { SESSION_LOOKBACK_MS } from '../lib/team';
 import { joinErrorMessage } from '../lib/messages';
-import { JoinError, type AuthApi, type Backend, type DataSource, type TimeRange } from './types';
+import { JoinError, type AuthApi, type PasswordOutcome, type Backend, type DataSource, type TimeRange } from './types';
 
 const PAGE_SIZE = 1000;
 
@@ -93,6 +99,8 @@ export function createFirebaseBackend(): Backend {
     ...(FIREBASE_CONFIG.messagingSenderId ? { messagingSenderId: FIREBASE_CONFIG.messagingSenderId } : {}),
   });
   const auth = getAuth(app);
+  // Verification and reset emails from Firebase Auth in Spanish.
+  auth.languageCode = 'es';
   const db = getFirestore(app);
   const functions = getFunctions(app, FUNCTIONS_REGION);
   const storage = getStorage(app);
@@ -332,11 +340,51 @@ export function createFirebaseBackend(): Backend {
     },
   };
 
+  /**
+   * Runs an email action with a "Continuar" link back to the portal. A domain
+   * not authorized in Firebase Auth (e.g. a preview URL) gets the plain email.
+   */
+  async function withContinueUrl(send: (settings?: ActionCodeSettings) => Promise<void>): Promise<void> {
+    try {
+      await send({ url: `${window.location.origin}/` });
+    } catch (err) {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') await send();
+      else throw err;
+    }
+  }
+
+  const sendVerification = (user: User): Promise<void> =>
+    withContinueUrl((settings) => sendEmailVerification(user, settings ?? null));
+
   const authApi: AuthApi = {
     onChange(cb) {
       return onAuthStateChanged(auth, (u) =>
-        cb(u ? { uid: u.uid, email: u.email, displayName: u.displayName } : null),
+        cb(u ? { uid: u.uid, email: u.email, displayName: u.displayName, emailVerified: u.emailVerified } : null),
       );
+    },
+    async signInWithPassword(email, password): Promise<PasswordOutcome> {
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
+      if (user.emailVerified) return 'signed-in';
+      await sendVerification(user);
+      await signOut(auth);
+      return 'verification-sent';
+    },
+    async createPasswordAccount(email, password) {
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      try {
+        await sendVerification(user);
+      } finally {
+        await signOut(auth);
+      }
+    },
+    async sendPasswordReset(email) {
+      try {
+        await withContinueUrl((settings) => sendPasswordResetEmail(auth, email, settings));
+      } catch (err) {
+        // Same answer for unknown emails (prod has email enumeration protection; the emulator does not).
+        if ((err as { code?: unknown } | null)?.code !== 'auth/user-not-found') throw err;
+      }
     },
     async signIn() {
       const provider = new GoogleAuthProvider();

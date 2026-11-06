@@ -103,13 +103,30 @@ export interface AuthUser {
   uid: string;
   email: string | null;
   displayName: string | null;
+  /**
+   * False only for an email/password account whose address was not confirmed
+   * yet: such a session never calls `joinOrg` (Google accounts are verified).
+   */
+  emailVerified?: boolean;
 }
+
+/** Result of an email/password step that does not leave the person signed in. */
+export type PasswordOutcome = 'signed-in' | 'verification-sent';
 
 export interface AuthApi {
   /** Subscribes to sign-in changes; returns the unsubscribe function. */
   onChange(cb: (user: AuthUser | null) => void): () => void;
   /** Google sign-in (popup, restricted to the Workspace domain). */
   signIn(): Promise<void>;
+  /**
+   * Email and password. An unverified address gets a new verification email
+   * and the session is closed (`'verification-sent'`).
+   */
+  signInWithPassword(email: string, password: string): Promise<PasswordOutcome>;
+  /** Creates an email/password account, sends the verification email and signs out. */
+  createPasswordAccount(email: string, password: string): Promise<void>;
+  /** Sends the reset link (also lets a Google account add a password). Silent for unknown emails. */
+  sendPasswordReset(email: string): Promise<void>;
   /** Dev build only: fake Google credential accepted by the Auth emulator. */
   signInDev?: (email: string) => Promise<void>;
   signOut(): Promise<void>;

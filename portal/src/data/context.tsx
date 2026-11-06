@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { UserProfile } from '@timetracking/shared';
-import { errorMessage } from '../lib/messages';
+import { authErrorMessage, errorMessage } from '../lib/messages';
 import { JoinError, type AuthUser, type Backend, type DataSource } from './types';
 
 const BackendContext = createContext<Backend | null>(null);
@@ -17,7 +17,7 @@ export function useData(): DataSource {
 
 export type SessionState =
   | { status: 'loading' }
-  | { status: 'signedOut'; error?: string }
+  | { status: 'signedOut'; error?: string; notice?: string }
   | { status: 'joining'; user: AuthUser }
   | { status: 'noAccess'; user: AuthUser; message: string }
   | { status: 'ready'; user: AuthUser; profile: UserProfile };
@@ -25,6 +25,12 @@ export type SessionState =
 interface SessionApi {
   state: SessionState;
   signIn(): Promise<void>;
+  /** The three return true when the step went through (errors land in `state.error`). */
+  signInWithPassword(email: string, password: string): Promise<boolean>;
+  createPasswordAccount(email: string, password: string): Promise<boolean>;
+  sendPasswordReset(email: string): Promise<boolean>;
+  /** Clears the error/notice of the login screen. */
+  clearMessage(): void;
   signInDev?: (email: string) => Promise<void>;
   signOut(): Promise<void>;
   retry(): void;
@@ -79,8 +85,11 @@ export function BackendProvider({ backend, children }: { backend: Backend; child
     };
     const unsubscribe = backend.auth.onChange((user) => {
       current++;
-      if (!user) setState((s) => (s.status === 'signedOut' ? s : { status: 'signedOut' }));
-      else void join(user, current);
+      // An email/password account not verified yet stays on the login screen
+      // (the sign-in step itself sends the email and signs out).
+      if (!user || user.emailVerified === false) {
+        setState((s) => (s.status === 'signedOut' ? s : { status: 'signedOut' }));
+      } else void join(user, current);
     });
     return () => {
       current++;
@@ -92,9 +101,62 @@ export function BackendProvider({ backend, children }: { backend: Backend; child
     try {
       await backend.auth.signIn();
     } catch (err) {
-      setState({ status: 'signedOut', error: errorMessage(err) });
+      setState({ status: 'signedOut', error: authErrorMessage(err) });
     }
   }, [backend]);
+
+  const fail = useCallback((err: unknown) => setState({ status: 'signedOut', error: authErrorMessage(err) }), []);
+  const notify = useCallback((notice: string) => setState({ status: 'signedOut', notice }), []);
+
+  const signInWithPassword = useCallback(
+    async (email: string, password: string) => {
+      try {
+        const outcome = await backend.auth.signInWithPassword(email, password);
+        if (outcome === 'verification-sent') {
+          notify(`Antes de entrar confirma tu correo: te enviamos un enlace a ${email}. Ábrelo y vuelve a iniciar sesión.`);
+          return false;
+        }
+        return true;
+      } catch (err) {
+        fail(err);
+        return false;
+      }
+    },
+    [backend, fail, notify],
+  );
+
+  const createPasswordAccount = useCallback(
+    async (email: string, password: string) => {
+      try {
+        await backend.auth.createPasswordAccount(email, password);
+        notify(`Cuenta creada. Te enviamos un enlace a ${email} para confirmar tu correo; ábrelo y luego inicia sesión.`);
+        return true;
+      } catch (err) {
+        fail(err);
+        return false;
+      }
+    },
+    [backend, fail, notify],
+  );
+
+  const sendPasswordReset = useCallback(
+    async (email: string) => {
+      try {
+        await backend.auth.sendPasswordReset(email);
+        notify(`Si ${email} tiene cuenta, te llegará un enlace para crear una contraseña nueva. Revisa también el spam.`);
+        return true;
+      } catch (err) {
+        fail(err);
+        return false;
+      }
+    },
+    [backend, fail, notify],
+  );
+
+  const clearMessage = useCallback(
+    () => setState((s) => (s.status === 'signedOut' && (s.error || s.notice) ? { status: 'signedOut' } : s)),
+    [],
+  );
 
   const signInDevFn = backend.auth.signInDev;
   const signInDev = useCallback(
@@ -114,7 +176,16 @@ export function BackendProvider({ backend, children }: { backend: Backend; child
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  const api: SessionApi = { state, signIn, signOut, retry, ...(signInDevFn ? { signInDev } : {}) };
+  const api: SessionApi = {
+    state,
+    signIn,
+    signInWithPassword,
+    createPasswordAccount,
+    sendPasswordReset,
+    clearMessage,
+    signOut,
+    retry,
+    ...(signInDevFn ? { signInDev } : {}) };
   return (
     <BackendContext.Provider value={backend}>
       <SessionContext.Provider value={api}>{children}</SessionContext.Provider>

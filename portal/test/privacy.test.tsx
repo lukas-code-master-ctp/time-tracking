@@ -23,7 +23,7 @@ describe('/privacidad', () => {
     renderRoot('/privacidad', getBackend);
     expect(screen.getByRole('heading', { level: 1, name: 'Política de privacidad' })).toBeInTheDocument();
     expect(getBackend).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Iniciar sesión con Google' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continuar con Google' })).not.toBeInTheDocument();
     expect(document.title).toContain('Política de privacidad');
   });
 
@@ -108,7 +108,7 @@ describe('/privacidad', () => {
   it.each(['/privacidad/extra', '/privacidadx', '/equipo', '/'])('%s goes through the admin gate', async (path) => {
     const getBackend = vi.fn((): Backend => ({ data: fakeData(emptyDb()), auth: fakeAuth(null, ADMIN) }));
     renderRoot(path, getBackend);
-    expect(await screen.findByRole('button', { name: 'Iniciar sesión con Google' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Continuar con Google' })).toBeInTheDocument();
     expect(getBackend).toHaveBeenCalled();
     expect(screen.queryByRole('heading', { level: 1, name: 'Política de privacidad' })).not.toBeInTheDocument();
   });
