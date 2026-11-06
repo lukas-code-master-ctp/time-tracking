@@ -1,7 +1,8 @@
 /* Admin portal. Same palette and type as the extension (extension/src/ui/base.css).
    Light/dark: follows the system; `html[data-theme]` forces one.
-   Design system (UI/UX Pro Max, "data-dense dashboard"): slate neutrals, trust
-   blue accent, Plus Jakarta Sans (self-hosted, no request to Google Fonts),
+   Design system (UI/UX Pro Max, "data-dense dashboard"): slate neutrals, Mi Pega HR
+   ink accent (#26336b), Plus Jakarta Sans for the UI and Bricolage Grotesque for
+   the name and page titles (self-hosted, no request to Google Fonts),
    tabular figures for every number, 4/8 px spacing, 150–250 ms transitions. */
 :root {
   color-scheme: light;
@@ -12,11 +13,11 @@
   --border-strong: #cbd5e1;
   --text: #0f172a;
   --muted: #475569;
-  --accent: #2563eb;
-  --accent-soft: #eff6ff;
+  --accent: #26336b;
+  --accent-soft: #e8ebf7;
   --accent-text: #ffffff;
-  --accent-hover: #1d4ed8;
-  --ring: rgb(37 99 235 / 0.28);
+  --accent-hover: #1b2550;
+  --ring: rgb(38 51 107 / 0.28);
   --ok: #15803d;
   --ok-soft: #dcfce7;
   --danger: #dc2626;
@@ -52,6 +53,7 @@
   --glass: rgb(255 255 255 / 0.78);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --sidebar: 248px;
+  --font-display: 'Bricolage Grotesque Variable', 'Plus Jakarta Sans Variable', system-ui, sans-serif;
   --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font: 14px/1.5 var(--font);
   font-feature-settings: 'cv11', 'ss01';
@@ -67,11 +69,11 @@
     --border-strong: #334563;
     --text: #f1f5f9;
     --muted: #9fb0c8;
-    --accent: #60a5fa;
-    --accent-soft: #172554;
+    --accent: #9aa8f0;
+    --accent-soft: #1f2540;
     --accent-text: #0b1120;
-    --accent-hover: #93c5fd;
-    --ring: rgb(96 165 250 / 0.35);
+    --accent-hover: #bac4f6;
+    --ring: rgb(154 168 240 / 0.35);
     --ok: #4ade80;
     --ok-soft: #13301f;
     --danger: #f87171;
@@ -105,11 +107,11 @@
   --border-strong: #334563;
   --text: #f1f5f9;
   --muted: #9fb0c8;
-  --accent: #60a5fa;
-  --accent-soft: #172554;
+  --accent: #9aa8f0;
+  --accent-soft: #1f2540;
   --accent-text: #0b1120;
-  --accent-hover: #93c5fd;
-  --ring: rgb(96 165 250 / 0.35);
+  --accent-hover: #bac4f6;
+  --ring: rgb(154 168 240 / 0.35);
   --ok: #4ade80;
   --ok-soft: #13301f;
   --danger: #f87171;
@@ -160,6 +162,7 @@ p {
 }
 
 h1 {
+  font-family: var(--font-display);
   font-size: 24px;
   line-height: 1.2;
   font-weight: 750;
@@ -275,38 +278,23 @@ a {
 }
 
 .brand {
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
-/* Logo: a clock on a blue tile (pure CSS, same in both themes). */
+.brand-sub {
+  font-family: var(--font);
+  letter-spacing: 0;
+}
+
+/* Logo: the Mi Pega HR sticky note (same SVG as the favicon, same in both themes). */
 .brand-mark {
-  position: relative;
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  box-shadow: 0 2px 6px rgb(37 99 235 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  background: url('/favicon.svg') center / contain no-repeat;
   flex: none;
-}
-
-.brand-mark::before {
-  content: '';
-  position: absolute;
-  inset: 7px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-}
-
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  left: 14px;
-  top: 10px;
-  width: 6px;
-  height: 6px;
-  border-left: 2px solid #fff;
-  border-bottom: 2px solid #fff;
-  border-bottom-left-radius: 1px;
 }
 
 .sidebar-brand {
@@ -696,7 +684,7 @@ a {
 }
 
 .btn.primary {
-  box-shadow: 0 1px 2px rgb(37 99 235 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  box-shadow: 0 1px 2px rgb(38 51 107 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.12);
 }
 
 .btn.primary:hover:not(:disabled) {

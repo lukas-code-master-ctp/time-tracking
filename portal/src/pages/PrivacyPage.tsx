@@ -6,10 +6,10 @@ export const PRIVACY_PATH = '/privacidad';
 export const PRIVACY_UPDATED_AT = '30 de septiembre de 2026';
 export const PRIVACY_CONTACT = 'lukas@impulseai.cl';
 
-export const PRIVACY_TITLE = 'Política de privacidad · Registro de jornada';
+export const PRIVACY_TITLE = 'Política de privacidad · Mi Pega HR';
 
 /**
- * Public privacy policy of the "Registro de jornada" extension and portal
+ * Public privacy policy of the "Mi Pega HR" extension (formerly "Registro de jornada") and portal
  * (Chrome Web Store "privacy policy URL"). Rendered outside the session gate:
  * it needs no login and no Firebase. Same content as the extension's consent
  * notice (extension/consent.html), plus storage, retention and rights.
@@ -31,11 +31,11 @@ export function PrivacyPage() {
         <header className="privacy-head">
           <span className="brand">
             <span className="brand-mark" aria-hidden="true" />
-            Registro de jornada
+            Mi Pega HR
           </span>
           <h1>Política de privacidad</h1>
           <p className="muted">
-            Extensión de Chrome “Registro de jornada” y su portal de administración. Última actualización:{' '}
+            Extensión de Chrome “Mi Pega HR” (antes “Registro de jornada”) y su portal de administración. Última actualización:{' '}
             <time dateTime="2026-09-30">{PRIVACY_UPDATED_AT}</time>.
           </p>
         </header>

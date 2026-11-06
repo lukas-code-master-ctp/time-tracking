@@ -550,7 +550,7 @@ export class App {
       await chrome.notifications.create(reminderNotificationId(r), {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
-        title: 'Registro de jornada',
+        title: 'Mi Pega HR',
         message,
         ...(button ? { buttons: [{ title: button }] } : {}),
         priority: 2,

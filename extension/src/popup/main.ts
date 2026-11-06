@@ -183,7 +183,7 @@ function draw(): void {
 function renderSignedOut(s: StatusView): void {
   const hero = el('section', { className: 'card hero' }, [
     logo(48),
-    el('h1', { textContent: 'Registro de jornada' }),
+    el('h1', { className: 'brand-name', textContent: 'Mi Pega HR' }),
     el('p', {
       className: 'muted',
       textContent: 'Inicia sesión con tu cuenta Google de la empresa para registrar tu jornada.',
@@ -267,7 +267,7 @@ function renderReady(s: StatusView): void {
     el('header', { className: 'top' }, [
       logo(28),
       el('div', { className: 'who' }, [
-        el('strong', { textContent: s.profile?.displayName || 'Registro de jornada' }),
+        el('strong', { textContent: s.profile?.displayName || 'Mi Pega HR' }),
         el('span', { className: 'small muted', textContent: s.user?.email ?? '' }),
       ]),
     ]),

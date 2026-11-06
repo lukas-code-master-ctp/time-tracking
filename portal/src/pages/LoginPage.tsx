@@ -11,7 +11,7 @@ function AuthCard({ children }: { children: ReactNode }) {
       <div className="auth-card card">
         <span className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          Registro de jornada
+          Mi Pega HR
         </span>
         {children}
       </div>
