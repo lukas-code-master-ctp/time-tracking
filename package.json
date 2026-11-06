@@ -6,6 +6,7 @@
     "packages/shared",
     "extension",
     "portal",
+    "landing",
     "functions",
     "tests/rules",
     "scripts"

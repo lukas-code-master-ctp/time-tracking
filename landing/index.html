@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="es-CL">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Mi Pega HR · Tu compañero de pega</title>
+    <meta
+      name="description"
+      content="Extensión de Chrome para registrar la jornada y cuidar al equipo: colación, pausas activas, ausencias, comunicados, pulso de ánimo y cumpleaños. Para empresas con Google Workspace."
+    />
+    <link rel="canonical" href="https://www.mipegahr.cl/" />
+    <meta name="theme-color" content="#f6f7fa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#11141f" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="es_CL" />
+    <meta property="og:site_name" content="Mi Pega HR" />
+    <meta property="og:title" content="Mi Pega HR · Tu compañero de pega" />
+    <meta
+      property="og:description"
+      content="Jornada, colación, pausas activas, ausencias, comunicados, pulso de ánimo y cumpleaños, desde el navegador."
+    />
+    <meta property="og:url" content="https://www.mipegahr.cl/" />
+    <meta property="og:image" content="https://www.mipegahr.cl/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Mi Pega HR",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Chrome, Edge, Brave, Vivaldi, Arc, Opera",
+        "url": "https://www.mipegahr.cl/",
+        "inLanguage": "es-CL",
+        "description": "Extensión de Chrome para registrar la jornada y cuidar al equipo: colación, pausas activas, ausencias, comunicados, pulso de ánimo y cumpleaños."
+      }
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="logo" viewBox="4 4 56 56">
+          <g transform="rotate(-6 32 32)">
+            <path d="M10 8H54V42L40 56H10Z" fill="#ffc93c" />
+            <path d="M54 42H40V56Z" fill="#e6a91f" />
+            <path d="M24 46V22h7.5a7.5 7.5 0 0 1 0 15H24" fill="none" stroke="#26336b" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></symbol>
+        <symbol id="i-utensils" viewBox="0 0 24 24"><path d="M4 3v6a3 3 0 0 0 3 3h0a3 3 0 0 0 3-3V3M7 3v18M20 15V3a4 4 0 0 0-4 4v6a2 2 0 0 0 2 2h2Zm0 0v6" /></symbol>
+        <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18M9 15.5l2 2 4-4" /></symbol>
+        <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="M3 11l16-5v12L3 14v-3ZM11.6 16.8a3 3 0 1 1-5.8-1.6" /></symbol>
+        <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8M9 9.5h.01M15 9.5h.01" /></symbol>
+        <symbol id="i-cake" viewBox="0 0 24 24"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1M2 21h20M7 8v3M12 8v3M17 8v3M7 4h.01M12 4h.01M17 4h.01" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M8 16v-4M13 16V8M18 16v-7" /></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" /></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7V5Z" /></symbol>
+      </defs>
+    </svg>
+
+    <a class="skip" href="#contenido">Saltar al contenido</a>
+
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="brand" href="#inicio" aria-label="Mi Pega HR, inicio">
+          <svg class="brand-logo" aria-hidden="true"><use href="#logo" /></svg>
+          <span class="brand-name" translate="no">Mi Pega <span>HR</span></span>
+        </a>
+        <nav class="nav" aria-label="Secciones">
+          <a href="#funciones">Funciones</a>
+          <a href="#portal">Para la empresa</a>
+          <a href="#privacidad">Privacidad</a>
+          <a href="#preguntas">Preguntas</a>
+        </nav>
+        <a class="btn btn-ghost btn-sm" href="https://app.mipegahr.cl">Entrar al portal</a>
+      </div>
+    </header>
+
+    <main id="contenido">
+      <!-- Hero -->
+      <section class="hero" id="inicio">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow reveal">Extensión de Chrome para equipos</p>
+            <h1 class="reveal">Tu compañero de <mark class="marker">pega</mark></h1>
+            <p class="lead reveal">
+              Registra la jornada en un clic y cuida al equipo: colación, pausas activas, ausencias, comunicados, pulso de
+              ánimo y cumpleaños. Todo desde el ícono del navegador.
+            </p>
+            <div class="hero-actions reveal">
+              <a class="btn btn-primary" href="mailto:hola@mipegahr.cl?subject=Quiero%20probar%20Mi%20Pega%20HR">
+                Pide una demo
+                <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+              </a>
+              <a class="btn btn-ghost" href="#funciones">Mira lo que hace</a>
+            </div>
+            <p class="hero-note reveal">Para empresas con Google&nbsp;Workspace. Funciona en Chrome, Edge, Brave y Arc.</p>
+          </div>
+
+          <div class="hero-visual" data-demo>
+            <div class="stage" aria-hidden="true">
+              <div class="postit-bg"></div>
+              <div class="popup">
+                <div class="popup-head">
+                  <svg class="popup-logo"><use href="#logo" /></svg>
+                  <div class="min0">
+                    <b>Camila Rojas</b>
+                    <span>camila@empresa.cl</span>
+                  </div>
+                </div>
+                <div class="popup-card popup-clock">
+                  <span class="pill"><i></i>En jornada</span>
+                  <span class="clock" data-clock>4:12:00</span>
+                  <span class="popup-btn">Cerrar jornada</span>
+                </div>
+                <div class="popup-card popup-row">
+                  <div>
+                    <b>Pausa activa</b>
+                    <span>Próxima cerca de las 16:52</span>
+                  </div>
+                  <span class="toggle"></span>
+                </div>
+                <div class="popup-card popup-stats">
+                  <div><span>Horas hoy</span><b>4 h 11 min</b></div>
+                  <div><span>Actividad</span><b>92&nbsp;%</b></div>
+                  <div><span>Reuniones</span><b>30 min</b></div>
+                </div>
+                <div class="popup-foot"><span><i></i>Todo enviado</span><span>Solicitar ausencia</span></div>
+              </div>
+
+              <div class="toasts">
+                <div class="toast" data-toast>
+                  <svg class="toast-logo"><use href="#logo" /></svg>
+                  <div><b>Buenos días, Camila</b><span>¿Partimos la pega?</span></div>
+                </div>
+                <div class="toast" data-toast>
+                  <span class="toast-icon t-green"><svg class="icon"><use href="#i-activity" /></svg></span>
+                  <div><b>Pausa activa</b><span>Llevas 90 minutos sin pararte. Estira la espalda y vuelve en 5.</span></div>
+                </div>
+                <div class="toast" data-toast>
+                  <span class="toast-icon t-ink"><svg class="icon"><use href="#i-megaphone" /></svg></span>
+                  <div><b>Comunicado de Gerencia</b><span>Este viernes salimos a las 16:00.</span></div>
+                </div>
+                <div class="toast toast-coral" data-toast>
+                  <span class="toast-icon t-coral"><svg class="icon"><use href="#i-cake" /></svg></span>
+                  <div><b>Hoy está de cumpleaños Joaquín</b><span>De Ventas. ¡Salúdalo!</span></div>
+                  <span class="confetti"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                </div>
+              </div>
+            </div>
+            <p class="sr-only">
+              Ejemplo del popup de la extensión: la jornada de Camila lleva 4 horas y 12 minutos, con avisos de inicio de
+              jornada, pausa activa, comunicados y cumpleaños.
+            </p>
+            <button class="motion-toggle" type="button" data-motion-toggle aria-pressed="false" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-pause" /></svg>
+              <span>Pausar animación</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trust strip -->
+      <section class="strip" aria-label="Lo básico">
+        <div class="container strip-row">
+          <span><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Inicio de sesión con Google&nbsp;Workspace</span>
+          <span><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Chrome, Edge, Brave, Vivaldi, Arc y Opera</span>
+          <span><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Varias empresas o dominios en un portal</span>
+          <span><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Hecho en Chile</span>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section class="section" id="funciones" aria-labelledby="funciones-titulo">
+        <div class="container">
+          <header class="section-head reveal">
+            <p class="eyebrow">Funciones</p>
+            <h2 id="funciones-titulo">Lo de todos los días, a un clic</h2>
+            <p>La extensión vive al lado de la barra de direcciones. Avisa cuando corresponde y no molesta cuando no.</p>
+          </header>
+
+          <div class="bento">
+            <article class="feature f-jornada reveal">
+              <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-clock" /></svg></div>
+              <h3>Jornada en un clic</h3>
+              <p>
+                Inicia y cierra la jornada desde el ícono, que se pone verde mientras está abierta. A la hora de entrada te
+                recuerda partir, y si el computador se apaga o se suspende, la jornada no se pierde.
+              </p>
+              <div class="mini mini-icons" aria-hidden="true">
+                <span class="tb"><svg><use href="#logo" /></svg></span>
+                <svg class="icon mini-arrow"><use href="#i-arrow" /></svg>
+                <span class="tb tb-on"><svg><use href="#logo" /></svg><em>ON</em></span>
+              </div>
+            </article>
+
+            <article class="feature f-colacion reveal">
+              <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-utensils" /></svg></div>
+              <h3>Colación</h3>
+              <p>
+                Define el horario de cada persona y su colación. En la colación no se mide nada y, si la empresa quiere, el
+                reloj se pausa solo.
+              </p>
+              <div class="mini mini-schedule" aria-hidden="true">
+                <span class="sch-work"></span><span class="sch-lunch">Colación</span><span class="sch-work"></span>
+              </div>
+            </article>
+
+            <article class="feature f-pausa reveal">
+              <div class="feature-icon t-green"><svg class="icon" aria-hidden="true"><use href="#i-activity" /></svg></div>
+              <h3>Pausa activa</h3>
+              <p>
+                Cada cierto tiempo, o unas veces al día, te invita a pararte con ejercicios cortos de cuello, espalda y
+                manos.
+              </p>
+              <div class="mini mini-ring" aria-hidden="true">
+                <svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" /><circle class="ring-fill" cx="22" cy="22" r="18" /></svg>
+                <span>5:00</span>
+              </div>
+            </article>
+
+            <article class="feature f-ausencias reveal">
+              <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar" /></svg></div>
+              <h3>Ausencias justificadas</h3>
+              <p>
+                Pide vacaciones, un permiso o informa una licencia desde la extensión. Tu jefatura la aprueba en el portal y ves el
+                estado al tiro.
+              </p>
+              <div class="mini mini-status" aria-hidden="true">
+                <span class="st st-wait">Pendiente</span>
+                <svg class="icon mini-arrow"><use href="#i-arrow" /></svg>
+                <span class="st st-ok"><svg class="icon"><use href="#i-check" /></svg>Aprobada</span>
+              </div>
+            </article>
+
+            <article class="feature f-comunicados reveal">
+              <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-megaphone" /></svg></div>
+              <h3>Comunicados</h3>
+              <p>
+                Publica un aviso para todo el equipo. Llega como notificación, y ves quién confirmó que lo leyó.
+              </p>
+              <div class="mini mini-reads" aria-hidden="true">
+                <span class="avatars"><i>CR</i><i>JP</i><i>MA</i><i>+9</i></span>
+                <span class="reads">12 de 14 lo leyeron</span>
+              </div>
+            </article>
+
+            <article class="feature f-pulso reveal">
+              <div class="feature-icon t-green"><svg class="icon" aria-hidden="true"><use href="#i-smile" /></svg></div>
+              <h3>Pulso de ánimo</h3>
+              <p>
+                Al cerrar la jornada, una pregunta: “¿Cómo estuvo tu día?”. Es anónimo, y una semana con menos de 3
+                respuestas no se muestra.
+              </p>
+              <div class="mini mini-mood" aria-hidden="true">
+                <span style="--w: 8%; --c: var(--mood-2)"></span>
+                <span style="--w: 22%; --c: var(--mood-3)"></span>
+                <span style="--w: 42%; --c: var(--mood-4)"></span>
+                <span style="--w: 28%; --c: var(--mood-5)"></span>
+              </div>
+            </article>
+
+            <article class="feature f-cumple reveal">
+              <div class="feature-icon t-coral"><svg class="icon" aria-hidden="true"><use href="#i-cake" /></svg></div>
+              <h3>Cumpleaños y aniversarios</h3>
+              <p>
+                El equipo se entera del cumpleaños y de los años en la empresa. La jefatura recibe el aviso el día anterior,
+                y administración, un correo con las fechas cada lunes.
+              </p>
+              <div class="mini mini-cake" aria-hidden="true">
+                <span class="cake-chip">🎂 Joaquín cumple 31</span>
+                <span class="cake-chip cake-alt">🎉 Fernanda, 3 años en la empresa</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Portal -->
+      <section class="section section-alt" id="portal" aria-labelledby="portal-titulo">
+        <div class="container split">
+          <div class="split-copy reveal">
+            <p class="eyebrow">Para la empresa</p>
+            <h2 id="portal-titulo">Un portal claro, sin planillas</h2>
+            <p>
+              Administración ve el día del equipo en bloques de 10 minutos y entiende lo que pasó, sin perseguir a nadie por
+              WhatsApp.
+            </p>
+            <ul class="checks">
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Horas, actividad y reuniones por persona y por equipo</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Horario y cumplimiento: atrasos, salidas anticipadas y horas fuera de horario</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Aprobación de ausencias, comunicados y pausas activas en un mismo lugar</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Exporta a CSV para remuneraciones</li>
+            </ul>
+          </div>
+
+          <div class="portal-mock reveal" aria-hidden="true">
+            <div class="pm-bar">
+              <span></span><span></span><span></span>
+              <em>app.mipegahr.cl</em>
+            </div>
+            <div class="pm-body">
+              <div class="pm-head">
+                <b>Equipo</b>
+                <span>Jueves 6 de noviembre</span>
+              </div>
+              <div class="pm-kpis">
+                <div><span>Horas</span><b>58 h 40 min</b></div>
+                <div><span>Actividad</span><b>81&nbsp;%</b></div>
+                <div><span>A la hora</span><b>13 de 14</b></div>
+              </div>
+              <div class="pm-rows" data-timeline></div>
+              <div class="pm-legend">
+                <span><i style="background: var(--lvl-high)"></i>Alta</span>
+                <span><i style="background: var(--lvl-mid)"></i>Media</span>
+                <span><i style="background: var(--lvl-low)"></i>Baja</span>
+                <span><i style="background: var(--lvl-meeting)"></i>Reunión</span>
+                <span><i class="lunch"></i>Colación</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy -->
+      <section class="section" id="privacidad" aria-labelledby="privacidad-titulo">
+        <div class="container">
+          <header class="section-head reveal">
+            <p class="eyebrow">Privacidad</p>
+            <h2 id="privacidad-titulo">Ayuda, no vigila</h2>
+            <p>
+              Solo mide con la jornada abierta y dentro del horario. Antes de empezar, cada persona lee qué se mide y lo
+              acepta, y el popup siempre lo muestra.
+            </p>
+          </header>
+          <div class="privacy">
+            <div class="privacy-col yes reveal">
+              <h3><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Qué se registra</h3>
+              <ul>
+                <li>Inicio y cierre de la jornada</li>
+                <li>Si hubo uso de teclado o mouse, nunca qué teclas</li>
+                <li>Los sitios usados, sin parámetros de la dirección</li>
+                <li>El tiempo en reuniones web, por la dirección de la sala</li>
+                <li>Capturas difuminadas de la pestaña visible, solo si la empresa las activa</li>
+              </ul>
+            </div>
+            <div class="privacy-col no reveal">
+              <h3><svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>Qué nunca se registra</h3>
+              <ul>
+                <li>Lo que escribes, ni tus contraseñas</li>
+                <li>Audio, video, cámara ni micrófono</li>
+                <li>Pestañas de incógnito ni el historial completo</li>
+                <li>Qué programa usas fuera del navegador</li>
+                <li>Nada fuera del horario ni en la colación</li>
+              </ul>
+            </div>
+          </div>
+          <p class="privacy-link reveal">
+            <a href="https://app.mipegahr.cl/privacidad">Lee la política de privacidad completa</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Steps -->
+      <section class="section section-alt" aria-labelledby="pasos-titulo">
+        <div class="container">
+          <header class="section-head reveal">
+            <p class="eyebrow">Cómo se parte</p>
+            <h2 id="pasos-titulo">Listo en una mañana</h2>
+          </header>
+          <ol class="steps">
+            <li class="reveal">
+              <span class="step-n">1</span>
+              <h3>Entra al portal</h3>
+              <p>Con tu cuenta de Google&nbsp;Workspace. Agrega los dominios de tu empresa y el horario de cada equipo.</p>
+            </li>
+            <li class="reveal">
+              <span class="step-n">2</span>
+              <h3>Invita al equipo</h3>
+              <p>Comparte el enlace de la extensión, o instálala para todos desde la consola de Google.</p>
+            </li>
+            <li class="reveal">
+              <span class="step-n">3</span>
+              <h3>¿Partimos la pega?</h3>
+              <p>Cada persona abre su jornada con un clic. Desde ese momento, el portal muestra el día del equipo.</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="section" id="preguntas" aria-labelledby="preguntas-titulo">
+        <div class="container narrow">
+          <header class="section-head reveal">
+            <p class="eyebrow">Preguntas</p>
+            <h2 id="preguntas-titulo">Lo que nos suelen preguntar</h2>
+          </header>
+          <div class="faq reveal">
+            <details>
+              <summary>¿Funciona fuera de Chrome?</summary>
+              <p>
+                Sí, en navegadores basados en Chromium: Edge, Brave, Vivaldi, Arc y Opera (este último con el complemento
+                para instalar extensiones de Chrome). Firefox y Safari no son compatibles.
+              </p>
+            </details>
+            <details>
+              <summary>¿Necesitamos Google Workspace?</summary>
+              <p>
+                Sí. Cada persona entra con la cuenta de la empresa, y un mismo portal puede atender a varios dominios.
+              </p>
+            </details>
+            <details>
+              <summary>¿Qué pasa si se me olvida cerrar la jornada?</summary>
+              <p>
+                Si el computador queda más de 30 minutos sin dar señales, la jornada se cierra sola. Si solo se suspendió
+                un rato, por ejemplo en la colación, la jornada sigue donde quedó.
+              </p>
+            </details>
+            <details>
+              <summary>¿La colación cuenta como jornada?</summary>
+              <p>
+                En la colación nunca se mide actividad. La empresa decide si además el reloj de la jornada se pausa en ese
+                horario.
+              </p>
+            </details>
+            <details>
+              <summary>¿El pulso de ánimo es de verdad anónimo?</summary>
+              <p>
+                Sí. Solo se guarda cuántas personas eligieron cada cara en la semana, sin nombre ni día, y una semana con
+                menos de 3 respuestas no se muestra.
+              </p>
+            </details>
+            <details>
+              <summary>¿La empresa ve mi pantalla?</summary>
+              <p>
+                Solo si la empresa activa las capturas: una cada 10 minutos, solo de la pestaña visible y difuminada en tu
+                computador antes de subirla. Nunca la pantalla completa ni otras ventanas.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <section class="cta" aria-labelledby="cta-titulo">
+        <div class="container cta-inner reveal">
+          <svg class="cta-logo" aria-hidden="true"><use href="#logo" /></svg>
+          <h2 id="cta-titulo">¿Partimos la pega?</h2>
+          <p>Escríbenos y te mostramos Mi Pega HR con los datos de tu equipo.</p>
+          <div class="hero-actions">
+            <a class="btn btn-postit" href="mailto:hola@mipegahr.cl?subject=Quiero%20probar%20Mi%20Pega%20HR">
+              Escríbenos a hola@mipegahr.cl
+            </a>
+            <a class="btn btn-outline-light" href="https://app.mipegahr.cl">Entrar al portal</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-row">
+        <a class="brand" href="#inicio" aria-label="Mi Pega HR, volver arriba">
+          <svg class="brand-logo" aria-hidden="true"><use href="#logo" /></svg>
+          <span class="brand-name" translate="no">Mi Pega <span>HR</span></span>
+        </a>
+        <nav class="footer-links" aria-label="Enlaces">
+          <a href="https://app.mipegahr.cl">Portal</a>
+          <a href="https://chromewebstore.google.com/detail/egaklokkbnbnccnjicaahaifnkaeobfj">Chrome Web Store</a>
+          <a href="https://app.mipegahr.cl/privacidad">Privacidad</a>
+          <a href="mailto:hola@mipegahr.cl">Contacto</a>
+        </nav>
+        <p class="footer-note">Hecho en Chile · © <span data-year>2026</span> Mi Pega HR</p>
+      </div>
+    </footer>
+  </body>
+</html>
