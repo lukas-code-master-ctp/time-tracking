@@ -348,18 +348,18 @@ async function main(): Promise<void> {
     // 0. Public privacy policy: direct URL without a session, and the link from the login page.
     await page.goto(`${BASE}/privacidad`);
     await page.getByRole('heading', { level: 1, name: 'Política de privacidad' }).waitFor({ timeout: 30_000 });
-    if (await page.getByRole('button', { name: 'Iniciar sesión con Google' }).count()) fail('/privacidad muestra el login');
+    if (await page.getByRole('button', { name: 'Continuar con Google' }).count()) fail('/privacidad muestra el login');
     await shootAll(page, '00-privacidad');
     ok('Política de privacidad pública en /privacidad (sin sesión).');
 
     // 1. Login page + dev login as the bootstrap admin (joinOrg creates users/{uid} as admin).
     await page.goto(BASE);
-    await page.getByRole('button', { name: 'Iniciar sesión con Google' }).waitFor({ timeout: 30_000 });
+    await page.getByRole('button', { name: 'Continuar con Google' }).waitFor({ timeout: 30_000 });
     await page.getByRole('link', { name: 'Política de privacidad' }).click();
     await page.getByRole('heading', { level: 1, name: 'Política de privacidad' }).waitFor();
     if (new URL(page.url()).pathname !== '/privacidad') fail(`el enlace del login lleva a ${page.url()}`);
     await page.goBack();
-    await page.getByRole('button', { name: 'Iniciar sesión con Google' }).waitFor({ timeout: 30_000 });
+    await page.getByRole('button', { name: 'Continuar con Google' }).waitFor({ timeout: 30_000 });
     ok('Enlace "Política de privacidad" en el login.');
     await shootAll(page, '01-login');
     await page.getByLabel('Correo simulado').fill(ADMIN_EMAIL);

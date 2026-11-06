@@ -134,6 +134,9 @@ export function fakeAuth(user: AuthUser | null, profile: UserProfile | Error): A
       };
     },
     signIn: vi.fn(async () => undefined),
+    signInWithPassword: vi.fn(async () => 'signed-in' as const),
+    createPasswordAccount: vi.fn(async () => undefined),
+    sendPasswordReset: vi.fn(async () => undefined),
     signOut: vi.fn(async () => listener?.(null)),
     joinOrg: vi.fn(async () => {
       if (profile instanceof Error) throw profile;

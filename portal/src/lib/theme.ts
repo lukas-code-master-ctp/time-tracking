@@ -33,3 +33,18 @@ export const THEME_LABEL: Record<ThemeChoice, string> = {
   light: 'Tema: claro',
   dark: 'Tema: oscuro',
 };
+
+/**
+ * Forces the light theme while the sign-in screens are shown (they are always
+ * light, like the landing) and returns the function that puts back the
+ * admin's choice. Does not touch the stored choice.
+ */
+export function forceLightTheme(): () => void {
+  const root = document.documentElement;
+  const previous = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', 'light');
+  return () => {
+    if (previous === null) root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', previous);
+  };
+}

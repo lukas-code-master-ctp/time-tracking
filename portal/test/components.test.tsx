@@ -88,7 +88,7 @@ describe('access gate', () => {
   it('signed out → login page', async () => {
     const b: Backend = { data: fakeData(emptyDb()), auth: fakeAuth(null, ADMIN) };
     renderApp(b);
-    expect(await screen.findByRole('button', { name: 'Iniciar sesión con Google' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Continuar con Google' })).toBeInTheDocument();
   });
 });
 
@@ -650,7 +650,7 @@ describe('Dominios del login', () => {
 
   it('the login page shows the domains', async () => {
     renderApp({ data: fakeData(emptyDb()), auth: fakeAuth(null, ADMIN) });
-    expect(await screen.findByText(/Usa tu cuenta @impulseai\.cl o @compratuparcela\.cl\./)).toBeInTheDocument();
+    expect(await screen.findByText(/con cuenta @impulseai\.cl o @compratuparcela\.cl\./)).toBeInTheDocument();
   });
 });
 
