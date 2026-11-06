@@ -6,16 +6,16 @@
   "outputDirectory": "portal/dist",
   "rewrites": [
     {
+      "source": "/privacidad",
+      "destination": "/privacidad.html"
+    },
+    {
       "source": "/__/auth/:path*",
       "destination": "https://impulse-registro-jornada.firebaseapp.com/__/auth/:path*"
     },
     {
       "source": "/__/firebase/:path*",
       "destination": "https://impulse-registro-jornada.firebaseapp.com/__/firebase/:path*"
-    },
-    {
-      "source": "/privacidad",
-      "destination": "/privacidad.html"
     },
     {
       "source": "/",
