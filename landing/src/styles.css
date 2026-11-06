@@ -1,7 +1,7 @@
 /* Landing de Mi Pega HR (www.mipegahr.cl). Misma identidad que la extensión y el
    portal: papel + tinta #26336b, post-it #ffc93c, coral para celebraciones,
    Bricolage Grotesque para títulos y Plus Jakarta Sans para el texto (fuentes
-   propias, sin pedir nada a Google Fonts). Claro/oscuro según el sistema.
+   propias, sin pedir nada a Google Fonts). Solo modo claro (decisión de Lukas, 2026-11-06).
    Movimiento: solo transform/opacity, y nada se anima con prefers-reduced-motion. */
 
 @font-face {
@@ -63,34 +63,6 @@
   --header-h: 64px;
   --f-display: 'Bricolage Grotesque Variable', 'Plus Jakarta Sans Variable', system-ui, sans-serif;
   --f-ui: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #11141f;
-    --bg-alt: #151928;
-    --surface: #191d2b;
-    --surface-2: #1f2435;
-    --line: #2a2f42;
-    --line-strong: #3a4058;
-    --ink: #eceef5;
-    --muted: #a2a8bc;
-    --tinta: #9aa8f0;
-    --tinta-hover: #bac4f6;
-    --on-tinta: #0e1120;
-    --tinta-soft: #1f2540;
-    --coral: #f08a74;
-    --coral-text: #f6a593;
-    --coral-soft: #3a211d;
-    --green: #4ade80;
-    --green-soft: #13301f;
-    --red: #ef4444;
-    --ring: rgb(154 168 240 / 0.45);
-    --lvl-none: #2a3247;
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow-lg: 0 24px 48px -16px rgb(0 0 0 / 0.6), 0 6px 14px -6px rgb(0 0 0 / 0.4);
-  }
 }
 
 *,
@@ -399,14 +371,6 @@ summary {
   background: var(--postit);
   transform: rotate(-1.5deg) scaleX(var(--mk, 1));
   transform-origin: left center;
-}
-@media (prefers-color-scheme: dark) {
-  .marker::after {
-    opacity: 0.32;
-  }
-  .marker {
-    color: var(--postit);
-  }
 }
 .lead {
   margin-top: 24px;
@@ -931,12 +895,6 @@ summary {
   font: 700 10px/1 var(--f-ui);
   font-style: normal;
 }
-@media (prefers-color-scheme: dark) {
-  .tb em {
-    color: #0e1120;
-  }
-}
-
 /* Colación: schedule bar */
 .mini-schedule {
   gap: 4px;
@@ -1013,13 +971,6 @@ summary {
   background: var(--green-soft);
   color: var(--green);
 }
-@media (prefers-color-scheme: dark) {
-  .st-wait {
-    background: #3b2a0c;
-    color: #fcd58a;
-  }
-}
-
 /* Comunicados */
 .mini-reads {
   flex-wrap: wrap;
