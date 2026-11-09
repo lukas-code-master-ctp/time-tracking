@@ -5,6 +5,7 @@
  * service worker (`absences.*` messages); the form is static in absences.html.
  */
 import '../ui/base.css';
+import '../ui/theme';
 import './absences.css';
 import {
   ABSENCE_STATUS_LABELS,

@@ -23,6 +23,7 @@
 import '../ui/base.css';
 import './popup.css';
 import type { PopupRequest, StatusView } from '../messages';
+import { getTheme, nextTheme, setTheme, THEME_LABEL } from '../ui/theme';
 import { clock, el, hoursMinutes, percent, send, workDayElapsed } from '../ui/dom';
 import { usesGoogleAccountChooser } from '../browser';
 import { ALLOWED_DOMAINS } from '../env';
@@ -108,6 +109,32 @@ async function refresh(): Promise<void> {
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
   const b = el('button', { type: 'button', className: `btn ${className}`, textContent: label, disabled: busy });
   b.addEventListener('click', onClick);
+  return b;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+/** Lucide-style outline icons (24×24) of the theme toggle. */
+const THEME_ICON: Record<ReturnType<typeof getTheme>, string> = {
+  system: 'M4 5h16v11H4zM8 20h8M12 16v4',
+  light: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+  dark: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z',
+};
+
+/** Header button: Sistema → Claro → Oscuro (kept for every extension page, see ui/theme.ts). */
+function themeToggle(): HTMLButtonElement {
+  const t = getTheme();
+  const label = `Tema: ${THEME_LABEL[t]}. Cambiar a ${THEME_LABEL[nextTheme(t)]}`;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', THEME_ICON[t]);
+  svg.append(path);
+  const b = el('button', { type: 'button', id: 'theme', className: 'icon-btn', title: label, ariaLabel: label }, [svg]);
+  b.addEventListener('click', () => {
+    setTheme(nextTheme(getTheme()));
+    render();
+  });
   return b;
 }
 
@@ -270,6 +297,7 @@ function renderReady(s: StatusView): void {
         el('strong', { textContent: s.profile?.displayName || 'Mi Pega HR' }),
         el('span', { className: 'small muted', textContent: s.user?.email ?? '' }),
       ]),
+      themeToggle(),
     ]),
   );
 
