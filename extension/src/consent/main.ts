@@ -6,6 +6,7 @@
  * handles the button.
  */
 import '../ui/base.css';
+import '../ui/theme';
 import './consent.css';
 import { CONSENT_VERSION } from '@timetracking/shared';
 import type { StatusView } from '../messages';
