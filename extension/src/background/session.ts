@@ -65,7 +65,12 @@ export const ICONS_ON = { 16: 'icons/icon-on-16.png', 32: 'icons/icon-on-32.png'
 export const AUTO_CLOSED_NOTICE =
   'Tu jornada se cerró automáticamente (sin conexión con el servidor por mucho tiempo o jornada muy larga). Puedes iniciar una nueva.';
 
-export const KIOSK_ONLY_MESSAGE = 'Tu empresa registra tu jornada en el tótem de la oficina: marca ahí tu entrada y tu salida con tu RUT.';
+export const KIOSK_ONLY_MESSAGE =
+  'Tu empresa registra tu jornada en el tótem de la oficina: marca ahí tu entrada con tu RUT y la extensión empezará a medir sola.';
+
+export const KIOSK_EXIT_MESSAGE = 'Marca tu salida en el tótem de la oficina con tu RUT.';
+
+export const KIOSK_CLOSED_NOTICE = 'Tu jornada se cerró: marcaste tu salida en el tótem.';
 
 export const RESUME_EXPIRED_NOTICE =
   'Tu jornada se cerró porque el equipo estuvo suspendido o apagado por mucho tiempo. El tiempo sin conexión no se contó. Puedes iniciar una nueva.';
@@ -173,6 +178,10 @@ export class SessionManager {
     await this.store.run(async () => {
       const session = this.store.session;
       if (!session) throw new SessionError('not-open', 'No hay una jornada iniciada.');
+      const attendance = this.store.meta.attendance;
+      if (attendance?.uid === session.uid && attendance.mode === 'kiosk') {
+        throw new SessionError('kiosk-only', KIOSK_EXIT_MESSAGE);
+      }
       const at = this.now();
       this.finishLocked(at, session.uid);
       enqueueOp(this.store.queue, { kind: 'sessionClose', uid: session.uid, sessionId: session.id, endedAt: at });
@@ -183,6 +192,40 @@ export class SessionManager {
       await this.ensureAlarm();
     });
     void this.sync.kick();
+  }
+
+  /**
+   * Joins a work day opened on the attendance kiosk (spec
+   * 2026-11-10-marcaciones): measures under that session id, without
+   * creating a session (the kiosk's document keeps `source: 'kiosk'`; the
+   * heartbeats only update `lastHeartbeatAt`). False when a work day is
+   * already open here or the person cannot work (signed out, notice not
+   * accepted…).
+   */
+  async adoptKioskSession(sessionId: string, startedAt: number): Promise<boolean> {
+    await this.auth.ready();
+    const adopted = await this.store.run(async () => {
+      if (this.store.session) return false;
+      let uid: string;
+      try {
+        uid = this.assertCanWork();
+      } catch {
+        return false;
+      }
+      const at = this.now();
+      await this.tracker.beginMeasuring(sessionId, uid, at);
+      this.store.session = { id: sessionId, uid, startedAt, kiosk: true };
+      this.store.meta.lastCurrentSyncAt = at;
+      this.store.meta.notice = null;
+      enqueueOp(this.store.queue, { kind: 'heartbeat', uid, sessionId, at });
+      await this.store.save('queue');
+      await this.store.save('acc', 'session', 'meta');
+      await this.applyBadge();
+      await this.ensureAlarm();
+      return true;
+    });
+    if (adopted) void this.sync.kick();
+    return adopted;
   }
 
   /**
@@ -200,7 +243,11 @@ export class SessionManager {
       if (!session || session.id !== sessionId) return;
       const at = this.now();
       this.finishLocked(at, session.uid);
-      if (opts.queueClose) {
+      // The kiosk closed it ("Salida"): not an automatic close.
+      if (session.kiosk && notice === AUTO_CLOSED_NOTICE) notice = KIOSK_CLOSED_NOTICE;
+      // A kiosk work day is closed only with "Salida" on the kiosk (signing out
+      // here stops measuring, the attendance stays open).
+      if (opts.queueClose && !session.kiosk) {
         enqueueOp(this.store.queue, { kind: 'sessionClose', uid: session.uid, sessionId: session.id, endedAt: at });
       }
       this.store.session = null;
@@ -301,6 +348,28 @@ export class SessionManager {
     const lastAlive = Math.max(session.startedAt, this.store.meta.lastCurrentSyncAt);
     const gap = at - lastAlive;
     if (gap <= SUSPEND_GAP_MS) return;
+
+    if (session.kiosk) {
+      // A kiosk work day stays open on the server (no heartbeat needed) until
+      // "Salida": measure again in the same session, the gap left out of the clock.
+      this.finishLocked(at, session.uid);
+      const sameDay = dateKey(lastAlive, DEFAULT_TIME_ZONE) === dateKey(at, DEFAULT_TIME_ZONE);
+      if (sameDay) {
+        await this.tracker.beginMeasuring(session.id, session.uid, at);
+        // Same shape as a resumed work day: gaps between dayStartedAt and startedAt.
+        session.dayStartedAt = session.dayStartedAt ?? session.startedAt;
+        session.gaps = [...(session.gaps ?? []), { start: lastAlive, end: at }];
+        session.startedAt = at;
+        this.store.meta.lastCurrentSyncAt = at;
+      } else {
+        // Another day: the server closes the forgotten exit; stop measuring here.
+        this.store.session = null;
+      }
+      await this.store.save('queue');
+      await this.store.save('acc', 'session', 'meta', 'daily');
+      await this.applyBadge();
+      return;
+    }
 
     this.finishLocked(at, session.uid);
     enqueueOp(this.store.queue, { kind: 'sessionClose', uid: session.uid, sessionId: session.id, endedAt: lastAlive });

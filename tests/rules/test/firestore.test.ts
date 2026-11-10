@@ -1405,6 +1405,25 @@ describe('attendanceSettings', () => {
     await seed(env, { 'attendanceSettings/alice': attendance({ mode: 'both' }) });
     await assertSucceeds(db('alice').doc('sessions/s-k').set(session('alice')));
   });
+
+  it('the extension heartbeats and closes a kiosk work day it joined, without touching the kiosk fields', async () => {
+    const t0 = Date.now() - 60_000;
+    const kioskSession = { ...session('alice', { startedAt: t0, lastHeartbeatAt: t0 }), source: 'kiosk', kioskId: KIOSK_ID };
+    await seed(env, { 'attendanceSettings/alice': attendance({ mode: 'kiosk' }), 'sessions/s-kiosk': kioskSession });
+    const ref = db('alice').doc('sessions/s-kiosk');
+    await assertSucceeds(ref.get());
+    await assertSucceeds(ref.update({ lastHeartbeatAt: Date.now() }));
+    await assertFails(ref.update({ source: 'extension' }));
+    await assertFails(ref.update({ kioskId: 'otro' }));
+    await assertFails(ref.update({ closedByKioskId: KIOSK_ID }));
+    await assertFails(db('bob').doc('sessions/s-kiosk').update({ lastHeartbeatAt: Date.now() }));
+    await assertSucceeds(ref.update({ endedAt: Date.now(), endReason: 'manual', lastHeartbeatAt: Date.now() }));
+  });
+
+  it('nobody creates a kiosk session from the client', async () => {
+    await assertFails(db('alice').doc('sessions/s-fake').set({ ...session('alice'), source: 'kiosk', kioskId: KIOSK_ID }));
+    await assertFails(db('alice').doc('sessions/s-fake').set({ ...session('alice'), source: 'kiosk' }));
+  });
 });
 
 describe('kiosks', () => {

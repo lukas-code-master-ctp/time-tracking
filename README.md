@@ -93,6 +93,7 @@ Desde la **extensión 0.2.20** ([spec](docs/specs/2026-11-10-marcaciones.md)). P
 
 - **Tabla de marcaciones**: una fila por persona y día con la primera entrada, la última salida, dónde se marcó (Extensión o Tótem) y el tiempo en jornada; filtro por periodo y persona, y CSV.
 - **Cómo marca cada persona**: RUT y modo (Extensión, Tótem o ambas). Con "Tótem" la extensión no muestra "Iniciar jornada" ni el recordatorio de inicio.
+- **El tótem activa la extensión** (0.2.21): al marcar la entrada en el tótem, la extensión empieza a medir sola en esa jornada y avisa con una notificación que la jornada ya está iniciada; la salida en el tótem la cierra.
 - **Tótems**: "Crear tótem" da un enlace `…/marcar#token` que se abre una vez en la tablet de la entrada. Ahí cada persona escribe su RUT y toca **Entrada** o **Salida** (función `kioskPunch`). Si olvida la salida, la jornada se cierra sola a la hora de salida de su horario.
 - Requiere desplegar las reglas de Firestore y la función `kioskPunch` (`npx firebase deploy --only functions:kioskPunch,functions:autoCloseStaleSessions --project prod`).
 
