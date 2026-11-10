@@ -16,7 +16,7 @@ export const ATTENDANCE_MODES: readonly AttendanceMode[] = ['extension', 'kiosk'
 export const ATTENDANCE_MODE_LABELS: Record<AttendanceMode, string> = {
   extension: 'Extensión',
   kiosk: 'Tótem',
-  both: 'Extensión y tótem',
+  both: 'Extensión o tótem',
 };
 
 export function isAttendanceMode(value: unknown): value is AttendanceMode {
