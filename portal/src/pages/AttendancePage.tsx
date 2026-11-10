@@ -310,14 +310,13 @@ function ModeRow({
             ))}
           </select>
         </div>
-        <button type="submit" className="btn small-btn primary" disabled={busy || !dirty}>
-          {busy ? 'Guardando…' : 'Guardar'}
+        {/* "Guardado" inside the button (fixed width): an extra element made the row wrap. */}
+        <button type="submit" className="btn small-btn primary attendance-save" disabled={busy || !dirty}>
+          {busy ? 'Guardando…' : ok && !dirty ? 'Guardado ✓' : 'Guardar'}
         </button>
-        {ok && !dirty ? (
-          <span className="small ok-text" role="status">
-            Guardado
-          </span>
-        ) : null}
+        <span className="sr-only" role="status">
+          {ok && !dirty ? 'Guardado' : ''}
+        </span>
       </form>
       {error ? (
         <p className="field-error celebration-error" role="alert">
