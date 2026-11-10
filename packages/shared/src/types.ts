@@ -79,6 +79,9 @@ export interface UserProfile {
   consentVersion?: string;
 }
 
+/** Where a work day was opened: the extension button (default) or the kiosk. */
+export type SessionSource = 'extension' | 'kiosk';
+
 /** `sessions/{sessionId}` — one work day ("jornada"). */
 export interface Session {
   uid: string;
@@ -86,6 +89,16 @@ export interface Session {
   endedAt: EpochMs | null;
   endReason: SessionEndReason | null;
   lastHeartbeatAt: EpochMs;
+  /**
+   * `'kiosk'`: opened by the attendance kiosk (spec 2026-11-10-marcaciones,
+   * Cloud Function `kioskPunch`). It has no heartbeat: while open it lasts
+   * until now (`sessionEndAt`). Missing = opened by the extension.
+   */
+  source?: SessionSource;
+  /** Kiosk that opened it (`kiosks/{id}`), only with `source: 'kiosk'`. */
+  kioskId?: string;
+  /** Kiosk that closed it ("Salida" marked on the kiosk), whatever opened it. */
+  closedByKioskId?: string;
 }
 
 export interface UrlTime {
@@ -286,6 +299,42 @@ export interface PersonSchedule {
   week: WeekSchedule;
   updatedAt: EpochMs;
   updatedBy: string;
+}
+
+/**
+ * How a person marks the start and end of the work day (spec
+ * 2026-11-10-marcaciones): the extension button, the kiosk at the office
+ * entrance (with their RUT) or both. Decided by an admin.
+ */
+export type AttendanceMode = 'extension' | 'kiosk' | 'both';
+
+/**
+ * `attendanceSettings/{uid}` — RUT and attendance mode of a person, written by
+ * an admin. Missing document = `mode: 'extension'` without RUT.
+ */
+export interface AttendanceSettings {
+  /** Normalized RUT `12345678-K` (no dots, uppercase K), or null. Unique in the organization. */
+  rut: string | null;
+  mode: AttendanceMode;
+  updatedAt: EpochMs;
+  /** uid of the admin who last changed it. */
+  updatedBy: string;
+}
+
+/**
+ * `kiosks/{tokenHash}` — a device (tablet at the entrance) allowed to mark
+ * attendance. The id is the SHA-256 (hex) of the secret token kept by the
+ * device; the token itself is never stored.
+ */
+export interface Kiosk {
+  /** 1–60 characters ("Recepción", "Oficina Providencia"…). */
+  name: string;
+  createdAt: EpochMs;
+  createdBy: string;
+  /** When an admin revoked it (null = it can mark). */
+  revokedAt: EpochMs | null;
+  /** Last mark accepted from it (written by `kioskPunch`). */
+  lastUsedAt?: EpochMs | null;
 }
 
 /** Firestore documents together with their id. */

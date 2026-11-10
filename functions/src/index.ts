@@ -50,6 +50,7 @@ import {
 import { sendCelebrationsDigestCore } from './core/celebrationsDigest.js';
 import { purgeOldScreenshotsCore } from './core/purge.js';
 import { autoCloseStaleSessionsCore } from './core/autoClose.js';
+import { kioskPunchCore } from './core/kiosk.js';
 
 initializeApp();
 setGlobalOptions({ region: FUNCTIONS_REGION, maxInstances: 10 });
@@ -110,6 +111,15 @@ export const joinOrg = onCall(async (request) => {
       : null,
   );
   return { profile };
+});
+
+// ---------- kioskPunch ----------
+
+// Spec 2026-11-10-marcaciones: the attendance kiosk (portal /marcar, no
+// sign-in) marks entry or exit with a RUT. The device is authorized by its
+// secret token (`kiosks/{sha256}`), checked in the core.
+export const kioskPunch = onCall(async (request) => {
+  return kioskPunchCore({ db: getFirestore(), now: Date.now() }, request.data);
 });
 
 // ---------- onInvitationWritten ----------

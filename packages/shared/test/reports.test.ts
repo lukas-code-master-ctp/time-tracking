@@ -5,7 +5,6 @@ import {
   meetingSecondsOf,
   formatDateTime,
   formatDuration,
-  isSessionLive,
   secondsToHours,
   sessionDurationSeconds,
   summarizeMember,
@@ -14,6 +13,7 @@ import {
   toCsv,
   type TeamMember,
 } from '../src/reports.js';
+import { isSessionLive } from '../src/sessions.js';
 import { SLOT_MS } from '../src/slots.js';
 import type { ActivitySlot, Session } from '../src/types.js';
 

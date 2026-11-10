@@ -14,3 +14,5 @@ export * from './absences.js';
 export * from './announcements.js';
 export * from './celebrations.js';
 export * from './mood.js';
+export * from './sessions.js';
+export * from './attendance.js';

@@ -23,6 +23,10 @@ export const COLLECTIONS = {
   moodWeeks: 'moodWeeks',
   /** `moodVotes/{uid_YYYY-Www}`: days the person answered the mood pulse (never what). */
   moodVotes: 'moodVotes',
+  /** `attendanceSettings/{uid}`: RUT and attendance mode (extension, kiosk or both). */
+  attendanceSettings: 'attendanceSettings',
+  /** `kiosks/{tokenHash}`: devices allowed to mark attendance with a RUT. */
+  kiosks: 'kiosks',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

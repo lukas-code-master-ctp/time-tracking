@@ -11,9 +11,11 @@ export interface Remote extends Backend {
   /**
    * `getDoc(config/schedule)` and `getDoc(schedules/{uid})`, raw (validated by
    * the caller); null when a doc does not exist. The exception is also null
-   * when it cannot be read (rules older than 2026-09-30-horarios).
+   * when it cannot be read (rules older than 2026-09-30-horarios). Also
+   * `attendanceSettings/{uid}` (spec 2026-11-10-marcaciones; null = missing
+   * or unreadable).
    */
-  fetchSchedule(uid: string): Promise<{ config: unknown; person: unknown }>;
+  fetchSchedule(uid: string): Promise<{ config: unknown; person: unknown; attendance?: unknown }>;
   /** `updateDoc(users/{uid}, { consentAcceptedAt, consentVersion })` (both, always). */
   acceptConsent(uid: string, at: number, version: string): Promise<void>;
   /** Uploads a JPEG to Storage. Storage rules never overwrite: a second upload fails with `permission-denied`. */

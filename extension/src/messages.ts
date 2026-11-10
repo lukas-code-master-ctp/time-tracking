@@ -10,6 +10,7 @@
  */
 import {
   isMoodScore,
+  type AttendanceMode,
   type Absence,
   type AbsenceType,
   type Role,
@@ -201,6 +202,12 @@ export interface StatusView {
    * "¿Cómo estuvo tu día?" nor skipped it.
    */
   mood: { pending: boolean } | null;
+  /**
+   * How the person marks attendance (spec 2026-11-10-marcaciones), from the
+   * last read; `kiosk`: on the kiosk at the entrance only (no "Iniciar
+   * jornada" in the popup). null = not read yet (as `extension`).
+   */
+  attendanceMode: AttendanceMode | null;
   /** Operations waiting to be uploaded. */
   pendingOps: number;
   /** Screenshots waiting to be uploaded. */

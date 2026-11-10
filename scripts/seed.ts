@@ -38,6 +38,7 @@ import {
   SCHEDULE_CONFIG_DOC_ID,
   activityDocId,
   dateKey,
+  rutCheckDigit,
   lastWeeks,
   screenshotStoragePath,
   type Celebration,
@@ -198,6 +199,16 @@ async function main(): Promise<void> {
     const hire = `${Number(inThreeDays.slice(0, 4)) - 3}${inThreeDays.slice(4)}`;
     docs.push({ path: `${COLLECTIONS.celebrations}/${uids[beto.key]!}`, data: celebrationOf(beto.displayName, '07-21', hire, admin.uid) });
   }
+  // Attendance marks (spec 2026-11-10-marcaciones): a RUT for everyone; Ana
+  // marks on the kiosk or the extension, Beto only on the kiosk.
+  PEOPLE.forEach((p, i) => {
+    const body = String(15_234_567 + i * 1_111_111);
+    const mode = i === 0 ? 'both' : i === 1 ? 'kiosk' : 'extension';
+    docs.push({
+      path: `${COLLECTIONS.attendanceSettings}/${uids[p.key]!}`,
+      data: { rut: `${body}-${rutCheckDigit(body)}`, mode, updatedAt: now, updatedBy: admin.uid },
+    });
+  });
   await writeAll(db, docs);
 
   // 3. Replace the demo collaborators' previous data (idempotent re-runs).

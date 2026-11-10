@@ -87,6 +87,15 @@ Desde la **extensión 0.2.16** ([spec](docs/specs/2026-11-05-pulso-de-animo.md))
 - **Anónimo**: la respuesta solo suma 1 a un contador de la semana ISO (`moodWeeks/{YYYY-Www}`, campos `n1`…`n5`), sin uid ni día. Aparte, `moodVotes/{uid_YYYY-Www}` guarda qué días respondió (no qué), lo lee solo la propia persona y permite a las reglas aceptar una respuesta por persona y día: el contador solo puede subir en el mismo lote que agrega un día nuevo a ese registro.
 - El portal muestra las últimas 12 semanas (distribución y promedio), el promedio de las últimas 4 frente a las 4 anteriores, y **oculta las semanas con menos de 3 respuestas**. Límite conocido: quien tenga acceso a la consola de Firebase podría cruzar la hora de escritura del contador con la de los cierres de jornada; desde el portal no se puede.
 
+## Marcaciones de asistencia
+
+Desde la **extensión 0.2.20** ([spec](docs/specs/2026-11-10-marcaciones.md)). Portal: **Colaboradores › Marcaciones**.
+
+- **Tabla de marcaciones**: una fila por persona y día con la primera entrada, la última salida, dónde se marcó (Extensión o Tótem) y el tiempo en jornada; filtro por periodo y persona, y CSV.
+- **Cómo marca cada persona**: RUT y modo (Extensión, Tótem o ambas). Con "Tótem" la extensión no muestra "Iniciar jornada" ni el recordatorio de inicio.
+- **Tótems**: "Crear tótem" da un enlace `…/marcar#token` que se abre una vez en la tablet de la entrada. Ahí cada persona escribe su RUT y toca **Entrada** o **Salida** (función `kioskPunch`). Si olvida la salida, la jornada se cierra sola a la hora de salida de su horario.
+- Requiere desplegar las reglas de Firestore y la función `kioskPunch` (`npx firebase deploy --only functions:kioskPunch,functions:autoCloseStaleSessions --project prod`).
+
 ## Arquitectura
 
 ```

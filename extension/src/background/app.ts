@@ -26,6 +26,7 @@
 import {
   CONSENT_VERSION,
   DEFAULT_TIME_ZONE,
+  attendanceModeOf,
   dateKey,
   exerciseById,
   exerciseInstructions,
@@ -433,7 +434,7 @@ export class App {
     });
     if (!user || !due) return;
     const seq = ++this.scheduleReads;
-    let raw: { config: unknown; person: unknown };
+    let raw: { config: unknown; person: unknown; attendance?: unknown };
     try {
       raw = await this.backend.fetchSchedule(user.uid);
     } catch (err) {
@@ -450,6 +451,7 @@ export class App {
       this.scheduleWritten = seq;
       const at = this.now();
       this.store.meta.schedule = { uid: user.uid, config, person, fetchedAt: at };
+      this.store.meta.attendance = { uid: user.uid, mode: attendanceModeOf(raw.attendance) };
       this.tracker.applySchedule(at);
       await this.store.save(...(this.store.acc ? (['acc', 'meta'] as const) : (['meta'] as const)));
     });
@@ -486,6 +488,12 @@ export class App {
       .catch(logError('horario'));
   }
 
+  /** The user marks attendance only on the kiosk (inside store.run). */
+  private kioskOnly(uid: string | null | undefined): boolean {
+    const a = this.store.meta.attendance;
+    return !!uid && a?.uid === uid && a.mode === 'kiosk';
+  }
+
   /** Effective schedule of the signed-in, joined, active user (inside store.run). */
   private scheduleOf(uid: string | null | undefined): EffectiveSchedule | null {
     const { profile, profileUid, schedule } = this.store.meta;
@@ -507,8 +515,15 @@ export class App {
         this.tracker.applySchedule(at);
         await this.store.save('acc');
       }
+      // Kiosk only (spec 2026-11-10-marcaciones): the work day is marked at the
+      // entrance, so no "¿Iniciar jornada?" reminders from the extension.
       const schedule = this.scheduleOf(user?.uid);
-      const decision = decideReminders(schedule, at, this.store.session !== null, this.store.meta.reminders);
+      const decision = decideReminders(
+        this.kioskOnly(user?.uid) ? null : schedule,
+        at,
+        this.store.session !== null,
+        this.store.meta.reminders,
+      );
       if (decision.changed) {
         this.store.meta.reminders = decision.log;
         await this.store.save('meta');
@@ -1183,6 +1198,7 @@ export class App {
           ? celebrationsView(meta.celebrations.items, user.uid, dateKey(this.now(), DEFAULT_TIME_ZONE))
           : [],
         mood: this.moodView(profile && user ? user.uid : null, org?.moodPulse === true),
+        attendanceMode: user && meta.attendance?.uid === user.uid ? meta.attendance.mode : null,
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,

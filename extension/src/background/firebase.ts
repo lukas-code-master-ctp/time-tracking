@@ -145,17 +145,20 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
       return snap.exists() ? (snap.data() as OrgConfig) : null;
     },
     async fetchSchedule(uid: string) {
-      const [config, person] = await Promise.all([
+      const [config, person, attendance] = await Promise.all([
         getDoc(doc(db, COLLECTIONS.config, SCHEDULE_CONFIG_DOC_ID)),
         // Rules not deployed yet (0.2.0 before them): no exception, as if missing.
         getDoc(doc(db, COLLECTIONS.schedules, uid)).catch((err: unknown) => {
           if ((err as { code?: unknown } | null)?.code === 'permission-denied') return null;
           throw err;
         }),
+        // Attendance mode (spec 2026-11-10-marcaciones); rules not deployed yet: as if missing.
+        getDoc(doc(db, COLLECTIONS.attendanceSettings, uid)).catch(() => null),
       ]);
       return {
         config: config.exists() ? config.data() : null,
         person: person?.exists() ? person.data() : null,
+        attendance: attendance?.exists() ? attendance.data() : null,
       };
     },
     async acceptConsent(uid: string, at: number, version: string) {

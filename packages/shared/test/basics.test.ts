@@ -117,6 +117,8 @@ describe('collections', () => {
       celebrations: 'celebrations',
       moodWeeks: 'moodWeeks',
       moodVotes: 'moodVotes',
+      attendanceSettings: 'attendanceSettings',
+      kiosks: 'kiosks',
     });
   });
 

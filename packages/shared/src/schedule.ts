@@ -21,6 +21,7 @@
  */
 
 import { DEFAULT_TIME_ZONE, dateKey } from './collections.js';
+import { sessionEndAt } from './sessions.js';
 import type {
   Absence,
   DaySchedule,
@@ -454,7 +455,7 @@ interface Piece extends Interval {
 function connectedPieces(sessions: readonly Session[], now: number): Piece[] {
   const raw: Piece[] = [];
   for (const s of sessions) {
-    const end = Math.min(s.endedAt ?? s.lastHeartbeatAt, now);
+    const end = Math.min(sessionEndAt(s, now), now);
     if (end > s.startedAt) raw.push({ start: s.startedAt, end, open: s.endedAt === null });
   }
   raw.sort((a, b) => a.start - b.start || a.end - b.end);

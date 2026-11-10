@@ -1,7 +1,7 @@
 /** Pure reporting helpers used by the admin portal (and the popup). */
 
 import { DEFAULT_TIME_ZONE } from './collections.js';
-import { STALE_SESSION_MS } from './config.js';
+import { isSessionLive, sessionEndAt } from './sessions.js';
 import type { ActivitySlot, Role, Session, UrlTime, UserProfile, UserStatus } from './types.js';
 
 export interface DomainTime {
@@ -114,18 +114,15 @@ function byCountDesc<T extends { seconds: number }>(key: (x: T) => string) {
   };
 }
 
-/** Duration of a session clipped to [from, to), in whole seconds. */
-export function sessionDurationSeconds(session: Session, from?: number, to?: number): number {
-  const end = session.endedAt ?? session.lastHeartbeatAt;
+/**
+ * Duration of a session clipped to [from, to), in whole seconds. `now`: an
+ * open kiosk session lasts until then (see sessions.ts).
+ */
+export function sessionDurationSeconds(session: Session, from?: number, to?: number, now?: number): number {
+  const end = sessionEndAt(session, now);
   const start = Math.max(session.startedAt, from ?? -Infinity);
   const stop = Math.min(Math.max(end, session.startedAt), to ?? Infinity);
   return stop > start ? Math.floor((stop - start) / 1000) : 0;
-}
-
-/** True when the session is open and its heartbeat is recent enough. */
-export function isSessionLive(session: Session, now?: number): boolean {
-  if (session.endedAt !== null) return false;
-  return now === undefined || now - session.lastHeartbeatAt <= STALE_SESSION_MS;
 }
 
 /** Summary of one collaborator. `slots`/`sessions` must belong to that person. */
@@ -169,12 +166,12 @@ export function summarizeMember(
     // "In session" describes the present, not the selected range: a live
     // session counts even when the range is in the past.
     if (isSessionLive(session, now)) inSession = true;
-    const end = session.endedAt ?? session.lastHeartbeatAt;
+    const end = sessionEndAt(session, now);
     const overlaps = (to === undefined || session.startedAt < to) && (from === undefined || end >= from);
     if (!overlaps) continue;
     sessionCount++;
-    sessionSeconds += sessionDurationSeconds(session, from, to);
-    const alive = Math.max(session.lastHeartbeatAt, session.endedAt ?? 0);
+    sessionSeconds += sessionDurationSeconds(session, from, to, now);
+    const alive = Math.max(session.lastHeartbeatAt, sessionEndAt(session, now));
     if (lastActivityAt === null || alive > lastActivityAt) lastActivityAt = alive;
   }
 

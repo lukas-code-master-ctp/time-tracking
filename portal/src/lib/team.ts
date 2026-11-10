@@ -5,6 +5,7 @@ import {
   MAX_SESSION_MS,
   isSessionLive,
   sessionDurationSeconds,
+  sessionEndAt,
   summarizeTeam,
   type ActivitySlot,
   type Session,
@@ -29,9 +30,12 @@ export function mergeSessions(...lists: readonly (readonly WithId<Session>[])[])
   return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
 }
 
-/** True when the session overlaps `[from, to)` (open sessions count until their last heartbeat). */
-export function sessionOverlaps(session: Session, from: number, to: number): boolean {
-  const end = session.endedAt ?? session.lastHeartbeatAt;
+/**
+ * True when the session overlaps `[from, to)` (open sessions count until
+ * their last heartbeat; open kiosk sessions until `now`).
+ */
+export function sessionOverlaps(session: Session, from: number, to: number, now?: number): boolean {
+  const end = sessionEndAt(session, now);
   return session.startedAt < to && end >= from;
 }
 
@@ -82,7 +86,7 @@ export function sessionViews(
   timeZone?: string,
 ): SessionView[] {
   return sessions
-    .filter((s) => sessionOverlaps(s, day.from, day.to))
+    .filter((s) => sessionOverlaps(s, day.from, day.to, now))
     .sort((a, b) => a.startedAt - b.startedAt)
     .map((s) => {
       const live = isSessionLive(s, now);
@@ -91,12 +95,17 @@ export function sessionViews(
       const start = startedBefore
         ? `${formatTime(s.startedAt, timeZone)} (${zonedDate(s.startedAt, timeZone).split('-').reverse().slice(0, 2).join('-')})`
         : formatTime(s.startedAt, timeZone);
-      const endMs = s.endedAt ?? s.lastHeartbeatAt;
+      const endMs = sessionEndAt(s, now);
+      const kiosk = s.source === 'kiosk';
       const end = state === 'live' ? 'En curso' : formatTime(endMs, timeZone);
       const note =
         state === 'live'
-          ? 'Jornada abierta'
-          : state === 'stale'
+          ? kiosk
+            ? 'Entrada en el tótem'
+            : 'Jornada abierta'
+          : s.closedByKioskId && state === 'manual'
+            ? 'Salida en el tótem'
+            : state === 'stale'
             ? `Sin señal desde las ${formatTime(s.lastHeartbeatAt, timeZone)}`
             : state === 'auto'
               ? 'Cerrada automáticamente'
@@ -105,7 +114,7 @@ export function sessionViews(
         id: s.id,
         start,
         end,
-        durationSeconds: sessionDurationSeconds(s, day.from, day.to),
+        durationSeconds: sessionDurationSeconds(s, day.from, day.to, now),
         state,
         note,
         startedBefore,

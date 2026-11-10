@@ -9,8 +9,10 @@
  */
 import {
   SlotAccumulator,
+  isAttendanceMode,
   readCelebration,
   type ActiveBreakSettings,
+  type AttendanceMode,
   type Celebration,
   type UserProfile,
   type WithId,
@@ -119,6 +121,24 @@ export interface Meta {
    * Missing before 0.2.16.
    */
   mood: MoodState | null;
+  /**
+   * How the signed-in user marks attendance (spec 2026-11-10-marcaciones),
+   * read with the schedule. `kiosk`: only on the kiosk at the entrance, so
+   * the popup has no "Iniciar jornada". Missing before 0.2.20 (= extension).
+   */
+  attendance: AttendanceCache | null;
+}
+
+export interface AttendanceCache {
+  uid: string;
+  mode: AttendanceMode;
+}
+
+function attendanceCacheFromJSON(raw: unknown): AttendanceCache | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Partial<AttendanceCache>;
+  if (typeof a.uid !== 'string' || !isAttendanceMode(a.mode)) return null;
+  return { uid: a.uid, mode: a.mode };
 }
 
 export interface MoodState {
@@ -152,6 +172,7 @@ export function defaultMeta(): Meta {
     announcements: null,
     celebrations: null,
     mood: null,
+    attendance: null,
   };
 }
 
@@ -265,6 +286,7 @@ export class StateStore {
     this.meta.announcements = announcementCacheFromJSON(this.meta.announcements);
     this.meta.celebrations = celebrationsCacheFromJSON(this.meta.celebrations);
     this.meta.mood = moodStateFromJSON(this.meta.mood);
+    this.meta.attendance = attendanceCacheFromJSON(this.meta.attendance);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);

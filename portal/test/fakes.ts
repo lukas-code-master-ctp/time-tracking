@@ -7,7 +7,9 @@ import {
   type ActivitySlot,
   type Announcement,
   type AnnouncementRead,
+  type AttendanceSettings,
   type Celebration,
+  type Kiosk,
   type Invitation,
   type MoodWeek,
   type OrgConfig,
@@ -40,6 +42,9 @@ export interface FakeDb {
   announcementReads?: AnnouncementRead[];
   /** Birthdays and hire dates (optional: most tests have none). */
   celebrations?: WithId<Celebration>[];
+  /** RUT and attendance mode by person, and kiosks (optional). */
+  attendance?: WithId<AttendanceSettings>[];
+  kiosks?: WithId<Kiosk>[];
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
 }
@@ -114,6 +119,20 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     listCelebrations: async () => [...(db.celebrations ?? [])],
     saveCelebration: async (uid, c) => {
       db.celebrations = [...(db.celebrations ?? []).filter((x) => x.id !== uid), { ...c, id: uid }];
+    },
+    listAttendanceSettings: async () => [...(db.attendance ?? [])],
+    saveAttendanceSettings: async (uid, a) => {
+      db.attendance = [...(db.attendance ?? []).filter((x) => x.id !== uid), { ...a, id: uid }];
+    },
+    listKiosks: async () => [...(db.kiosks ?? [])],
+    createKiosk: async (id, k) => {
+      db.kiosks = [...(db.kiosks ?? []), { ...k, id }];
+    },
+    revokeKiosk: async (id, revokedAt) => {
+      db.kiosks = (db.kiosks ?? []).map((k) => (k.id === id ? { ...k, revokedAt } : k));
+    },
+    deleteKiosk: async (id) => {
+      db.kiosks = (db.kiosks ?? []).filter((k) => k.id !== id);
     },
     screenshotUrl: async (path) => `https://example.test/${encodeURIComponent(path)}`,
   };
