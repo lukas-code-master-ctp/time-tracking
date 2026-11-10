@@ -112,7 +112,7 @@ service cloud.firestore {
       return d.keys().hasOnly(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                                 'screenshotRetentionDays', 'pauseTimerAtLunch',
                                 'activeBreaksEnabled', 'activeBreakMode',
-                                'activeBreakIntervalMinutes', 'activeBreaksPerDay',
+                                'activeBreakIntervalMinutes', 'activeBreaksPerDay', 'activeBreakTimes',
                                 'activeBreakMinutes', 'moodPulseEnabled', 'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
@@ -129,7 +129,14 @@ service cloud.firestore {
         && (!('activeBreakIntervalMinutes' in d)
             || (d.activeBreakIntervalMinutes is int
                 && d.activeBreakIntervalMinutes >= 15 && d.activeBreakIntervalMinutes <= 240))
-        && (!('activeBreakMode' in d) || d.activeBreakMode in ['interval', 'daily'])
+        && (!('activeBreakMode' in d) || d.activeBreakMode in ['interval', 'daily', 'times'])
+        // `times` mode: 1–8 clock times "HH:MM" (spec 2026-11-10-pausa-activa-horas-fijas).
+        && (!('activeBreakTimes' in d)
+            || (d.activeBreakTimes is list
+                && d.activeBreakTimes.size() >= 1 && d.activeBreakTimes.size() <= 8
+                // Exactly one "HH:MM" per element (no commas inside one).
+                && d.activeBreakTimes.join(',').size() == d.activeBreakTimes.size() * 6 - 1
+                && d.activeBreakTimes.join(',').matches('^([01][0-9]|2[0-3]):[0-5][0-9](,([01][0-9]|2[0-3]):[0-5][0-9])*$')))
         && (!('activeBreaksPerDay' in d)
             || (d.activeBreaksPerDay is int
                 && d.activeBreaksPerDay >= 1 && d.activeBreaksPerDay <= 12))

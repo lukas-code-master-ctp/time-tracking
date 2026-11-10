@@ -182,7 +182,19 @@ describe('config/org', () => {
         }),
       ),
     );
+    await assertSucceeds(
+      admin.doc('config/org').set(
+        orgConfig({ activeBreaksEnabled: true, activeBreakMode: 'times', activeBreakTimes: ['11:00', '16:30'], updatedAt: NOW + 4 }),
+      ),
+    );
     for (const bad of [
+      { activeBreakTimes: [] },
+      { activeBreakTimes: ['9:00'] },
+      { activeBreakTimes: ['24:00'] },
+      { activeBreakTimes: ['11:00', '11:60'] },
+      { activeBreakTimes: '11:00' },
+      { activeBreakTimes: ['11:00,12:00'] },
+      { activeBreakTimes: Array.from({ length: 9 }, (_, i) => `1${i}:00`) },
       { activeBreaksEnabled: 'yes' },
       { activeBreakMode: 'weekly' },
       { activeBreaksPerDay: 0 },

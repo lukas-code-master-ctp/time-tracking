@@ -477,7 +477,9 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
     ]);
   }
   const every =
-    b.mode === 'daily'
+    b.mode === 'times' && b.times.length > 0
+      ? `pausas de ${b.durationMinutes} min a las ${joinClock(b.times)}`
+      : b.mode === 'daily'
       ? `${b.perDay} ${b.perDay === 1 ? 'pausa' : 'pausas'} de ${b.durationMinutes} min al día`
       : `${b.durationMinutes} min cada ${b.intervalMinutes} min de trabajo`;
   const detail = !b.enabled
@@ -599,6 +601,11 @@ function renderCelebrations(list: StatusView['celebrations']): HTMLElement {
 }
 
 /** `14:35` (local time of the computer). */
+/** "11:00", "11:00 y 16:00", "10:30, 13:00 y 16:00". */
+function joinClock(times: readonly string[]): string {
+  return times.length <= 1 ? (times[0] ?? '') : `${times.slice(0, -1).join(', ')} y ${times[times.length - 1]}`;
+}
+
 function timeOfDay(ms: number): string {
   return new Date(ms).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
 }

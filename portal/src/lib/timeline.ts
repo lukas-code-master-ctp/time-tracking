@@ -73,7 +73,7 @@ export interface TimelineBlock {
   marks: ScheduleMark[];
   /** Active breaks taken that overlap this block. */
   breaks: TimelineBreak[];
-  /** Reminders of the `daily` mode planned inside this block (spec 2026-10-22-pausa-activa-veces-al-dia). */
+  /** Reminders of the `daily` / `times` modes planned inside this block (spec 2026-10-22-pausa-activa-veces-al-dia). */
   plannedBreaks: PlannedBreakMark[];
   /** Type of the justified absence covering half the block or more ("Trámite"), or null. */
   absence: string | null;
@@ -135,7 +135,7 @@ export interface TimelineOptions {
   plan?: DayPlan | null;
   /** Answered active break reminders of the day: the `taken` ones are drawn. */
   breaks?: readonly ActiveBreak[];
-  /** Planned reminders of the day (`daily` mode, `plannedBreaks` of lib/breaks.ts). */
+  /** Planned reminders of the day (`daily` / `times` modes, `plannedBreaks` of lib/breaks.ts). */
   plannedBreaks?: readonly number[];
   /** Justified absences of the person touching the day (spec 2026-10-22-ausencias-justificadas). */
   absences?: readonly Absence[];

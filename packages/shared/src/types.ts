@@ -42,9 +42,11 @@ export interface OrgConfig {
    * All optional (missing = off / defaults): read them with `readActiveBreakSettings`.
    */
   activeBreaksEnabled?: boolean;
-  activeBreakMode?: 'interval' | 'daily';
+  activeBreakMode?: 'interval' | 'daily' | 'times';
   activeBreakIntervalMinutes?: number;
   activeBreaksPerDay?: number;
+  /** `times` mode: clock times "HH:MM" (1–8, America/Santiago). */
+  activeBreakTimes?: string[];
   activeBreakMinutes?: number;
   /**
    * "Pulso de ánimo" (spec 2026-11-05-pulso-de-animo): the extension asks

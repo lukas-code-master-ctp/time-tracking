@@ -2,13 +2,17 @@
  * "Pausa activa" (spec 2026-10-21-pausa-activa): settings in `config/org` and
  * the exercises the extension suggests. Shared by extension and portal.
  */
+import { DEFAULT_TIME_ZONE } from './collections.js';
+import { zonedDateTimeToMs } from './schedule.js';
 
 /**
  * How the reminders are spread: `interval` after `intervalMinutes` of
  * continuous work; `daily` `perDay` times a day, spread over the working
- * hours of the day (spec 2026-10-22-pausa-activa-veces-al-dia).
+ * hours of the day (spec 2026-10-22-pausa-activa-veces-al-dia); `times` at
+ * the clock times the admin picks, the same for everyone (spec
+ * 2026-11-10-pausa-activa-horas-fijas).
  */
-export type ActiveBreakMode = 'interval' | 'daily';
+export type ActiveBreakMode = 'interval' | 'daily' | 'times';
 
 /** Settings of the active breaks of the organization. */
 export interface ActiveBreakSettings {
@@ -18,6 +22,8 @@ export interface ActiveBreakSettings {
   intervalMinutes: number;
   /** Reminders a day (`daily`). */
   perDay: number;
+  /** Clock times of the reminders, "HH:MM" sorted (`times`; empty otherwise or when none is valid). */
+  times: string[];
   /** How long the break lasts (also: away this long counts as a break). */
   durationMinutes: number;
 }
@@ -36,6 +42,24 @@ export const MIN_ACTIVE_BREAK_MINUTES = 1;
 export const MAX_ACTIVE_BREAK_MINUTES = 15;
 export const MIN_ACTIVE_BREAKS_PER_DAY = 1;
 export const MAX_ACTIVE_BREAKS_PER_DAY = 12;
+/** `times` mode: at most this many times a day (the rules accept the same). */
+export const MAX_ACTIVE_BREAK_TIMES = 8;
+/** Times offered when the admin picks `times` for the first time. */
+export const DEFAULT_ACTIVE_BREAK_TIMES: readonly string[] = ['11:00', '16:00'];
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** "HH:MM" (24 h). */
+export function isBreakTime(v: unknown): v is string {
+  return typeof v === 'string' && TIME_RE.test(v);
+}
+
+/** Valid times, without repeats, sorted; null when `v` is not a list of 1–8 valid times. */
+export function normalizeBreakTimes(v: unknown): string[] | null {
+  if (!Array.isArray(v) || !v.every(isBreakTime)) return null;
+  const out = [...new Set(v as string[])].sort();
+  return out.length >= 1 && out.length <= MAX_ACTIVE_BREAK_TIMES ? out : null;
+}
 
 function intIn(v: unknown, min: number, max: number): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -48,17 +72,21 @@ export function readActiveBreakSettings(config: unknown): ActiveBreakSettings {
     activeBreakMode?: unknown;
     activeBreakIntervalMinutes?: unknown;
     activeBreaksPerDay?: unknown;
+    activeBreakTimes?: unknown;
     activeBreakMinutes?: unknown;
   };
+  const times = normalizeBreakTimes(c.activeBreakTimes);
   return {
     enabled: c.activeBreaksEnabled === true,
-    mode: c.activeBreakMode === 'daily' ? 'daily' : 'interval',
+    // `times` without valid times would never remind: back to the default.
+    mode: c.activeBreakMode === 'daily' ? 'daily' : c.activeBreakMode === 'times' && times ? 'times' : 'interval',
     intervalMinutes: intIn(c.activeBreakIntervalMinutes, MIN_ACTIVE_BREAK_INTERVAL_MINUTES, MAX_ACTIVE_BREAK_INTERVAL_MINUTES)
       ? c.activeBreakIntervalMinutes
       : DEFAULT_ACTIVE_BREAK_INTERVAL_MINUTES,
     perDay: intIn(c.activeBreaksPerDay, MIN_ACTIVE_BREAKS_PER_DAY, MAX_ACTIVE_BREAKS_PER_DAY)
       ? c.activeBreaksPerDay
       : DEFAULT_ACTIVE_BREAKS_PER_DAY,
+    times: times ?? [],
     durationMinutes: intIn(c.activeBreakMinutes, MIN_ACTIVE_BREAK_MINUTES, MAX_ACTIVE_BREAK_MINUTES)
       ? c.activeBreakMinutes
       : DEFAULT_ACTIVE_BREAK_MINUTES,
@@ -88,6 +116,33 @@ export function dailyBreakTargets(work: readonly { start: number; end: number }[
     }
   }
   return out;
+}
+
+/** `times` mode: the instants of `times` on `date` (YYYY-MM-DD, in `timeZone`), in order. */
+export function fixedBreakTargets(times: readonly string[], date: string, timeZone: string = DEFAULT_TIME_ZONE): number[] {
+  return times.filter(isBreakTime).map((t) => zonedDateTimeToMs(date, t, timeZone));
+}
+
+/**
+ * The reminders of `date` in the modes with a plan of the day (`daily`,
+ * `times`; `[]` for `interval`): `at` the instant, `index` its position in
+ * the plan (picks the exercise with `dailyExercise(date, index, planSize)`).
+ * `work` = the working windows of the person that day.
+ */
+export function breakTargets(
+  settings: Pick<ActiveBreakSettings, 'mode' | 'perDay' | 'times'>,
+  work: readonly { start: number; end: number }[],
+  date: string,
+): { at: number; index: number }[] {
+  if (settings.mode === 'daily') return dailyBreakTargets(work, settings.perDay).map((at, index) => ({ at, index }));
+  if (settings.mode === 'times') return fixedBreakTargets(settings.times ?? [], date).map((at, index) => ({ at, index }));
+  return [];
+}
+
+/** Breaks in the plan of the day (`daily`: `perDay`; `times`: the number of times). */
+export function breakPlanSize(settings: Pick<ActiveBreakSettings, 'mode' | 'perDay' | 'times'>): number {
+  if (settings.mode === 'times') return (settings.times ?? []).length;
+  return settings.mode === 'daily' ? settings.perDay : 0;
 }
 
 export interface ActiveBreakExercise {

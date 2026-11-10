@@ -694,6 +694,41 @@ describe('Pausa activa', () => {
     });
   });
 
+  it('own page: "A horas fijas", the chosen times for everyone, only those inside each schedule', async () => {
+    const data = db();
+    const backend = backendOf(data, ADMIN);
+    renderApp(backend, '/pausa-activa');
+    await userEvent.click(await screen.findByLabelText(/Recordar pausas activas/));
+    await userEvent.selectOptions(screen.getByLabelText('Frecuencia'), 'times');
+    // Defaults 11:00 and 16:00; change them to 10:30 and 13:30, and add one more (an hour after the last).
+    fireEvent.change(screen.getByLabelText('Hora de la pausa 1'), { target: { value: '10:30' } });
+    fireEvent.change(screen.getByLabelText('Hora de la pausa 2'), { target: { value: '13:30' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar hora' }));
+    expect(screen.getByLabelText('Hora de la pausa 3')).toHaveValue('14:30');
+    fireEvent.change(screen.getByLabelText('Hora de la pausa 3'), { target: { value: '17:00' } });
+    const ex = [0, 1, 2].map((i) => dailyExercise('2026-09-29', i, 3).title);
+    expect(within(screen.getByRole('list', { name: 'Plan del día' })).getAllByRole('listitem').map((li) => li.querySelector('.strong')?.textContent)).toEqual([
+      `Pausa 1 · 10:30: ${ex[0]}`,
+      `Pausa 2 · 13:30: ${ex[1]}`,
+      `Pausa 3 · 17:00: ${ex[2]}`,
+    ]);
+    const list = screen.getByRole('list', { name: 'Pausas previstas por colaborador' });
+    const row = (name: string) => within(list).getAllByRole('listitem').find((li) => li.textContent?.includes(name))!;
+    // Ana 09:00–18:30, lunch 13:00–14:00: 13:30 is at lunch. Beto 09:30–12:00: only 10:30.
+    expect(row('Ana Rojas')).toHaveTextContent(`Horario: general10:30 · ${ex[0]}17:00 · ${ex[2]}`);
+    expect(row('Beto Díaz')).toHaveTextContent(`Horario: personalizado10:30 · ${ex[0]}`);
+    // A repeated time cannot be saved.
+    fireEvent.change(screen.getByLabelText('Hora de la pausa 3'), { target: { value: '10:30' } });
+    expect(screen.getByRole('alert')).toHaveTextContent(/repetidas/);
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar la pausa 3' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(backend.data.saveOrgConfig).toHaveBeenCalled());
+    expect(data.config).toMatchObject({ activeBreaksEnabled: true, activeBreakMode: 'times', activeBreakTimes: ['10:30', '13:30'] });
+    expect(data.config).not.toHaveProperty('activeBreaksPerDay');
+  });
+
   it('collaborator: the planned breaks of the day in the summary and on the timeline', async () => {
     const data = db();
     data.config = { ...data.config!, activeBreaksEnabled: true, activeBreakMode: 'daily', activeBreaksPerDay: 2 };

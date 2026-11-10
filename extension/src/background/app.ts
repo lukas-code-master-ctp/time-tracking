@@ -1235,6 +1235,7 @@ export class App {
       mode: settings.mode ?? 'interval',
       intervalMinutes: settings.intervalMinutes,
       perDay: settings.perDay ?? readActiveBreakSettings(null).perDay,
+      times: settings.times ?? [],
       durationMinutes: settings.durationMinutes,
       enabled,
       pending: pending
