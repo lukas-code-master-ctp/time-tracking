@@ -2939,6 +2939,11 @@ input[type='time'][aria-invalid='true'] {
   min-height: 38px;
 }
 
+.attendance-save {
+  min-width: 112px;
+  justify-content: center;
+}
+
 .rut-input {
   width: 150px;
   font-variant-numeric: tabular-nums;
