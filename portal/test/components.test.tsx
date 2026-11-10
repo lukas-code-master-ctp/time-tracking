@@ -421,6 +421,7 @@ describe('SettingsForm', () => {
       activeBreakMode: 'interval',
       activeBreakIntervalMinutes: 60,
       activeBreaksPerDay: 3,
+      activeBreakTimes: ['11:00', '16:00'],
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
     });

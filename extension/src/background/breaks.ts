@@ -18,7 +18,8 @@
  */
 import {
   DEFAULT_TIME_ZONE,
-  dailyBreakTargets,
+  breakPlanSize,
+  breakTargets,
   dailyExercise,
   dateKey,
   exerciseAt,
@@ -126,7 +127,8 @@ export function breakTick(prev: BreakState | null, input: BreakTickInput): Break
     state.doneUntil = now;
     return none;
   }
-  const daily = settings.mode === 'daily';
+  // `daily` and `times`: reminders at the targets of the plan of the day.
+  const daily = settings.mode === 'daily' || settings.mode === 'times';
   const breakMs = settings.durationMinutes * 60_000;
   const intervalMs = settings.intervalMinutes * 60_000;
   // A break's length without pulses (asleep / closed) or away: it was a break.
@@ -146,16 +148,15 @@ export function breakTick(prev: BreakState | null, input: BreakTickInput): Break
   state.awaySince = null;
   state.workSince ??= now;
   const quiet = state.quietUntil !== null && now < state.quietUntil;
-  const targets = daily ? dailyBreakTargets(input.windows, settings.perDay) : [];
+  const date = dateKey(now, DEFAULT_TIME_ZONE);
+  const targets = daily ? breakTargets(settings, input.windows, date) : [];
   // `daily`: the latest target due (an earlier one passed in a meeting is folded into it).
   let target = -1;
-  targets.forEach((t, i) => {
-    if (t > state.doneUntil! && t <= now) target = i;
-  });
+  for (const t of targets) if (t.at > state.doneUntil! && t.at <= now) target = t.index;
   const due = daily ? target !== -1 : now - state.workSince >= intervalMs;
   if (!due || quiet || input.inMeeting) return none;
   // `daily`: the exercise of the plan of the day (the same for everyone); `interval`: this device's rotation.
-  const exercise = daily ? dailyExercise(dateKey(now, DEFAULT_TIME_ZONE), target, settings.perDay) : exerciseAt(state.shown);
+  const exercise = daily ? dailyExercise(date, target, breakPlanSize(settings)) : exerciseAt(state.shown);
   const prompt: BreakPrompt = { at: now, sessionId: input.sessionId, exercise: exercise.id };
   const replaced = state.pending;
   state.pending = prompt;
@@ -218,10 +219,10 @@ export function nextBreakAt(
   windows: readonly { start: number; end: number }[] = [],
 ): number | null {
   if (!state || !settings?.enabled || state.workSince === null) return null;
-  if (settings.mode === 'daily') {
+  if (settings.mode === 'daily' || settings.mode === 'times') {
     const done = state.doneUntil ?? 0;
-    const next = dailyBreakTargets(windows, settings.perDay).find((t) => t > done);
-    return next === undefined ? null : Math.max(next, state.quietUntil ?? 0);
+    const next = breakTargets(settings, windows, dateKey(state.lastTickAt ?? state.workSince, DEFAULT_TIME_ZONE)).find((t) => t.at > done);
+    return next === undefined ? null : Math.max(next.at, state.quietUntil ?? 0);
   }
   return Math.max(state.workSince + settings.intervalMinutes * 60_000, state.quietUntil ?? 0);
 }

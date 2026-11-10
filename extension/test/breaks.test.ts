@@ -21,7 +21,7 @@ import { ORG, createHarness, type Harness } from './fakes';
 
 const MIN = 60_000;
 const T0 = zonedDateTimeToMs('2026-10-05', '09:00');
-const SETTINGS: ActiveBreakSettings = { enabled: true, mode: 'interval', intervalMinutes: 60, perDay: 3, durationMinutes: 5 };
+const SETTINGS: ActiveBreakSettings = { enabled: true, mode: 'interval', intervalMinutes: 60, perDay: 3, times: [], durationMinutes: 5 };
 
 function input(now: number, over: Partial<BreakTickInput> = {}): BreakTickInput {
   return { now, uid: 'u1', settings: SETTINGS, optedOut: false, sessionId: 's1', measuring: true, idle: 'active', inMeeting: false, windows: [], ...over };
@@ -30,13 +30,17 @@ function input(now: number, over: Partial<BreakTickInput> = {}): BreakTickInput 
 /** Ticks every 30 s from `from` to `to` (inclusive), like the pulse; returns the state and the reminders shown. */
 function run(state: BreakState | null, from: number, to: number, over: (t: number) => Partial<BreakTickInput> = () => ({})) {
   const prompts: number[] = [];
+  const exercises: string[] = [];
   let s = state;
   for (let t = from; t <= to; t += 30_000) {
     const r = breakTick(s, input(t, over(t)));
     s = r.state;
-    if (r.prompt) prompts.push(r.prompt.at);
+    if (r.prompt) {
+      prompts.push(r.prompt.at);
+      exercises.push(r.prompt.exercise);
+    }
   }
-  return { state: s!, prompts };
+  return { state: s!, prompts, exercises };
 }
 
 describe('active breaks (pure)', () => {
@@ -206,6 +210,25 @@ describe('active breaks, x times a day (pure)', () => {
     expect(run(later.state, at('11:01') + 30_000, at('11:20'), daily()).prompts).toEqual([at('11:11')]);
     const taken = answerBreak(state, at('11:00'), 'taken', at('11:01'), 5);
     expect(run(taken.state, at('11:01') + 30_000, at('13:00'), daily()).prompts).toEqual([]);
+  });
+});
+
+describe('active breaks at fixed times (pure)', () => {
+  const at = (time: string) => zonedDateTimeToMs('2026-10-05', time);
+  const TIMES: ActiveBreakSettings = { ...SETTINGS, mode: 'times', times: ['10:30', '13:30', '16:00'] };
+  const WINDOWS = [
+    { start: at('09:00'), end: at('13:00') },
+    { start: at('14:00'), end: at('18:00') },
+  ];
+  const lunch = (t: number) => (t >= at('13:00') && t < at('14:00') ? { measuring: false } : {});
+  const fixed = (t: number) => ({ settings: TIMES, windows: WINDOWS, ...lunch(t) });
+
+  it('reminds at the chosen times while measuring (one at lunch is dropped), the exercise by its place in the plan', () => {
+    const r = run(null, at('09:00'), at('18:00'), fixed);
+    expect(r.prompts).toEqual([at('10:30'), at('16:00')]);
+    expect(r.exercises).toEqual([dailyExercise('2026-10-05', 0, 3).id, dailyExercise('2026-10-05', 2, 3).id]);
+    expect(nextBreakAt(run(null, at('09:00'), at('11:00'), fixed).state, TIMES, WINDOWS)).toBe(at('13:30'));
+    expect(nextBreakAt(r.state, TIMES, WINDOWS)).toBeNull();
   });
 });
 

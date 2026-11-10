@@ -8,12 +8,17 @@ import {
   exerciseInstructions,
   exerciseAt,
   exerciseById,
+  breakPlanSize,
+  breakTargets,
+  fixedBreakTargets,
+  normalizeBreakTimes,
   readActiveBreakSettings,
+  zonedDateTimeToMs,
 } from '../src/index.js';
 
 describe('active breaks', () => {
   it('reads the settings of config/org: off and defaults when missing or invalid', () => {
-    const defaults = { enabled: false, mode: 'interval', intervalMinutes: 60, perDay: 3, durationMinutes: 5 };
+    const defaults = { enabled: false, mode: 'interval', intervalMinutes: 60, perDay: 3, times: [], durationMinutes: 5 };
     expect(readActiveBreakSettings(null)).toEqual(defaults);
     expect(readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 90, activeBreakMinutes: 3 })).toEqual({
       ...defaults,
@@ -33,6 +38,31 @@ describe('active breaks', () => {
         activeBreakMinutes: 2.5,
       }),
     ).toEqual(defaults);
+  });
+
+  it('fixed times: valid "HH:MM", sorted without repeats, 1–8; invalid ones fall back to the default mode', () => {
+    expect(normalizeBreakTimes(['16:00', '11:00', '16:00'])).toEqual(['11:00', '16:00']);
+    expect(normalizeBreakTimes([])).toBeNull();
+    expect(normalizeBreakTimes(['24:00'])).toBeNull();
+    expect(normalizeBreakTimes(['9:00'])).toBeNull();
+    expect(normalizeBreakTimes(Array.from({ length: 9 }, (_, i) => `1${i}:00`))).toBeNull();
+    expect(readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakMode: 'times', activeBreakTimes: ['16:00', '11:00'] })).toMatchObject({
+      mode: 'times',
+      times: ['11:00', '16:00'],
+    });
+    expect(readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakMode: 'times', activeBreakTimes: ['x'] })).toMatchObject({
+      mode: 'interval',
+      times: [],
+    });
+    const date = '2026-11-10';
+    const s = readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakMode: 'times', activeBreakTimes: ['11:00', '16:00'] });
+    expect(fixedBreakTargets(s.times, date)).toEqual([zonedDateTimeToMs(date, '11:00'), zonedDateTimeToMs(date, '16:00')]);
+    expect(breakTargets(s, [], date)).toEqual([
+      { at: zonedDateTimeToMs(date, '11:00'), index: 0 },
+      { at: zonedDateTimeToMs(date, '16:00'), index: 1 },
+    ]);
+    expect(breakPlanSize(s)).toBe(2);
+    expect(breakTargets({ ...s, mode: 'interval' }, [], date)).toEqual([]);
   });
 
   it('rotates the exercises; unique ids that fit the rules (≤ 40 chars)', () => {

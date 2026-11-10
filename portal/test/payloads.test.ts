@@ -12,6 +12,7 @@ import {
   sortInvitations,
   validateDomainList,
   validateOrgConfig,
+  validateBreakTimes,
 } from '../src/lib/payloads';
 import { member } from './fakes';
 
@@ -28,6 +29,7 @@ describe('org config', () => {
     activeBreakMode: 'interval' as const,
     activeBreakIntervalMinutes: 60,
     activeBreaksPerDay: 3,
+    activeBreakTimes: ['11:00', '16:00'],
     activeBreakMinutes: 5,
     moodPulseEnabled: false,
   };
@@ -128,6 +130,7 @@ describe('org config', () => {
       activeBreakMode: 'interval',
       activeBreakIntervalMinutes: 60,
       activeBreaksPerDay: 3,
+      activeBreakTimes: ['11:00', '16:00'],
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
     });
@@ -152,6 +155,7 @@ describe('org config', () => {
       activeBreakMode: 'interval',
       activeBreakIntervalMinutes: 60,
       activeBreaksPerDay: 3,
+      activeBreakTimes: ['11:00', '16:00'],
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
     });
@@ -172,6 +176,26 @@ describe('org config', () => {
     const daily = buildOrgConfig({ ...form, activeBreaksEnabled: true, activeBreakMode: 'daily', activeBreaksPerDay: 4 }, 'uid-admin', NOW);
     expect(daily).toMatchObject({ activeBreaksEnabled: true, activeBreakMode: 'daily', activeBreaksPerDay: 4, activeBreakMinutes: 5 });
     expect(orgConfigToForm(daily, ['x.cl'])).toMatchObject({ activeBreakMode: 'daily', activeBreaksPerDay: 4 });
+    expect(daily).not.toHaveProperty('activeBreakTimes');
+  });
+
+  it('active breaks at fixed times: the times sorted, validated, and back into the form', () => {
+    const times = buildOrgConfig(
+      { ...form, activeBreaksEnabled: true, activeBreakMode: 'times', activeBreakTimes: ['16:30', '', '10:00'] },
+      'uid-admin',
+      NOW,
+    );
+    expect(times).toMatchObject({ activeBreakMode: 'times', activeBreakTimes: ['10:00', '16:30'] });
+    expect(times).not.toHaveProperty('activeBreaksPerDay');
+    expect(orgConfigToForm(times, ['x.cl'])).toMatchObject({ activeBreakMode: 'times', activeBreakTimes: ['10:00', '16:30'] });
+    const on = { ...form, activeBreaksEnabled: true, activeBreakMode: 'times' as const };
+    expect(validateBreakTimes({ ...on, activeBreakTimes: ['', ''] })).toMatch(/al menos una hora/);
+    expect(validateBreakTimes({ ...on, activeBreakTimes: ['11:00', '11:00'] })).toMatch(/repetidas/);
+    expect(() => buildOrgConfig({ ...on, activeBreakTimes: [] }, 'uid-admin', NOW)).toThrow(/al menos una hora/);
+    // Off or in another mode the times do not matter.
+    expect(validateBreakTimes({ ...form, activeBreakTimes: [] })).toBeNull();
+    // Without saved times the form offers the defaults.
+    expect(orgConfigToForm(null, ['x.cl']).activeBreakTimes).toEqual(['11:00', '16:00']);
   });
 });
 

@@ -9,7 +9,10 @@ import {
   emailKey,
   formatDomains,
   isAllowedEmail,
+  DEFAULT_ACTIVE_BREAK_TIMES,
+  MAX_ACTIVE_BREAK_TIMES,
   isValidDomain,
+  normalizeBreakTimes,
   normalizeDomain,
   normalizeDomainList,
   readActiveBreakSettings,
@@ -34,10 +37,12 @@ export interface OrgConfigForm {
   pauseTimerAtLunch: boolean;
   /** Active breaks (spec 2026-10-21-pausa-activa). */
   activeBreaksEnabled: boolean;
-  /** `interval`: after x min of continuous work; `daily`: x times a day (spec 2026-10-22). */
+  /** `interval`: after x min of continuous work; `daily`: x times a day (spec 2026-10-22); `times`: at fixed times (spec 2026-11-10). */
   activeBreakMode: ActiveBreakMode;
   activeBreakIntervalMinutes: number;
   activeBreaksPerDay: number;
+  /** `times` mode: values of the time inputs ("HH:MM"; "" while empty). */
+  activeBreakTimes: string[];
   activeBreakMinutes: number;
   /** Mood pulse when closing the work day (spec 2026-11-05-pulso-de-animo). */
   moodPulseEnabled: boolean;
@@ -88,7 +93,19 @@ export function validateOrgConfig(form: OrgConfigForm, adminEmail?: string | nul
   if (!/^\d+$/.test(raw) || !Number.isSafeInteger(days) || days < MIN_RETENTION_DAYS || days > MAX_RETENTION_DAYS) {
     errors.screenshotRetentionDays = `Escribe un número entero de días entre ${MIN_RETENTION_DAYS} y ${MAX_RETENTION_DAYS}.`;
   }
+  const breakTimesError = validateBreakTimes(form);
+  if (breakTimesError) errors.activeBreakTimes = breakTimesError;
   return errors;
+}
+
+/** Error of the fixed times (only with the reminders on in `times` mode), or null. */
+export function validateBreakTimes(form: Pick<OrgConfigForm, 'activeBreaksEnabled' | 'activeBreakMode' | 'activeBreakTimes'>): string | null {
+  if (!form.activeBreaksEnabled || form.activeBreakMode !== 'times') return null;
+  const filled = form.activeBreakTimes.filter((t) => t !== '');
+  if (filled.length === 0) return 'Agrega al menos una hora para la pausa activa.';
+  if (new Set(filled).size !== filled.length) return 'Hay horas repetidas en la pausa activa.';
+  if (!normalizeBreakTimes(filled)) return `Elige hasta ${MAX_ACTIVE_BREAK_TIMES} horas válidas para la pausa activa.`;
+  return null;
 }
 
 /**
@@ -96,7 +113,8 @@ export function validateOrgConfig(form: OrgConfigForm, adminEmail?: string | nul
  * `pauseTimerAtLunch` only when on: a full `setDoc` without it means off, and
  * saving with it off still works with the rules before 0.2.4. The same for
  * the active breaks: their fields only when on (rules before 0.2.7), and the
- * mode with the times a day only in `daily` mode (rules before 0.2.8).
+ * mode with the times a day only in `daily` mode (rules before 0.2.8), and
+ * the fixed times only in `times` mode (rules before 0.2.22).
  */
 export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, adminEmail?: string | null): OrgConfig {
   const errors = validateOrgConfig(form, adminEmail);
@@ -113,7 +131,9 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
           activeBreakIntervalMinutes: form.activeBreakIntervalMinutes,
           ...(form.activeBreakMode === 'daily'
             ? { activeBreakMode: 'daily' as const, activeBreaksPerDay: form.activeBreaksPerDay }
-            : {}),
+            : form.activeBreakMode === 'times'
+              ? { activeBreakMode: 'times' as const, activeBreakTimes: normalizeBreakTimes(form.activeBreakTimes.filter((t) => t !== '')) ?? [] }
+              : {}),
           activeBreakMinutes: form.activeBreakMinutes,
         }
       : {}),
@@ -140,7 +160,7 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
 /** The active break fields of the form (page Pausa activa). */
 export type ActiveBreaksForm = Pick<
   OrgConfigForm,
-  'activeBreaksEnabled' | 'activeBreakMode' | 'activeBreakIntervalMinutes' | 'activeBreaksPerDay' | 'activeBreakMinutes'
+  'activeBreaksEnabled' | 'activeBreakMode' | 'activeBreakIntervalMinutes' | 'activeBreaksPerDay' | 'activeBreakTimes' | 'activeBreakMinutes'
 >;
 
 export function activeBreaksForm(config: OrgConfig | null): ActiveBreaksForm {
@@ -150,6 +170,7 @@ export function activeBreaksForm(config: OrgConfig | null): ActiveBreaksForm {
     activeBreakMode: b.mode,
     activeBreakIntervalMinutes: b.intervalMinutes,
     activeBreaksPerDay: b.perDay,
+    activeBreakTimes: b.times.length > 0 ? b.times : [...DEFAULT_ACTIVE_BREAK_TIMES],
     activeBreakMinutes: b.durationMinutes,
   };
 }

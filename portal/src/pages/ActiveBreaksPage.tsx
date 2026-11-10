@@ -4,7 +4,10 @@ import {
   ACTIVE_BREAK_INTERVAL_OPTIONS,
   ACTIVE_BREAK_EXERCISES,
   ACTIVE_BREAK_PER_DAY_OPTIONS,
+  DEFAULT_ACTIVE_BREAK_TIMES,
+  MAX_ACTIVE_BREAK_TIMES,
   breakClosing,
+  breakPlanSize,
   dailyExercise,
   exerciseInstructions,
   type ActiveBreakSettings,
@@ -18,10 +21,10 @@ import { initials } from '../components/TeamTable';
 import { Empty, ErrorState, Loading, PageHeader } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { ALLOWED_DOMAINS } from '../env';
-import { plannedBreaks, settingsOfForm } from '../lib/breaks';
+import { plannedBreakSlots, settingsOfForm } from '../lib/breaks';
 import { formatLongDate, formatRelativeDateTime, formatTime, isValidDate, zonedDate } from '../lib/dates';
 import { errorMessage } from '../lib/messages';
-import { activeBreaksForm, buildOrgConfig, orgConfigToForm, type ActiveBreaksForm } from '../lib/payloads';
+import { activeBreaksForm, buildOrgConfig, orgConfigToForm, validateBreakTimes, type ActiveBreaksForm } from '../lib/payloads';
 import { SOURCE_LABEL, scheduleFor, type ScheduleContext } from '../lib/schedule';
 import { useLoad } from '../lib/useLoad';
 
@@ -48,8 +51,25 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
     setStatus(null);
   };
 
+  const timesError = validateBreakTimes(form);
+  const setTime = (i: number, value: string): void =>
+    set(
+      'activeBreakTimes',
+      form.activeBreakTimes.map((t, j) => (j === i ? value : t)),
+    );
+  const addTime = (): void => {
+    const last = form.activeBreakTimes.filter((t) => t !== '').sort().at(-1);
+    // One hour after the last one (or the first default), capped at 23:00.
+    const next = last ? `${String(Math.min(23, Number(last.slice(0, 2)) + 1)).padStart(2, '0')}:${last.slice(3)}` : DEFAULT_ACTIVE_BREAK_TIMES[0]!;
+    set('activeBreakTimes', [...form.activeBreakTimes, next]);
+  };
+
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
+    if (timesError) {
+      setStatus({ ok: false, text: timesError });
+      return;
+    }
     setBusy(true);
     try {
       await onSave(form);
@@ -76,8 +96,8 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
             <span className="strong">Recordar pausas activas</span>
             <span className="muted small block">
               La extensión avisa a cada persona que tome una pausa breve con un ejercicio sugerido, después de un rato de
-              trabajo continuo o un número de veces al día repartidas en su horario (nunca durante reuniones ni la
-              colación). Si se alejó del computador lo que dura la pausa, ya cuenta como pausa. Cada persona puede
+              trabajo continuo, un número de veces al día repartidas en su horario o a las horas que elijas (nunca
+              durante reuniones ni la colación). Si se alejó del computador lo que dura la pausa, ya cuenta como pausa. Cada persona puede
               desactivarlo en su extensión. Las pausas que marca como tomadas se ven en su línea de tiempo.
             </span>
           </span>
@@ -89,13 +109,16 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
               id={`${id}-breaks-mode`}
               value={form.activeBreakMode}
               disabled={!form.activeBreaksEnabled}
-              onChange={(e) => set('activeBreakMode', e.target.value === 'daily' ? 'daily' : 'interval')}
+              onChange={(e) =>
+                set('activeBreakMode', e.target.value === 'daily' ? 'daily' : e.target.value === 'times' ? 'times' : 'interval')
+              }
             >
               <option value="interval">Según el trabajo continuo</option>
               <option value="daily">Veces al día</option>
+              <option value="times">A horas fijas</option>
             </select>
           </div>
-          {form.activeBreakMode === 'daily' ? (
+          {form.activeBreakMode === 'times' ? null : form.activeBreakMode === 'daily' ? (
             <div className="field">
               <label htmlFor={`${id}-breaks-per-day`}>Veces al día</label>
               <select
@@ -144,6 +167,54 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
             </select>
           </div>
         </div>
+        {form.activeBreakMode === 'times' ? (
+          <div className="field">
+            <span className="field-label" id={`${id}-breaks-times`}>
+              Horas de la pausa
+            </span>
+            <ul className="break-time-inputs plain" aria-labelledby={`${id}-breaks-times`}>
+              {form.activeBreakTimes.map((t, i) => (
+                <li key={i}>
+                  <input
+                    type="time"
+                    aria-label={`Hora de la pausa ${i + 1}`}
+                    value={t}
+                    step={300}
+                    disabled={!form.activeBreaksEnabled}
+                    aria-invalid={timesError ? true : undefined}
+                    onChange={(e) => setTime(i, e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn small-btn"
+                    aria-label={`Quitar la pausa ${i + 1}`}
+                    disabled={!form.activeBreaksEnabled || form.activeBreakTimes.length <= 1}
+                    onClick={() => set('activeBreakTimes', form.activeBreakTimes.filter((_, j) => j !== i))}
+                  >
+                    Quitar
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="btn small-btn"
+              disabled={!form.activeBreaksEnabled || form.activeBreakTimes.length >= MAX_ACTIVE_BREAK_TIMES}
+              onClick={addTime}
+            >
+              Agregar hora
+            </button>
+            {timesError && form.activeBreaksEnabled ? (
+              <p className="field-error" role="alert">
+                {timesError}
+              </p>
+            ) : null}
+            <p className="muted small">
+              Las mismas horas para todo el equipo. A quien a esa hora está en colación, fuera de su horario o sin la
+              jornada iniciada no le llega el aviso de esa pausa.
+            </p>
+          </div>
+        ) : null}
         {form.activeBreakMode === 'daily' ? (
           <p className="muted small">
             Se reparten en partes iguales dentro del horario de cada persona, sin contar la colación. Sin horario, se
@@ -172,32 +243,35 @@ interface TimesProps {
   date: string;
 }
 
-/** When each active collaborator gets the reminders on `date` (daily mode). */
+/** When each active collaborator gets the reminders on `date` (`daily` and `times` modes). */
 export function BreakTimesTable({ settings, users, schedules, date }: TimesProps) {
   if (!settings.enabled) {
     return <p className="muted">La pausa activa está apagada: nadie recibe recordatorios.</p>;
   }
-  if (settings.mode !== 'daily') {
+  if (settings.mode === 'interval') {
     return (
       <p className="muted">
         Con la frecuencia "Según el trabajo continuo" no hay horas fijas: cada persona recibe el aviso después de{' '}
         {settings.intervalMinutes} min trabajando sin una pausa, así que depende de cómo trabaja ese día. Elige "Veces al
-        día" para ver aquí a qué hora le toca a cada uno.
+        día" o "A horas fijas" para ver aquí a qué hora le toca a cada uno.
       </p>
     );
   }
+  const fixed = settings.mode === 'times';
   const active = users
     .filter((u) => u.status === 'active')
     .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email, 'es'));
   if (active.length === 0) return <Empty title="Aún no hay colaboradores activos" />;
-  const plan = Array.from({ length: settings.perDay }, (_, i) => dailyExercise(date, i, settings.perDay));
+  const size = breakPlanSize(settings);
+  const plan = Array.from({ length: size }, (_, i) => dailyExercise(date, i, size));
   return (
     <>
       <ol className="break-plan plain" aria-label="Plan del día">
         {plan.map((ex, i) => (
           <li key={i}>
             <span className="strong">
-              Pausa {i + 1}: {ex.title}
+              Pausa {i + 1}
+              {fixed ? ` · ${settings.times[i]}` : ''}: {ex.title}
             </span>
             <span className="muted small block">{exerciseInstructions(ex, settings.durationMinutes)}</span>
           </li>
@@ -206,7 +280,7 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
       <ul className="list" aria-label="Pausas previstas por colaborador">
         {active.map((u) => {
           const eff = scheduleFor(schedules, u.id);
-          const times = plannedBreaks(settings, eff, date, null) ?? [];
+          const slots = plannedBreakSlots(settings, eff, date, null) ?? [];
           return (
             <li key={u.id} className="list-item">
               <div className="person">
@@ -219,13 +293,15 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
                 </span>
               </div>
               <span className="break-times">
-                {!eff.week
+                {!eff.week && !fixed
                   ? 'Sin horario: se reparten en 9 horas desde que inicia la jornada'
-                  : times.length === 0
-                    ? 'No trabaja este día'
-                    : times.map((t, i) => (
-                        <span key={t} className="block">
-                          {formatTime(t)} · {plan[i]?.title}
+                  : slots.length === 0
+                    ? fixed
+                      ? 'Ninguna de las horas cae en su horario este día'
+                      : 'No trabaja este día'
+                    : slots.map((t) => (
+                        <span key={t.at} className="block">
+                          {formatTime(t.at)} · {plan[t.index]?.title}
                         </span>
                       ))}
               </span>
@@ -243,7 +319,9 @@ export function ExerciseCatalog({ mode, durationMinutes }: { mode: ActiveBreakSe
   return (
     <>
       <p className="muted small">
-        {mode === 'daily'
+        {mode === 'times'
+          ? 'Con "A horas fijas" todos hacen el mismo ejercicio en cada pausa: el plan avanza en este orden de una pausa a la siguiente y de un día al otro.'
+          : mode === 'daily'
           ? 'Con "Veces al día" todos hacen el mismo ejercicio en cada pausa: el plan avanza en este orden de una pausa a la siguiente y de un día al otro.'
           : 'Con "Según el trabajo continuo" cada persona recorre estos ejercicios en orden, a su propio ritmo.'}
         {closing ? ` Con pausas de ${durationMinutes} min, cada ejercicio termina con: "${closing}"` : ''}
