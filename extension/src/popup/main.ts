@@ -291,7 +291,9 @@ let measureOpen = false;
 function renderReady(s: StatusView): void {
   const on = s.session !== null;
   // Spec 2026-11-10-marcaciones: the work day is marked on the kiosk at the entrance.
+  // Marking the entry there starts the measurement here; the exit is marked there too.
   const kioskOnly = !on && s.attendanceMode === 'kiosk';
+  const kioskExit = on && s.session!.kiosk && s.attendanceMode === 'kiosk';
   root.append(
     el('header', { className: 'top' }, [
       logo(28),
@@ -320,12 +322,17 @@ function renderReady(s: StatusView): void {
     ]),
     kioskOnly ? null : value,
     s.schedule ? el('div', { className: 'small muted sched-today', textContent: s.schedule.today }) : null,
-    on
+    kioskExit
+      ? el('p', {
+          className: 'kiosk-note',
+          textContent: 'Iniciaste en el tótem. Para cerrar la jornada, marca tu salida ahí con tu RUT.',
+        })
+      : on
       ? button('Cerrar jornada', 'stop big', () => void act({ type: 'session.stop' }))
       : kioskOnly
         ? el('p', {
             className: 'kiosk-note',
-            textContent: 'Tu empresa registra tu jornada en el tótem de la oficina: marca ahí tu entrada y tu salida con tu RUT.',
+            textContent: 'Marca tu entrada en el tótem de la oficina con tu RUT: la extensión empezará a medir sola.',
           })
         : button(inFlight === 'session.start' ? 'Iniciando…' : 'Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
   ]);

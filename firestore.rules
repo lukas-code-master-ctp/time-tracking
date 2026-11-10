@@ -297,8 +297,14 @@ service cloud.firestore {
 
     // ---------- sessions/{sessionId} ----------
 
+    // Kiosk sessions (spec 2026-11-10-marcaciones) also carry source,
+    // kioskId and closedByKioskId, written only by kioskPunch: the person
+    // never creates them (create below allows only the 5 base fields) and an
+    // update never changes them (changedKeys), so the extension can heartbeat
+    // and close a kiosk work day it joined.
     function validSessionFields(d) {
-      return d.keys().hasOnly(['uid', 'startedAt', 'endedAt', 'endReason', 'lastHeartbeatAt'])
+      return d.keys().hasOnly(['uid', 'startedAt', 'endedAt', 'endReason', 'lastHeartbeatAt',
+                               'source', 'kioskId', 'closedByKioskId'])
         && d.keys().hasAll(['uid', 'startedAt', 'endedAt', 'endReason', 'lastHeartbeatAt'])
         && d.uid is string
         && d.startedAt is int
@@ -325,6 +331,7 @@ service cloud.firestore {
 
       allow create: if isActive()
         && !kioskOnly()
+        && incoming().keys().hasOnly(['uid', 'startedAt', 'endedAt', 'endReason', 'lastHeartbeatAt'])
         && validSessionFields(incoming())
         && incoming().uid == request.auth.uid
         && incoming().endedAt == null

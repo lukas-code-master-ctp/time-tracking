@@ -59,6 +59,13 @@ export interface LocalSession {
   dayStartedAt?: number;
   /** Gaps (no pulse) between `dayStartedAt` and `startedAt`, left out of the popup clock. */
   gaps?: { start: number; end: number }[];
+  /**
+   * The work day was opened on the attendance kiosk (spec
+   * 2026-11-10-marcaciones) and the extension joined it to measure: the
+   * server document is the kiosk's (`source: 'kiosk'`); it is closed with
+   * "Salida" on the kiosk, and a sleep gap does not split it.
+   */
+  kiosk?: boolean;
 }
 
 export interface JoinErrorInfo {

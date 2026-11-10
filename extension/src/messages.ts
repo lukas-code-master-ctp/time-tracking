@@ -161,7 +161,8 @@ export interface StatusView {
    * leaves out: gaps while the computer slept or Chrome was closed, and the
    * lunches of the schedule (`config/org.pauseTimerAtLunch`); they may overlap.
    */
-  session: { id: string; startedAt: number; pauses: { start: number; end: number }[] } | null;
+  /** `kiosk`: joined from an entry marked on the kiosk (spec 2026-11-10-marcaciones). */
+  session: { id: string; startedAt: number; pauses: { start: number; end: number }[]; kiosk: boolean } | null;
   /** Today's totals (America/Santiago) from the blocks measured on this device. */
   today: { trackedSeconds: number; activeSeconds: number; meetingSeconds: number };
   /** What is measured, from the cached `config/org` (null = not read yet). */

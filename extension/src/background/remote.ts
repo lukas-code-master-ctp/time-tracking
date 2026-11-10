@@ -6,6 +6,12 @@ import type { Absence, AnnouncementRead, Celebration, OrgConfig, ScreenshotMeta,
 import type { Backend } from './sync';
 
 export interface Remote extends Backend {
+  /**
+   * The person's open kiosk work day (`sessions where uid == && endedAt ==
+   * null`, `source: 'kiosk'`), the newest one; null when there is none. Spec
+   * 2026-11-10-marcaciones: the extension joins it to measure.
+   */
+  findOpenKioskSession(uid: string): Promise<{ id: string; startedAt: number } | null>;
   /** `getDoc(config/org)`; null when it does not exist. */
   fetchOrgConfig(): Promise<OrgConfig | null>;
   /**

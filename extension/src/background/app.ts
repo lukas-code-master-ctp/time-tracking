@@ -28,6 +28,7 @@ import {
   DEFAULT_TIME_ZONE,
   attendanceModeOf,
   dateKey,
+  MAX_SESSION_MS,
   exerciseById,
   exerciseInstructions,
   isoWeekKey,
@@ -146,6 +147,8 @@ export class App {
   private readonly sessionArea: StorageAreaLike | null;
   /** Order of the schedule reads: an older read that answers late never overwrites a newer one. */
   private scheduleReads = 0;
+  /** Last `findOpenKioskSession` read (in memory: a new service worker reads again). */
+  private kioskCheckedAt = 0;
   private scheduleWritten = 0;
 
   constructor(deps: AppDeps) {
@@ -190,6 +193,7 @@ export class App {
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm.name === PULSE_ALARM) void this.pulse().catch(logError('pulso'));
       if (alarm.name === SCHEDULE_ALARM) void this.onScheduleAlarm().catch(logError('horario'));
+      if (alarm.name === KIOSK_ALARM) void this.kioskTick(0).catch(logError('tótem'));
     });
     chrome.notifications?.onButtonClicked.addListener((id, index) => {
       const promptAt = parseBreakNotificationId(id);
@@ -240,6 +244,7 @@ export class App {
     await this.session.rehydrate().catch(logError('rehidratación'));
     await this.refreshConfig(ORG_CONFIG_WAKE_REFRESH_MS);
     await this.scheduleTick().catch(logError('horario'));
+    await this.kioskTick(0).catch(logError('tótem'));
     void this.screenshots.drain().catch(logError('capturas'));
   }
 
@@ -492,6 +497,78 @@ export class App {
   private kioskOnly(uid: string | null | undefined): boolean {
     const a = this.store.meta.attendance;
     return !!uid && a?.uid === uid && a.mode === 'kiosk';
+  }
+
+  // ---------- kiosk entry starts the measurement (spec 2026-11-10-marcaciones) ----------
+
+  /**
+   * With attendance on the kiosk (mode kiosk or both) and no work day open
+   * on this device, looks for today's open kiosk work day (at most every
+   * `minIntervalMs`) and joins it: the extension measures from now on in
+   * that session and says so in a notification. `KIOSK_ALARM` repeats the
+   * check every minute while the mode allows the kiosk; the exit marked on
+   * the kiosk closes the session, and the next heartbeat (rejected) closes
+   * it here.
+   */
+  async kioskTick(minIntervalMs: number): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const check = await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      const a = this.store.meta.attendance;
+      const enabled = !!uid && a?.uid === uid && (a.mode === 'kiosk' || a.mode === 'both');
+      await this.ensureKioskAlarm(enabled);
+      if (!enabled || this.store.session) return null;
+      const at = this.now();
+      if (at - this.kioskCheckedAt < minIntervalMs) return null;
+      this.kioskCheckedAt = at;
+      return uid;
+    });
+    if (!check) return;
+    let found: { id: string; startedAt: number } | null;
+    try {
+      found = await this.backend.findOpenKioskSession(check);
+    } catch (err) {
+      console.warn(`[timetracking] no se pudo revisar la marca del tótem (${errorCode(err)})`);
+      return;
+    }
+    const at = this.now();
+    // Only today's live work day: a forgotten exit of another day is closed by the server.
+    if (
+      !found ||
+      dateKey(found.startedAt, DEFAULT_TIME_ZONE) !== dateKey(at, DEFAULT_TIME_ZONE) ||
+      at - found.startedAt > MAX_SESSION_MS
+    ) {
+      return;
+    }
+    if (this.auth.currentUser()?.uid !== check) return;
+    const adopted = await this.session.adoptKioskSession(found.id, found.startedAt);
+    if (!adopted) return;
+    void this.refreshOrgConfig(0)
+      .then(() => this.scheduleTick())
+      .catch(logError('horario'));
+    try {
+      await chrome.notifications.create(kioskNotificationId(found.id), {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+        title: 'Tu jornada ya está iniciada',
+        message: `Marcaste tu entrada en el tótem a las ${hhmm(found.startedAt)}. La extensión ya está midiendo tu jornada.`,
+        priority: 2,
+        requireInteraction: false,
+      });
+    } catch (err) {
+      console.warn('[timetracking] no se pudo mostrar el aviso del tótem', err);
+    }
+  }
+
+  private async ensureKioskAlarm(enabled: boolean): Promise<void> {
+    try {
+      const existing = await chrome.alarms.get(KIOSK_ALARM);
+      if (enabled && !existing) await chrome.alarms.create(KIOSK_ALARM, { periodInMinutes: 1, delayInMinutes: 1 });
+      else if (!enabled && existing) await chrome.alarms.clear(KIOSK_ALARM);
+    } catch (err) {
+      console.warn('[timetracking] no se pudo programar la alarma del tótem', err);
+    }
   }
 
   /** Effective schedule of the signed-in, joined, active user (inside store.run). */
@@ -797,7 +874,8 @@ export class App {
     if (
       !parseReminderNotificationId(notificationId) &&
       parseBreakNotificationId(notificationId) === null &&
-      parseAnnouncementNotificationId(notificationId) === null
+      parseAnnouncementNotificationId(notificationId) === null &&
+      !notificationId.startsWith(KIOSK_NOTIFICATION_PREFIX)
     ) {
       return;
     }
@@ -863,6 +941,8 @@ export class App {
         case 'status':
           // Fresh announcements for the open popup (shown on its next poll).
           void this.refreshAnnouncements(ANNOUNCEMENTS_POPUP_REFRESH_MS).catch(logError('comunicados'));
+          // Entry just marked on the kiosk: the open popup shows it on its next poll.
+          void this.kioskTick(KIOSK_POPUP_CHECK_MS).catch(logError('tótem'));
           break;
         case 'session.start':
           await this.startWorkDay();
@@ -1102,6 +1182,10 @@ export class App {
    * Another user gets a fresh accumulator (see Tracker.beginMeasuring).
    */
   async signOut(): Promise<void> {
+    // A kiosk work day stays open (closed with "Salida" on the kiosk): only
+    // stop measuring it on this device.
+    const kioskSession = this.store.session?.kiosk ? this.store.session.id : null;
+    if (kioskSession) await this.session.closeLocally(kioskSession, KIOSK_SIGNED_OUT_NOTICE);
     await this.store.run(async () => {
       if (this.store.session) {
         throw new SessionError('session-open', 'Cierra tu jornada antes de cerrar sesión.');
@@ -1181,6 +1265,7 @@ export class App {
           ? {
               id: session.id,
               startedAt: session.dayStartedAt ?? session.startedAt,
+              kiosk: session.kiosk === true,
               pauses: [
                 ...(session.gaps ?? []),
                 ...(profile && org?.pauseTimerAtLunch === true
@@ -1231,4 +1316,27 @@ export function celebrationsView(
 
 function logError(what: string): (err: unknown) => void {
   return (err) => console.error(`[timetracking] error en ${what}`, err);
+}
+
+const KIOSK_SIGNED_OUT_NOTICE =
+  'Cerraste sesión: la extensión dejó de medir. Tu jornada sigue abierta en el tótem hasta que marques tu salida.';
+
+/** Periodic check for a kiosk entry (spec 2026-11-10-marcaciones). */
+export const KIOSK_ALARM = 'tt-kiosk';
+/** With the popup open, the kiosk entry is checked at most this often. */
+const KIOSK_POPUP_CHECK_MS = 15_000;
+const KIOSK_NOTIFICATION_PREFIX = 'tt-kiosk-in:';
+
+export function kioskNotificationId(sessionId: string): string {
+  return `${KIOSK_NOTIFICATION_PREFIX}${sessionId}`;
+}
+
+/** HH:MM in Chile. */
+function hhmm(ms: number): string {
+  return new Intl.DateTimeFormat('es-CL', {
+    timeZone: DEFAULT_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(ms);
 }

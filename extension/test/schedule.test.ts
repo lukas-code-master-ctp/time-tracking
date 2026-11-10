@@ -23,9 +23,9 @@ import {
   scheduleView,
   type EffectiveSchedule,
 } from '../src/background/schedule';
-import { PULSE_ALARM } from '../src/background/session';
+import { KIOSK_CLOSED_NOTICE, PULSE_ALARM } from '../src/background/session';
 import { STORAGE_KEYS } from '../src/background/state';
-import { START_SCHEDULE_TIMEOUT_MS } from '../src/background/app';
+import { KIOSK_ALARM, START_SCHEDULE_TIMEOUT_MS, kioskNotificationId } from '../src/background/app';
 import { workDayElapsed } from '../src/ui/dom';
 import { activity, createHarness, hello, type Harness } from './fakes';
 
@@ -975,5 +975,98 @@ describe('attendance mode (spec 2026-11-10-marcaciones)', () => {
     h.backend.attendance.delete('u1');
     await h.app.refreshSchedule(0);
     expect((await h.app.status()).attendanceMode).toBe('extension');
+  });
+  it('kiosk entry: the extension joins that work day, notifies and closes with the kiosk exit', async () => {
+    h.backend.attendance.set('u1', kiosk('kiosk'));
+    await useSchedule(h, CONFIG);
+    await h.app.kioskTick(0);
+    expect(h.chrome.world.alarms.has(KIOSK_ALARM)).toBe(true);
+    expect(h.app.store.session).toBeNull();
+
+    vi.setSystemTime(at(MON, '08:55'));
+    const id = h.backend.kioskPunch('u1', 'in', Date.now());
+    await h.app.kioskTick(0);
+    await h.settle();
+    expect(h.app.store.session).toMatchObject({ id, kiosk: true, startedAt: at(MON, '08:55') });
+    const note = h.chrome.world.notificationLog.find((n) => n.id === kioskNotificationId(id));
+    expect(note?.options.title).toBe('Tu jornada ya está iniciada');
+    expect(note?.options.message).toContain('08:55');
+    expect(h.backend.ops('createSession')).toHaveLength(0);
+    const view = await h.app.status();
+    expect(view.session).toMatchObject({ id, kiosk: true });
+    // Kiosk only: the exit is marked on the kiosk, not here.
+    expect(await h.app.handlePopup({ type: 'session.stop' })).toMatchObject({ ok: false, reason: 'kiosk-only' });
+
+    // Measures and heartbeats in the kiosk's session.
+    await runUntil(h, at(MON, '09:10'));
+    expect(h.backend.ops('heartbeat').length).toBeGreaterThan(0);
+    expect(h.backend.sessions.get(id)?.lastHeartbeatAt).toBeGreaterThan(at(MON, '08:55'));
+    // A second check does not notify again.
+    await h.app.kioskTick(0);
+    expect(h.chrome.world.notificationLog.filter((n) => n.id.startsWith('tt-kiosk-in:'))).toHaveLength(1);
+
+    h.backend.kioskPunch('u1', 'out', Date.now());
+    await runUntil(h, at(MON, '09:20'));
+    expect(h.app.store.session).toBeNull();
+    expect(h.app.store.meta.notice).toBe(KIOSK_CLOSED_NOTICE);
+    expect(h.backend.sessions.get(id)).toMatchObject({ endReason: 'manual', closedByKioskId: 'k1' });
+    // Closed: it is not joined again.
+    await h.app.kioskTick(0);
+    expect(h.app.store.session).toBeNull();
+  });
+
+  it('kiosk entry of another day is not joined; extension-only mode does not look', async () => {
+    h.backend.attendance.set('u1', kiosk('both'));
+    await useSchedule(h, CONFIG);
+    h.backend.kioskPunch('u1', 'in', at(MON, '08:00') - 20 * 3_600_000, 'old');
+    await h.app.kioskTick(0);
+    expect(h.app.store.session).toBeNull();
+
+    h.backend.attendance.delete('u1');
+    await h.app.refreshSchedule(0);
+    h.backend.kioskPunch('u1', 'in', Date.now(), 'today');
+    await h.app.kioskTick(0);
+    expect(h.app.store.session).toBeNull();
+    expect(h.chrome.world.alarms.has(KIOSK_ALARM)).toBe(false);
+  });
+
+  it('both: a joined kiosk work day can be closed from the extension; signing out does not close it', async () => {
+    h.backend.attendance.set('u1', kiosk('both'));
+    await useSchedule(h, CONFIG);
+    const id = h.backend.kioskPunch('u1', 'in', Date.now());
+    await h.app.kioskTick(0);
+    expect(h.app.store.session?.id).toBe(id);
+    expect(await h.app.handlePopup({ type: 'session.stop' })).toMatchObject({ ok: true });
+    await h.settle();
+    expect(h.backend.sessions.get(id)).toMatchObject({ endReason: 'manual' });
+
+    const id2 = h.backend.kioskPunch('u1', 'in', Date.now(), 'k2');
+    await h.app.kioskTick(0);
+    expect(h.app.store.session?.id).toBe(id2);
+    expect(await h.app.handlePopup({ type: 'auth.signOut' })).toMatchObject({ ok: true });
+    await h.settle();
+    expect(h.app.store.session).toBeNull();
+    expect(h.backend.sessions.get(id2)?.endedAt).toBeNull();
+    expect(h.backend.ops('closeSession')).toHaveLength(1);
+  });
+  it('a sleep does not split a kiosk work day: same session, the gap left out of the clock', async () => {
+    h.backend.attendance.set('u1', kiosk('kiosk'));
+    await useSchedule(h, CONFIG);
+    const id = h.backend.kioskPunch('u1', 'in', Date.now());
+    await h.app.kioskTick(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await h.app.pulse();
+    const lastAlive = Date.now();
+    vi.setSystemTime(lastAlive + 30 * 60_000);
+    await h.app.pulse();
+    await h.settle();
+    expect(h.app.store.session).toMatchObject({
+      id,
+      kiosk: true,
+      dayStartedAt: at(MON, '08:00'),
+      gaps: [{ start: lastAlive, end: Date.now() }],
+    });
+    expect(h.backend.ops('closeSession')).toHaveLength(0);
+    expect(h.backend.sessions.get(id)?.endedAt).toBeNull();
   });
 });

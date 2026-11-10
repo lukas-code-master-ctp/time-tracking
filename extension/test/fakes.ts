@@ -109,6 +109,29 @@ export class FakeBackend implements Remote {
     this.calls.push({ op: 'createSession', sessionId, data });
     if (!existing) this.sessions.set(sessionId, { ...data });
   }
+  async findOpenKioskSession(uid: string): Promise<{ id: string; startedAt: number } | null> {
+    this.check();
+    const open = [...this.sessions.entries()]
+      .filter(([, s]) => s.uid === uid && s.endedAt === null && s.source === 'kiosk')
+      .sort(([, a], [, b]) => b.startedAt - a.startedAt);
+    return open[0] ? { id: open[0][0], startedAt: open[0][1].startedAt } : null;
+  }
+  /** kioskPunch: opens (`in`) or closes (`out`) a kiosk work day on the server. */
+  kioskPunch(uid: string, action: 'in' | 'out', at: number, sessionId = `kiosk-${at}`): string {
+    if (action === 'in') {
+      this.sessions.set(sessionId, {
+        uid, startedAt: at, endedAt: null, endReason: null, lastHeartbeatAt: at, source: 'kiosk', kioskId: 'k1',
+      });
+      return sessionId;
+    }
+    for (const [id, s] of this.sessions) {
+      if (s.uid === uid && s.endedAt === null) {
+        Object.assign(s, { endedAt: at, endReason: 'manual', closedByKioskId: 'k1' });
+        return id;
+      }
+    }
+    return '';
+  }
   async heartbeat(sessionId: string, at: number): Promise<void> {
     this.check();
     const s = this.sessions.get(sessionId);

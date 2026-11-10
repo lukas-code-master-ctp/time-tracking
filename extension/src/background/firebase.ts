@@ -170,6 +170,16 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     async putScreenshotMeta(id: string, meta: ScreenshotMeta) {
       await setDoc(doc(db, COLLECTIONS.screenshots, id), meta);
     },
+    async findOpenKioskSession(uid: string) {
+      const snap = await getDocs(
+        query(collection(db, COLLECTIONS.sessions), where('uid', '==', uid), where('endedAt', '==', null)),
+      );
+      const open = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Session) }))
+        .filter((s) => s.source === 'kiosk' && typeof s.startedAt === 'number')
+        .sort((a, b) => b.startedAt - a.startedAt);
+      return open[0] ? { id: open[0].id, startedAt: open[0].startedAt } : null;
+    },
     async listAbsences(uid: string) {
       const snap = await getDocs(query(collection(db, COLLECTIONS.absences), where('uid', '==', uid)));
       return snap.docs.map((d) => ({ ...(d.data() as Absence), id: d.id }));
