@@ -312,10 +312,19 @@ service cloud.firestore {
         && (d.endedAt == null || (d.endedAt >= d.startedAt && notFuture(d.endedAt)));
     }
 
+    // Spec 2026-11-10-marcaciones: a person who marks only on the kiosk
+    // cannot open a work day from the extension (kiosk sessions are written
+    // by the `kioskPunch` Cloud Function, which bypasses these rules).
+    function kioskOnly() {
+      let p = /databases/$(database)/documents/attendanceSettings/$(request.auth.uid);
+      return exists(p) && get(p).data.mode == 'kiosk';
+    }
+
     match /sessions/{sessionId} {
       allow read: if isAdmin() || ownsExisting();
 
       allow create: if isActive()
+        && !kioskOnly()
         && validSessionFields(incoming())
         && incoming().uid == request.auth.uid
         && incoming().endedAt == null
@@ -666,6 +675,56 @@ service cloud.firestore {
         && incoming().dates.size() == resource.data.dates.size() + 1
         && incoming().dates.hasAll(resource.data.dates);
       allow delete: if false;
+    }
+
+    // ---------- attendance marks (spec 2026-11-10-marcaciones) ----------
+
+    // Normalized RUT '12345678-K' (normalizeRut in packages/shared/src/attendance.ts
+    // also checks the check digit).
+    function validRut(r) {
+      return r is string && r.matches('[1-9][0-9]{0,7}-[0-9K]');
+    }
+
+    function validAttendanceSettings(d) {
+      return d.keys().hasOnly(['rut', 'mode', 'updatedAt', 'updatedBy'])
+        && d.keys().hasAll(['rut', 'mode', 'updatedAt', 'updatedBy'])
+        && (d.rut == null || validRut(d.rut))
+        && d.mode in ['extension', 'kiosk', 'both']
+        && d.updatedAt is int
+        && d.updatedBy == request.auth.uid;
+    }
+
+    match /attendanceSettings/{uid} {
+      // The extension reads its own mode; the RUT lookup of the kiosk runs
+      // in the `kioskPunch` Cloud Function (Admin SDK).
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() && exists(userPath(uid)) && validAttendanceSettings(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // `kiosks/{sha256 of the token}`: the token stays on the device.
+    function validKiosk(d) {
+      return d.keys().hasOnly(['name', 'createdAt', 'createdBy', 'revokedAt', 'lastUsedAt'])
+        && d.keys().hasAll(['name', 'createdAt', 'createdBy', 'revokedAt'])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 60
+        && d.createdAt is int
+        && isNullableInt(d.revokedAt)
+        && (!('lastUsedAt' in d) || isNullableInt(d.lastUsedAt));
+    }
+
+    match /kiosks/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && id.matches('[0-9a-f]{64}')
+        && validKiosk(incoming())
+        && incoming().createdBy == request.auth.uid
+        && incoming().revokedAt == null
+        && !('lastUsedAt' in incoming());
+      // Revoke (or rename): never brought back with the same token.
+      allow update: if isAdmin() && validKiosk(incoming())
+        && changedKeys().hasOnly(['name', 'revokedAt'])
+        && (resource.data.revokedAt == null || incoming().revokedAt == resource.data.revokedAt);
+      allow delete: if isAdmin();
     }
 
     // Anything else is denied.

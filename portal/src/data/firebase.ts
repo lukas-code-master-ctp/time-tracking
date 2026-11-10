@@ -53,7 +53,9 @@ import {
   absenceOverlapsRange,
   emailKey,
   readAllowedDomains,
+  readAttendanceSettings,
   readCelebration,
+  readKiosk,
   readPersonSchedule,
   readScheduleConfig,
   type Absence,
@@ -110,6 +112,28 @@ export function createFirebaseBackend(): Backend {
     connectFirestoreEmulator(db, host, EMULATOR_PORTS.firestore);
     connectFunctionsEmulator(functions, host, EMULATOR_PORTS.functions);
     connectStorageEmulator(storage, host, EMULATOR_PORTS.storage);
+  }
+
+  /**
+   * Every valid document of a small collection; `[]` while its rules are not
+   * deployed (permission-denied), so the page still works.
+   */
+  async function readValid<T>(name: string, read: (raw: unknown) => T | null, what: string): Promise<WithId<T>[]> {
+    try {
+      const snap = await getDocs(collection(db, name));
+      const out: WithId<T>[] = [];
+      for (const d of snap.docs) {
+        const v = read(d.data());
+        if (v) out.push({ ...v, id: d.id });
+      }
+      return out;
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+        console.warn(`[timetracking] no se pudieron leer ${what}`, err);
+        return [];
+      }
+      throw err;
+    }
   }
 
   /** Reads every document of a query ordered by `field`, in pages. */
@@ -283,6 +307,24 @@ export function createFirebaseBackend(): Backend {
         }
         throw err;
       }
+    },
+    async listAttendanceSettings() {
+      return readValid(COLLECTIONS.attendanceSettings, readAttendanceSettings, 'las marcaciones');
+    },
+    async saveAttendanceSettings(uid, settings) {
+      await setDoc(doc(db, COLLECTIONS.attendanceSettings, uid), settings);
+    },
+    async listKiosks() {
+      return readValid(COLLECTIONS.kiosks, readKiosk, 'los tótems');
+    },
+    async createKiosk(id, kiosk) {
+      await setDoc(doc(db, COLLECTIONS.kiosks, id), kiosk);
+    },
+    async revokeKiosk(id, revokedAt) {
+      await updateDoc(doc(db, COLLECTIONS.kiosks, id), { revokedAt });
+    },
+    async deleteKiosk(id) {
+      await deleteDoc(doc(db, COLLECTIONS.kiosks, id));
     },
     async listCelebrations() {
       try {

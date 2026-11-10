@@ -12,6 +12,8 @@ import {
   type AnnouncementRead,
   type Celebration,
   type ActiveBreak,
+  type AttendanceSettings,
+  type Kiosk,
   type ActivitySlot,
   type DaySchedule,
   type Invitation,
@@ -1355,5 +1357,76 @@ describe('announcements', () => {
     await assertFails(db('alice').collection('announcementReads').get());
     await assertFails(db('alice').doc('announcementReads/n1_bob').get());
     await assertSucceeds(db('admin').collection('announcementReads').get());
+  });
+});
+
+// ---------- attendance marks (spec 2026-11-10-marcaciones) ----------
+
+function attendance(overrides: Partial<AttendanceSettings> = {}): AttendanceSettings {
+  return { rut: '12345678-5', mode: 'both', updatedAt: NOW, updatedBy: 'admin', ...overrides };
+}
+
+const KIOSK_ID = 'a'.repeat(64);
+
+function kiosk(overrides: Partial<Kiosk> = {}): Kiosk {
+  return { name: 'Recepción', createdAt: NOW, createdBy: 'admin', revokedAt: null, ...overrides };
+}
+
+describe('attendanceSettings', () => {
+  it('an admin writes them; the person reads her own', async () => {
+    await assertSucceeds(db('admin').doc('attendanceSettings/alice').set(attendance()));
+    await assertSucceeds(db('admin').doc('attendanceSettings/alice').set(attendance({ rut: null, mode: 'extension' })));
+    await assertSucceeds(db('alice').doc('attendanceSettings/alice').get());
+    await assertFails(db('bob').doc('attendanceSettings/alice').get());
+    await assertFails(db('alice').collection('attendanceSettings').get());
+    await assertSucceeds(db('admin').collection('attendanceSettings').get());
+    await assertSucceeds(db('admin').doc('attendanceSettings/alice').delete());
+  });
+
+  it('members cannot change their own mode or RUT', async () => {
+    await assertFails(db('alice').doc('attendanceSettings/alice').set(attendance({ updatedBy: 'alice' })));
+    await assertFails(db('eve').doc('attendanceSettings/alice').set(attendance({ updatedBy: 'eve' })));
+  });
+
+  it('rejects malformed documents', async () => {
+    const put = (o: Record<string, unknown>, id = 'alice') =>
+      db('admin').doc(`attendanceSettings/${id}`).set({ ...attendance(), ...o });
+    await assertFails(put({}, 'nobody'));
+    await assertFails(put({ rut: '12.345.678-5' }));
+    await assertFails(put({ rut: '12345678-k' }));
+    await assertFails(put({ mode: 'tablet' }));
+    await assertFails(put({ updatedBy: 'bob' }));
+    await assertFails(put({ extra: 1 }));
+  });
+
+  it('a kiosk-only person cannot open a work day from the extension', async () => {
+    await seed(env, { 'attendanceSettings/alice': attendance({ mode: 'kiosk' }) });
+    await assertFails(db('alice').doc('sessions/s-k').set(session('alice')));
+    await seed(env, { 'attendanceSettings/alice': attendance({ mode: 'both' }) });
+    await assertSucceeds(db('alice').doc('sessions/s-k').set(session('alice')));
+  });
+});
+
+describe('kiosks', () => {
+  it('an admin creates, lists, revokes and deletes them', async () => {
+    const ref = db('admin').doc(`kiosks/${KIOSK_ID}`);
+    await assertSucceeds(ref.set(kiosk()));
+    await assertSucceeds(db('admin').collection('kiosks').get());
+    await assertSucceeds(ref.update({ revokedAt: NOW }));
+    await assertFails(ref.update({ revokedAt: null }));
+    await assertSucceeds(ref.delete());
+  });
+
+  it('rejects bad ids and fields, and nobody else reads or writes them', async () => {
+    await assertFails(db('admin').doc('kiosks/plain-token').set(kiosk()));
+    await assertFails(db('admin').doc(`kiosks/${KIOSK_ID}`).set(kiosk({ name: '' })));
+    await assertFails(db('admin').doc(`kiosks/${KIOSK_ID}`).set(kiosk({ revokedAt: NOW })));
+    await assertFails(db('admin').doc(`kiosks/${KIOSK_ID}`).set({ ...kiosk(), lastUsedAt: NOW }));
+    await assertFails(db('admin').doc(`kiosks/${KIOSK_ID}`).set(kiosk({ createdBy: 'bob' })));
+    await assertFails(db('alice').doc(`kiosks/${KIOSK_ID}`).set(kiosk({ createdBy: 'alice' })));
+    await seed(env, { [`kiosks/${KIOSK_ID}`]: kiosk() });
+    await assertFails(db('alice').doc(`kiosks/${KIOSK_ID}`).get());
+    await assertFails(db(null).doc(`kiosks/${KIOSK_ID}`).get());
+    await assertFails(db('admin').doc(`kiosks/${KIOSK_ID}`).update({ createdAt: 1 }));
   });
 });

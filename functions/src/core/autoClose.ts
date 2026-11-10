@@ -6,21 +6,41 @@
  * older than STALE_SESSION_MS or it has been open for longer than
  * MAX_SESSION_MS. It ends at its last heartbeat (never after
  * startedAt + MAX_SESSION_MS, never before startedAt), with `endReason: 'auto'`.
+ *
+ * Kiosk work days (spec 2026-11-10-marcaciones, `source: 'kiosk'`) have no
+ * heartbeat: they close only after MAX_SESSION_MS (forgotten exit), at the
+ * end of that day's schedule (`forgottenExitEnd`).
  */
 import { FieldPath, type DocumentSnapshot, type Firestore } from 'firebase-admin/firestore';
-import { COLLECTIONS, MAX_SESSION_MS, STALE_SESSION_MS, type Session } from '@timetracking/shared';
+import {
+  COLLECTIONS,
+  MAX_SESSION_MS,
+  SCHEDULE_CONFIG_DOC_ID,
+  STALE_SESSION_MS,
+  effectiveWeek,
+  forgottenExitEnd,
+  readPersonSchedule,
+  readScheduleConfig,
+  type ScheduleConfig,
+  type Session,
+  type WeekSchedule,
+} from '@timetracking/shared';
 
 export interface AutoCloseDecision {
   close: boolean;
   endedAt: number;
 }
 
-/** Pure decision for one open session. */
+/** Pure decision for one open session. `schedule`: the person's, for kiosk sessions. */
 export function decideAutoClose(
-  session: Pick<Session, 'startedAt' | 'lastHeartbeatAt'>,
+  session: Pick<Session, 'startedAt' | 'lastHeartbeatAt' | 'source'>,
   now: number,
+  schedule: { week: WeekSchedule | null; holidays: readonly string[] } = { week: null, holidays: [] },
 ): AutoCloseDecision {
   const startedAt = session.startedAt;
+  if (session.source === 'kiosk') {
+    return { close: startedAt < now - MAX_SESSION_MS, endedAt: forgottenExitEnd(session, schedule.week, schedule.holidays) };
+  }
   const heartbeat =
     typeof session.lastHeartbeatAt === 'number' && Number.isFinite(session.lastHeartbeatAt)
       ? session.lastHeartbeatAt
@@ -55,6 +75,14 @@ export async function autoCloseStaleSessionsCore(deps: AutoCloseDeps): Promise<A
     .orderBy(FieldPath.documentId())
     .limit(pageSize);
 
+  // Schedules, read only when a kiosk work day has to be closed.
+  let general: Promise<ScheduleConfig | null> | null = null;
+  const scheduleOf = async (uid: string) => {
+    general ??= db.collection(COLLECTIONS.config).doc(SCHEDULE_CONFIG_DOC_ID).get().then((d) => readScheduleConfig(d.data()));
+    const [config, person] = await Promise.all([general, db.collection(COLLECTIONS.schedules).doc(uid).get()]);
+    return { week: effectiveWeek(config, readPersonSchedule(person.data())), holidays: config?.holidays ?? [] };
+  };
+
   let last: DocumentSnapshot | undefined;
   for (;;) {
     const page = await (last ? base.startAfter(last) : base).get();
@@ -65,8 +93,9 @@ export async function autoCloseStaleSessionsCore(deps: AutoCloseDeps): Promise<A
       page.docs.map(async (doc) => {
         const s = doc.data() as Session;
         if (typeof s.startedAt !== 'number') return;
-        const decision = decideAutoClose(s, now);
+        let decision = decideAutoClose(s, now);
         if (!decision.close) return;
+        if (s.source === 'kiosk') decision = decideAutoClose(s, now, await scheduleOf(s.uid));
         try {
           // Precondition: skip if the client heartbeat/closed it meanwhile.
           await doc.ref.update(

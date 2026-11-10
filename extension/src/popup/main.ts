@@ -290,6 +290,8 @@ let measureOpen = false;
  */
 function renderReady(s: StatusView): void {
   const on = s.session !== null;
+  // Spec 2026-11-10-marcaciones: the work day is marked on the kiosk at the entrance.
+  const kioskOnly = !on && s.attendanceMode === 'kiosk';
   root.append(
     el('header', { className: 'top' }, [
       logo(28),
@@ -304,7 +306,8 @@ function renderReady(s: StatusView): void {
   // Work day: state + schedule, clock, today's hours, the big button.
   const pauses = s.session?.pauses ?? [];
   const paused = (now: number): boolean => pauses.some((p) => now >= p.start && now < p.end);
-  const stateText = (now: number): string => (!on ? 'Jornada no iniciada' : paused(now) ? 'En pausa (colación)' : 'En jornada');
+  const stateText = (now: number): string =>
+    kioskOnly ? 'Marcas en el tótem' : !on ? 'Jornada no iniciada' : paused(now) ? 'En pausa (colación)' : 'En jornada';
   const tone = !on ? 'idle' : s.schedule && !s.schedule.measuring ? 'warn' : 'on';
   const state = el('span', { className: 'state-text', textContent: stateText(Date.now()) });
   const value = el('div', { className: 'value', textContent: on ? clock(workDayElapsed(s.session!.startedAt, Date.now(), pauses)) : '0:00:00' });
@@ -315,11 +318,16 @@ function renderReady(s: StatusView): void {
       s.schedule ? el('span', { className: 'sep', ariaHidden: 'true', textContent: '·' }) : null,
       s.schedule ? el('span', { className: 'sched-label', textContent: s.schedule.label }) : null,
     ]),
-    value,
+    kioskOnly ? null : value,
     s.schedule ? el('div', { className: 'small muted sched-today', textContent: s.schedule.today }) : null,
     on
       ? button('Cerrar jornada', 'stop big', () => void act({ type: 'session.stop' }))
-      : button(inFlight === 'session.start' ? 'Iniciando…' : 'Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
+      : kioskOnly
+        ? el('p', {
+            className: 'kiosk-note',
+            textContent: 'Tu empresa registra tu jornada en el tótem de la oficina: marca ahí tu entrada y tu salida con tu RUT.',
+          })
+        : button(inFlight === 'session.start' ? 'Iniciando…' : 'Iniciar jornada', 'start big', () => void act({ type: 'session.start' })),
   ]);
   if (on) {
     const startedAt = s.session!.startedAt;

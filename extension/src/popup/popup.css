@@ -682,3 +682,14 @@ form.stack label {
 .cel-list .cel-text {
   font-weight: 550;
 }
+
+/* Spec 2026-11-10-marcaciones: the person marks on the kiosk at the entrance. */
+.kiosk-note {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}

@@ -8,7 +8,9 @@ import type {
   ActivitySlot,
   Announcement,
   AnnouncementRead,
+  AttendanceSettings,
   Celebration,
+  Kiosk,
   Invitation,
   MoodWeek,
   OrgConfig,
@@ -95,6 +97,20 @@ export interface DataSource {
   saveCelebration(uid: string, celebration: Celebration): Promise<void>;
   /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
   listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
+  /**
+   * Every valid `attendanceSettings/{uid}` (id = uid): RUT and attendance mode
+   * (spec 2026-11-10-marcaciones). `[]` while the rules are not deployed.
+   */
+  listAttendanceSettings(): Promise<WithId<AttendanceSettings>[]>;
+  /** Writes the whole `attendanceSettings/{uid}`. */
+  saveAttendanceSettings(uid: string, settings: AttendanceSettings): Promise<void>;
+  /** Every valid `kiosks/{id}`. `[]` while the rules are not deployed. */
+  listKiosks(): Promise<WithId<Kiosk>[]>;
+  /** New `kiosks/{id}` (id = SHA-256 of the device's token). */
+  createKiosk(id: string, kiosk: Kiosk): Promise<void>;
+  /** Stops a kiosk from marking (cannot be undone: create a new one). */
+  revokeKiosk(id: string, revokedAt: number): Promise<void>;
+  deleteKiosk(id: string): Promise<void>;
   /** Download URL of a Storage object (admins may read every screenshot). */
   screenshotUrl(storagePath: string): Promise<string>;
 }

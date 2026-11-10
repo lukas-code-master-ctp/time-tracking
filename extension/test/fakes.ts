@@ -65,6 +65,8 @@ export class FakeBackend implements Remote {
   schedule: unknown = null;
   /** Raw `schedules/{uid}` by uid. */
   personSchedules = new Map<string, unknown>();
+  /** `attendanceSettings/{uid}` (spec 2026-11-10-marcaciones). */
+  attendance = new Map<string, unknown>();
   scheduleFetches = 0;
   /** Errors of the next schedule reads (apart from `failures`, which other ops consume). */
   scheduleFailures: string[] = [];
@@ -150,12 +152,16 @@ export class FakeBackend implements Remote {
     this.orgFetches++;
     return this.org ? { ...this.org } : null;
   }
-  async fetchSchedule(uid: string): Promise<{ config: unknown; person: unknown }> {
+  async fetchSchedule(uid: string): Promise<{ config: unknown; person: unknown; attendance: unknown }> {
     if (this.offline) throw new TypeError('Failed to fetch');
     const code = this.scheduleFailures.shift();
     if (code) throw new BackendError(code);
     this.scheduleFetches++;
-    const answer = { config: structuredClone(this.schedule), person: structuredClone(this.personSchedules.get(uid) ?? null) };
+    const answer = {
+      config: structuredClone(this.schedule),
+      person: structuredClone(this.personSchedules.get(uid) ?? null),
+      attendance: structuredClone(this.attendance.get(uid) ?? null),
+    };
     if (this.scheduleDelayMs > 0) await new Promise((r) => setTimeout(r, this.scheduleDelayMs));
     return answer;
   }

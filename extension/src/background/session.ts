@@ -30,7 +30,8 @@
  *   close is refused and simply dropped. A longer gap closes the work day
  *   at the last pulse with RESUME_EXPIRED_NOTICE.
  * - start requires a joined, active profile that accepted the current
- *   transparency notice (`consentVersion === CONSENT_VERSION`, spec 4).
+ *   transparency notice (`consentVersion === CONSENT_VERSION`, spec 4), and
+ *   is refused to a person who marks only on the kiosk (spec 2026-11-10-marcaciones).
  * - Every snapshot of a block also feeds the local daily summary (daily.ts).
  */
 import {
@@ -63,6 +64,8 @@ export const ICONS_ON = { 16: 'icons/icon-on-16.png', 32: 'icons/icon-on-32.png'
 
 export const AUTO_CLOSED_NOTICE =
   'Tu jornada se cerró automáticamente (sin conexión con el servidor por mucho tiempo o jornada muy larga). Puedes iniciar una nueva.';
+
+export const KIOSK_ONLY_MESSAGE = 'Tu empresa registra tu jornada en el tótem de la oficina: marca ahí tu entrada y tu salida con tu RUT.';
 
 export const RESUME_EXPIRED_NOTICE =
   'Tu jornada se cerró porque el equipo estuvo suspendido o apagado por mucho tiempo. El tiempo sin conexión no se contó. Puedes iniciar una nueva.';
@@ -126,7 +129,13 @@ export class SessionManager {
   /** Inside store.run. Returns the signed-in uid. */
   private assertCanStart(): string {
     if (this.store.session) throw new SessionError('already-open', 'Ya tienes una jornada iniciada.');
-    return this.assertCanWork();
+    const uid = this.assertCanWork();
+    // Spec 2026-11-10-marcaciones (the rules refuse it too).
+    const attendance = this.store.meta.attendance;
+    if (attendance?.uid === uid && attendance.mode === 'kiosk') {
+      throw new SessionError('kiosk-only', KIOSK_ONLY_MESSAGE);
+    }
+    return uid;
   }
 
   /** Inside store.run: everything `start` requires except "no open work day". */

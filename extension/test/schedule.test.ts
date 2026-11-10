@@ -941,3 +941,39 @@ describe('extension with working hours', () => {
     expect(SLOT_MS).toBe(600_000);
   });
 });
+
+describe('attendance mode (spec 2026-11-10-marcaciones)', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(MON, '08:00'));
+    h = await createHarness();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const kiosk = (mode: string) => ({ rut: '12345678-5', mode, updatedAt: 1, updatedBy: 'admin' });
+
+  it('kiosk only: no "Iniciar jornada" (refused) and no start reminders', async () => {
+    h.backend.attendance.set('u1', kiosk('kiosk'));
+    await useSchedule(h, CONFIG);
+    expect((await h.app.status()).attendanceMode).toBe('kiosk');
+    expect(await h.app.handlePopup({ type: 'session.start' })).toMatchObject({ ok: false, reason: 'kiosk-only' });
+    await runUntil(h, at(MON, '09:15'));
+    expect(h.chrome.world.notificationLog).toHaveLength(0);
+    expect(h.backend.ops('createSession')).toHaveLength(0);
+  });
+
+  it('both (or not set): the extension works as before', async () => {
+    h.backend.attendance.set('u1', kiosk('both'));
+    await useSchedule(h, CONFIG);
+    expect((await h.app.status()).attendanceMode).toBe('both');
+    expect(await h.app.handlePopup({ type: 'session.start' })).toMatchObject({ ok: true });
+    h.backend.attendance.delete('u1');
+    await h.app.refreshSchedule(0);
+    expect((await h.app.status()).attendanceMode).toBe('extension');
+  });
+});
