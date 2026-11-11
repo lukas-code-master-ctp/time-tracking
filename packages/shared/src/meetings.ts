@@ -82,7 +82,8 @@ export function meetingPlatformOf(url: string | null | undefined): MeetingPlatfo
   const path = u.pathname;
 
   if (host === 'meet.google.com') {
-    if (/^\/[a-z]{3}-[a-z]{4}-[a-z]{3}\/?$/i.test(path)) return 'meet';
+    // `/abc-defg-hij` and, since 2026-11, also `/meet/abc-defg-hij`.
+    if (/^\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}\/?$/i.test(path)) return 'meet';
     if (/^\/lookup\/[^/]+/i.test(path)) return 'meet';
     return null;
   }
