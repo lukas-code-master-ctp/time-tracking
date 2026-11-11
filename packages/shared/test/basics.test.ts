@@ -119,6 +119,7 @@ describe('collections', () => {
       moodVotes: 'moodVotes',
       attendanceSettings: 'attendanceSettings',
       kiosks: 'kiosks',
+      attendancePhotos: 'attendancePhotos',
     });
   });
 

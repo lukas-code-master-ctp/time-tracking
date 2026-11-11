@@ -15,6 +15,8 @@ export interface PunchResult {
   firstName: string;
   at: number;
   startedAt: number;
+  /** The kiosk's photo was saved. */
+  photo?: boolean;
 }
 
 export class PunchError extends Error {
@@ -27,7 +29,7 @@ export class PunchError extends Error {
   }
 }
 
-export type Punch = (input: { token: string; rut: string; action: PunchAction }) => Promise<PunchResult>;
+export type Punch = (input: { token: string; rut: string; action: PunchAction; photo?: string }) => Promise<PunchResult>;
 
 export function createKioskPunch(): Punch {
   const app = initializeApp(
@@ -42,7 +44,7 @@ export function createKioskPunch(): Punch {
   if (import.meta.env.DEV) {
     connectFunctionsEmulator(functions, import.meta.env.VITE_EMULATOR_HOST || '127.0.0.1', EMULATOR_PORTS.functions);
   }
-  const call = httpsCallable<{ token: string; rut: string; action: PunchAction }, PunchResult>(functions, 'kioskPunch');
+  const call = httpsCallable<{ token: string; rut: string; action: PunchAction; photo?: string }, PunchResult>(functions, 'kioskPunch');
   return async (input) => {
     try {
       return (await call(input)).data;

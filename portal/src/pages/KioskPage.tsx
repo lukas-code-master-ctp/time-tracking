@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { DEFAULT_TIME_ZONE, formatDuration, formatRutInput, normalizeRut } from '@timetracking/shared';
 import { formatTime } from '../lib/dates';
 import { PunchError, type Punch, type PunchAction, type PunchResult } from '../lib/kioskClient';
+import { useKioskCamera } from '../lib/kioskCamera';
 import { forceLightTheme } from '../lib/theme';
 
 /** localStorage key of the device's kiosk token (set by the link from the portal). */
@@ -56,6 +57,8 @@ export function KioskPage({ getPunch }: { getPunch: () => Punch }) {
   const [busy, setBusy] = useState<PunchAction | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const camera = useKioskCamera();
+  const { snapshot } = camera;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1_000);
@@ -94,7 +97,8 @@ export function KioskPage({ getPunch }: { getPunch: () => Punch }) {
       }
       setBusy(action);
       try {
-        const result = await punch({ token, rut, action });
+        const photo = snapshot();
+        const result = await punch({ token, rut, action, ...(photo ? { photo } : {}) });
         setOutcome({ ok: true, result });
       } catch (err) {
         setOutcome({ ok: false, message: err instanceof PunchError ? err.message : 'No se pudo marcar. Intenta de nuevo.' });
@@ -104,7 +108,7 @@ export function KioskPage({ getPunch }: { getPunch: () => Punch }) {
         timer.current = setTimeout(reset, RESULT_MS);
       }
     },
-    [token, busy, rut, digits, punch, reset],
+    [token, busy, rut, digits, punch, reset, snapshot],
   );
 
   // Physical keyboard: digits, K, Backspace, Escape.
@@ -144,8 +148,16 @@ export function KioskPage({ getPunch }: { getPunch: () => Punch }) {
     <main className="kiosk">
       <KioskHeader clock={clock} date={date} />
       <section className="kiosk-card" aria-labelledby="kiosk-title">
+        {camera.state !== 'off' ? (
+          <div className="kiosk-camera">
+            <video ref={camera.videoRef} autoPlay muted playsInline aria-hidden="true" />
+          </div>
+        ) : null}
         <h1 id="kiosk-title">Marca tu asistencia</h1>
-        <p className="kiosk-hint">Escribe tu RUT y elige entrada o salida.</p>
+        <p className="kiosk-hint">
+          Escribe tu RUT y elige entrada o salida.
+          {camera.state === 'on' ? ' Al marcar se toma una foto.' : ''}
+        </p>
         <output className={`kiosk-rut${digits ? '' : ' empty'}`} aria-live="polite" aria-label="RUT">
           {digits ? formatRutInput(digits) : '12.345.678-9'}
         </output>

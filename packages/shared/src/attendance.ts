@@ -155,6 +155,9 @@ export interface AttendanceDay {
   workedSeconds: number;
   /** Number of work days ("jornadas") of the day: the extension splits one at a sleep gap. */
   sessionCount: number;
+  /** Session of the first entry and of the last exit (null while open), to find the kiosk photos. */
+  firstInSessionId: string | null;
+  lastOutSessionId: string | null;
 }
 
 function exitSource(s: Session): ExitSource | null {
@@ -169,11 +172,11 @@ function exitSource(s: Session): ExitSource | null {
  * Each session belongs to the day of its start (America/Santiago).
  */
 export function attendanceDays(
-  sessions: readonly Session[],
+  sessions: readonly (Session & { id?: string })[],
   now: number,
   timeZone: string = DEFAULT_TIME_ZONE,
 ): AttendanceDay[] {
-  const groups = new Map<string, Session[]>();
+  const groups = new Map<string, (Session & { id?: string })[]>();
   for (const s of sessions) {
     const key = `${s.uid}\u0000${dateKey(s.startedAt, timeZone)}`;
     const list = groups.get(key);
@@ -201,7 +204,22 @@ export function attendanceDays(
       open,
       workedSeconds: Math.floor(worked / 1000),
       sessionCount: list.length,
+      firstInSessionId: first.id ?? null,
+      lastOutSessionId: open ? null : (last.id ?? null),
     });
   }
   return rows.sort((a, b) => (a.date === b.date ? a.firstIn - b.firstIn : a.date < b.date ? 1 : -1));
 }
+
+/** Id of `attendancePhotos/{id}`. */
+export function attendancePhotoId(sessionId: string, kind: 'in' | 'out'): string {
+  return `${sessionId}_${kind}`;
+}
+
+/** Storage path of a kiosk photo. */
+export function attendancePhotoPath(uid: string, date: string, sessionId: string, kind: 'in' | 'out'): string {
+  return `attendancePhotos/${uid}/${date}/${sessionId}-${kind}.jpg`;
+}
+
+/** Largest kiosk photo accepted (decoded JPEG bytes). */
+export const ATTENDANCE_PHOTO_MAX_BYTES = 200 * 1024;

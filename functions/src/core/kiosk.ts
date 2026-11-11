@@ -21,7 +21,11 @@ import { createHash } from 'node:crypto';
 import type { DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import {
+  ATTENDANCE_PHOTO_MAX_BYTES,
   COLLECTIONS,
+  attendancePhotoId,
+  attendancePhotoPath,
+  type AttendancePhoto,
   DEFAULT_TIME_ZONE,
   KIOSK_ID_RE,
   SCHEDULE_CONFIG_DOC_ID,
@@ -61,11 +65,37 @@ export interface PunchResult {
   at: number;
   /** Start of the work day (entry: = at; exit: the entry being closed). */
   startedAt: number;
+  /** The kiosk's photo was saved (false: none sent, or it could not be saved). */
+  photo: boolean;
 }
 
 export interface KioskDeps {
   db: Firestore;
   now: number;
+  /** Storage bucket for the kiosk photos (spec: foto en el tótem). */
+  bucket?: PhotoBucket;
+}
+
+/** Slice of the Storage bucket used here (`getStorage().bucket()`). */
+export interface PhotoBucket {
+  file(path: string): { save(data: Buffer, options: { contentType: string; resumable: boolean }): Promise<unknown> };
+}
+
+/**
+ * The optional photo of the punch: a base64 JPEG (with or without the
+ * `data:image/jpeg;base64,` prefix) of at most ATTENDANCE_PHOTO_MAX_BYTES.
+ * Anything else counts as no photo (the mark is never refused for it).
+ */
+export function decodeKioskPhoto(raw: unknown): Buffer | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  const b64 = raw.startsWith('data:image/jpeg;base64,') ? raw.slice('data:image/jpeg;base64,'.length) : raw;
+  if (b64.length > Math.ceil((ATTENDANCE_PHOTO_MAX_BYTES * 4) / 3) + 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) return null;
+  const bytes = Buffer.from(b64, 'base64');
+  // JPEG magic number.
+  if (bytes.length < 4 || bytes.length > ATTENDANCE_PHOTO_MAX_BYTES || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+    return null;
+  }
+  return bytes;
 }
 
 export function kioskIdOf(token: string): string {
@@ -164,7 +194,7 @@ export async function kioskPunchCore(deps: KioskDeps, input: unknown): Promise<P
       };
       tx.set(ref, session);
       tx.update(kioskRef, { lastUsedAt: now });
-      return { action: 'in' as const, firstName, at: now, startedAt: now };
+      return { action: 'in' as const, firstName, at: now, startedAt: now, sessionId: ref.id };
     }
 
     if (!current) reject('not-in', 'No tienes una entrada marcada hoy. Marca primero tu entrada.');
@@ -175,7 +205,24 @@ export async function kioskPunchCore(deps: KioskDeps, input: unknown): Promise<P
       closedByKioskId: kioskId,
     });
     tx.update(kioskRef, { lastUsedAt: now });
-    return { action: 'out' as const, firstName, at: now, startedAt: current.s.startedAt };
+    return { action: 'out' as const, firstName, at: now, startedAt: current.s.startedAt, sessionId: current.ref.id };
   });
-  return result;
+
+  // 4. The photo, after the mark (a failure here never undoes it).
+  const { sessionId, ...punch } = result;
+  const jpeg = decodeKioskPhoto(data.photo);
+  let photo = false;
+  if (jpeg && deps.bucket) {
+    try {
+      const date = dateKey(now, DEFAULT_TIME_ZONE);
+      const path = attendancePhotoPath(uid, date, sessionId, punch.action);
+      await deps.bucket.file(path).save(jpeg, { contentType: 'image/jpeg', resumable: false });
+      const doc: AttendancePhoto = { uid, sessionId, kind: punch.action, at: now, date, kioskId, path };
+      await db.collection(COLLECTIONS.attendancePhotos).doc(attendancePhotoId(sessionId, punch.action)).set(doc);
+      photo = true;
+    } catch (err) {
+      console.warn('[kioskPunch] no se pudo guardar la foto', err);
+    }
+  }
+  return { ...punch, photo };
 }

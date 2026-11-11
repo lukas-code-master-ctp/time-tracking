@@ -27,6 +27,8 @@ export const COLLECTIONS = {
   attendanceSettings: 'attendanceSettings',
   /** `kiosks/{tokenHash}`: devices allowed to mark attendance with a RUT. */
   kiosks: 'kiosks',
+  /** `attendancePhotos/{sessionId_in|out}`: photo taken by the kiosk at the entry or exit (written by `kioskPunch`). */
+  attendancePhotos: 'attendancePhotos',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -104,10 +104,10 @@ describe('attendanceDays', () => {
     const d = '2026-11-10';
     const rows = attendanceDays(
       [
-        s({ startedAt: at(d, '09:02'), source: 'kiosk', endedAt: at(d, '13:00'), endReason: 'manual', kioskId: 'k' }),
+        { ...s({ startedAt: at(d, '09:02'), source: 'kiosk', endedAt: at(d, '13:00'), endReason: 'manual', kioskId: 'k' }), id: 'first' },
         // The extension splits a work day at a sleep gap.
         s({ startedAt: at(d, '14:00'), lastHeartbeatAt: at(d, '16:00'), endedAt: at(d, '16:00'), endReason: 'manual' }),
-        s({ startedAt: at(d, '16:10'), lastHeartbeatAt: at(d, '18:00'), endedAt: at(d, '18:31'), endReason: 'manual', closedByKioskId: 'k' }),
+        { ...s({ startedAt: at(d, '16:10'), lastHeartbeatAt: at(d, '18:00'), endedAt: at(d, '18:31'), endReason: 'manual', closedByKioskId: 'k' }), id: 'last' },
         s({ uid: 'u2', startedAt: at(d, '08:55'), lastHeartbeatAt: at(d, '10:00') }),
         s({ uid: 'u2', startedAt: at('2026-11-09', '09:00'), endedAt: at('2026-11-09', '09:00'), endReason: 'auto', source: 'kiosk' }),
       ],
@@ -120,8 +120,10 @@ describe('attendanceDays', () => {
     ]);
     const u1 = rows[1]!;
     expect(u1).toMatchObject({ inSource: 'kiosk', outSource: 'kiosk', open: false, sessionCount: 3, lastOut: at(d, '18:31') });
+    // Sessions of the first entry and last exit (kiosk photos).
+    expect(u1).toMatchObject({ firstInSessionId: 'first', lastOutSessionId: 'last' });
     expect(u1.workedSeconds).toBe((238 + 120 + 141) * 60);
-    expect(rows[0]).toMatchObject({ open: true, lastOut: null, outSource: null, inSource: 'extension' });
+    expect(rows[0]).toMatchObject({ open: true, lastOut: null, outSource: null, inSource: 'extension', lastOutSessionId: null });
     expect(rows[2]).toMatchObject({ outSource: 'auto', workedSeconds: 0 });
   });
 });

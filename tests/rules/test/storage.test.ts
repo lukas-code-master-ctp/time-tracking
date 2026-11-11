@@ -97,3 +97,19 @@ describe('storage: screenshots read', () => {
     await assertFails(storage('eve').ref(path('alice')).getMetadata());
   });
 });
+
+describe('storage: kiosk photos', () => {
+  const photo = 'attendancePhotos/alice/2026-11-10/s1-in.jpg';
+  beforeEach(async () => {
+    await seedFile(photo);
+  });
+
+  it('only admins read them; nobody uploads them from a client', async () => {
+    await assertSucceeds(storage('admin').ref(photo).getMetadata());
+    await assertFails(storage('alice').ref(photo).getMetadata());
+    await assertFails(storage('eve').ref(photo).getMetadata());
+    await assertFails(storage(null).ref(photo).getMetadata());
+    await assertFails(storage('admin').ref('attendancePhotos/alice/2026-11-10/s2-in.jpg').put(bytes(10), JPEG).then());
+    await assertFails(storage('alice').ref('attendancePhotos/alice/2026-11-10/s2-in.jpg').put(bytes(10), JPEG).then());
+  });
+});

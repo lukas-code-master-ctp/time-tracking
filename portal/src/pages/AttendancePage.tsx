@@ -1,20 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ATTENDANCE_MODES,
   ATTENDANCE_MODE_LABELS,
   KIOSK_NAME_MAX,
   allowsKiosk,
+  attendancePhotoId,
   attendanceDays,
   formatDuration,
   formatRut,
   normalizeRut,
   type AttendanceMode,
+  type AttendancePhoto,
   type AttendanceSettings,
   type Kiosk,
   type UserProfile,
   type WithId,
 } from '@timetracking/shared';
-import { ConfirmDialog } from '../components/Modal';
+import { ConfirmDialog, Modal } from '../components/Modal';
 import { PeopleTabs } from '../components/PeopleTabs';
 import { RangePicker } from '../components/RangePicker';
 import { initials } from '../components/TeamTable';
@@ -55,8 +57,11 @@ export function AttendancePage() {
     return { users: [...users].sort(byName), settings: new Map(settings.map(({ id, ...s }) => [id, s])) };
   }, [data]);
   const marks = useLoad(async () => {
-    const sessions = await data.listSessions(range);
-    return { sessions, now: Date.now() };
+    const [sessions, photos] = await Promise.all([
+      data.listSessions(range),
+      data.listAttendancePhotos(range.fromDate, range.toDate),
+    ]);
+    return { sessions, photos: new Map(photos.map((p) => [p.id, p])), now: Date.now() };
   }, [data, range.from, range.to]);
 
   const rows = useMemo(() => {
@@ -66,6 +71,8 @@ export function AttendancePage() {
     );
   }, [marks.data, range.fromDate, range.toDate, person]);
   const users = new Map((people.data?.users ?? []).map((u) => [u.id, u]));
+  const photoOf = (sessionId: string | null, kind: 'in' | 'out'): AttendancePhoto | null =>
+    (sessionId && marks.data?.photos.get(attendancePhotoId(sessionId, kind))) || null;
 
   const download = (): void => {
     if (!people.data) return;
@@ -143,6 +150,7 @@ export function AttendancePage() {
                         <span className="person-name">{name}</span>
                       </td>
                       <td className="nowrap">
+                        <KioskPhotoThumb photo={photoOf(r.firstInSessionId, 'in')} label={`Foto de entrada de ${name}`} />
                         {formatTime(r.firstIn)} <span className={`chip${r.inSource === 'kiosk' ? ' accent-chip' : ''}`}>{SOURCE_LABEL[r.inSource]}</span>
                       </td>
                       <td className="nowrap">
@@ -150,6 +158,7 @@ export function AttendancePage() {
                           <span className="chip ok">En curso</span>
                         ) : (
                           <>
+                            <KioskPhotoThumb photo={photoOf(r.lastOutSessionId, 'out')} label={`Foto de salida de ${name}`} />
                             {exitLabel(r)}{' '}
                             {r.outSource === 'auto' ? (
                               <span className="chip warn">{r.workedSeconds === 0 ? 'No marcó salida' : 'Cierre automático'}</span>
@@ -326,6 +335,41 @@ function ModeRow({
         <p className="muted small celebration-error">Agrega su RUT para que pueda marcar en el tótem.</p>
       ) : null}
     </li>
+  );
+}
+
+/** Small photo taken by the kiosk at the mark; a click shows it bigger. */
+function KioskPhotoThumb({ photo, label }: { photo: AttendancePhoto | null; label: string }) {
+  const data = useData();
+  const [url, setUrl] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const path = photo?.path ?? null;
+  useEffect(() => {
+    if (!path) return;
+    let alive = true;
+    data
+      .screenshotUrl(path)
+      .then((u) => alive && setUrl(u))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [data, path]);
+  if (!photo || !url) return null;
+  return (
+    <>
+      <button type="button" className="kiosk-thumb" onClick={() => setOpen(true)} aria-label={label} title={label}>
+        <img src={url} alt="" />
+      </button>
+      {open ? (
+        <Modal title={label} onClose={() => setOpen(false)} className="kiosk-photo-modal">
+          <img className="kiosk-photo-big" src={url} alt={label} />
+          <p className="muted small">
+            {formatShortDate(photo.date)} · {formatTime(photo.at)}
+          </p>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 

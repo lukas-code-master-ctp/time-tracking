@@ -246,6 +246,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---------- attendancePhotos/{sessionId_kind} ----------
+
+    // Kiosk photos at the entry/exit (spec 2026-11-10-marcaciones): written
+    // only by kioskPunch (Admin SDK), read only by admins.
+    match /attendancePhotos/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ---------- invitations/{emailLower} ----------
 
     function validInvitation(d, emailId) {

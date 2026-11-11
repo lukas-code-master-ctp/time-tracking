@@ -119,7 +119,7 @@ export const joinOrg = onCall(async (request) => {
 // sign-in) marks entry or exit with a RUT. The device is authorized by its
 // secret token (`kiosks/{sha256}`), checked in the core.
 export const kioskPunch = onCall(async (request) => {
-  return kioskPunchCore({ db: getFirestore(), now: Date.now() }, request.data);
+  return kioskPunchCore({ db: getFirestore(), now: Date.now(), bucket: getStorage().bucket() }, request.data);
 });
 
 // ---------- onInvitationWritten ----------

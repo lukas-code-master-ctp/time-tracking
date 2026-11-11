@@ -116,6 +116,9 @@ describe('AttendancePage', () => {
       { id: 's1', uid: 'ana', startedAt: at('09:02'), endedAt: null, endReason: null, lastHeartbeatAt: at('09:02'), source: 'kiosk', kioskId: 'k' },
       { id: 's2', uid: 'bruno', startedAt: at('08:50'), endedAt: at('11:00'), endReason: 'manual', lastHeartbeatAt: at('11:00') },
     ];
+    d.attendancePhotos = [
+      { id: 's1_in', uid: 'ana', sessionId: 's1', kind: 'in', at: at('09:02'), date: '2026-11-10', kioskId: 'k', path: 'attendancePhotos/ana/x/s1-in.jpg' },
+    ];
     const backend = backendOf(d, ADMIN);
     render(
       <BackendProvider backend={backend}>
@@ -132,6 +135,12 @@ describe('AttendancePage', () => {
     expect(rows[1]!.textContent).toContain('Tótem');
     expect(rows[1]!.textContent).toContain('En curso');
     expect(rows[1]!.textContent).toContain('2 h 58 min');
+    // The kiosk's entry photo, bigger on click.
+    const thumb = await within(rows[1] as HTMLElement).findByRole('button', { name: 'Foto de entrada de Ana Pérez' });
+    expect(within(rows[0] as HTMLElement).queryByRole('button', { name: /Foto/ })).toBeNull();
+    await user.click(thumb);
+    expect((await screen.findByRole('img', { name: 'Foto de entrada de Ana Pérez' })).getAttribute('src')).toContain('s1-in.jpg');
+    await user.keyboard('{Escape}');
 
     await user.type(screen.getByLabelText('RUT de Ana Pérez'), '12345678-5');
     await user.selectOptions(screen.getByLabelText('Cómo marca Ana Pérez'), 'kiosk');

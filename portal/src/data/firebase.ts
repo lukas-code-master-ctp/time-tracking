@@ -59,6 +59,7 @@ import {
   readPersonSchedule,
   readScheduleConfig,
   type Absence,
+  type AttendancePhoto,
   type ActiveBreak,
   type ActivitySlot,
   type Announcement,
@@ -313,6 +314,20 @@ export function createFirebaseBackend(): Backend {
     },
     async saveAttendanceSettings(uid, settings) {
       await setDoc(doc(db, COLLECTIONS.attendanceSettings, uid), settings);
+    },
+    async listAttendancePhotos(fromDate, toDate) {
+      try {
+        const snap = await getDocs(
+          query(collection(db, COLLECTIONS.attendancePhotos), where('date', '>=', fromDate), where('date', '<=', toDate)),
+        );
+        return snap.docs.map((d) => ({ ...(d.data() as AttendancePhoto), id: d.id }));
+      } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+          console.warn('[timetracking] no se pudieron leer las fotos del tótem', err);
+          return [];
+        }
+        throw err;
+      }
     },
     async listKiosks() {
       return readValid(COLLECTIONS.kiosks, readKiosk, 'los tótems');

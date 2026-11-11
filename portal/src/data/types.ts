@@ -8,6 +8,7 @@ import type {
   ActivitySlot,
   Announcement,
   AnnouncementRead,
+  AttendancePhoto,
   AttendanceSettings,
   Celebration,
   Kiosk,
@@ -104,6 +105,11 @@ export interface DataSource {
   listAttendanceSettings(): Promise<WithId<AttendanceSettings>[]>;
   /** Writes the whole `attendanceSettings/{uid}`. */
   saveAttendanceSettings(uid: string, settings: AttendanceSettings): Promise<void>;
+  /**
+   * Kiosk photos (`attendancePhotos`) of the days `fromDate`…`toDate`
+   * (YYYY-MM-DD, inclusive). `[]` while the rules are not deployed.
+   */
+  listAttendancePhotos(fromDate: string, toDate: string): Promise<WithId<AttendancePhoto>[]>;
   /** Every valid `kiosks/{id}`. `[]` while the rules are not deployed. */
   listKiosks(): Promise<WithId<Kiosk>[]>;
   /** New `kiosks/{id}` (id = SHA-256 of the device's token). */

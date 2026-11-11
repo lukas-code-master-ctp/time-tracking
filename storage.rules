@@ -38,6 +38,13 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Kiosk photos at the entry/exit (spec 2026-11-10-marcaciones), written
+    // only by kioskPunch (Admin SDK): admins read them.
+    match /attendancePhotos/{uid}/{date}/{file} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Anything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;
