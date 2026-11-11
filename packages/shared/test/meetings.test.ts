@@ -12,6 +12,8 @@ const positives: [MeetingPlatform, string][] = [
   ['meet', 'https://meet.google.com/abc-defg-hij?authuser=1&pli=1'],
   ['meet', 'https://meet.google.com/ABC-DEFG-HIJ/'],
   ['meet', 'https://meet.google.com/lookup/abcdefgh'],
+  ['meet', 'https://meet.google.com/meet/bpc-hkog-sxw'],
+  ['meet', 'https://meet.google.com/meet/bpc-hkog-sxw?authuser=0'],
   ['zoom', 'https://app.zoom.us/wc/123456789/join?fromPWA=1'],
   ['zoom', 'https://us05web.zoom.us/wc/join/123456789'],
   ['zoom', 'https://zoom.us/wc/987654321/start'],
@@ -45,6 +47,8 @@ const negatives: string[] = [
   // Zoom: launcher page, account pages.
   'https://zoom.us/',
   'https://us05web.zoom.us/j/123456789?pwd=x',
+  'https://meet.google.com/meet/',
+  'https://meet.google.com/meet/abc-defg-hij/extra',
   'https://zoom.us/signin',
   'https://notzoom.us/wc/123/join',
   // Zoom Workplace web app and the page after leaving: not rooms.
