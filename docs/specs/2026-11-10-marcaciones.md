@@ -29,3 +29,13 @@ Decisión de Lukas (2026-11-10, "opción B, pero llega una notificación de que 
 - La salida en el tótem cierra la sesión; el siguiente latido es rechazado y la extensión deja de medir con el aviso "Tu jornada se cerró: marcaste tu salida en el tótem."
 - Modo `kiosk`: el popup no muestra "Cerrar jornada" (la salida se marca en el tótem). Modo `both`: se puede cerrar desde la extensión.
 - Una suspensión del equipo no parte la jornada del tótem: sigue la misma sesión y el hueco queda fuera del reloj. Si el equipo despierta otro día, deja de medir sin cerrar la jornada. Cerrar sesión en la extensión deja de medir pero no cierra la jornada del tótem.
+
+## Foto en el tótem (2026-11-11)
+
+Decisión de Lukas: foto al marcar, primero en el tótem; la extensión, después, en otro PR.
+
+- La página /marcar abre la cámara frontal (`getUserMedia`, `facingMode: user`) y muestra una vista previa redonda con el texto "Al marcar se toma una foto". Al tocar Entrada o Salida envía una foto JPEG de 480 px de ancho (máx. 200 KB) junto con la marca. Sin cámara o sin permiso, marca igual sin foto.
+- `kioskPunch` guarda la foto después de la marca (si falla, la marca no se deshace): Storage `attendancePhotos/{uid}/{fecha}/{sessionId}-{in|out}.jpg` y el documento `attendancePhotos/{sessionId}_{in|out}` `{ uid, sessionId, kind, at, date, kioskId, path }`. Solo acepta JPEG (número mágico) de hasta 200 KB.
+- Reglas: solo administradores leen `attendancePhotos` (Firestore y Storage); nadie las escribe desde un cliente.
+- Portal, Colaboradores › Marcaciones: miniatura redonda junto a la hora de entrada (primera jornada del día) y de salida (última); un clic la muestra en grande.
+- Pendiente: borrado automático de fotos antiguas (hoy se guardan sin plazo).

@@ -1438,6 +1438,21 @@ describe('attendanceSettings', () => {
   });
 });
 
+describe('attendancePhotos', () => {
+  const photo = { uid: 'alice', sessionId: 's1', kind: 'in', at: NOW, date: '2026-11-10', kioskId: KIOSK_ID, path: 'attendancePhotos/alice/2026-11-10/s1-in.jpg' };
+
+  it('only admins read them; nobody writes them from a client', async () => {
+    await seed(env, { 'attendancePhotos/s1_in': photo });
+    await assertSucceeds(db('admin').doc('attendancePhotos/s1_in').get());
+    await assertSucceeds(db('admin').collection('attendancePhotos').where('date', '>=', '2026-11-01').get());
+    await assertFails(db('alice').doc('attendancePhotos/s1_in').get());
+    await assertFails(db('eve').doc('attendancePhotos/s1_in').get());
+    await assertFails(db('admin').doc('attendancePhotos/s2_in').set({ ...photo, sessionId: 's2' }));
+    await assertFails(db('alice').doc('attendancePhotos/s2_in').set({ ...photo, sessionId: 's2' }));
+    await assertFails(db('admin').doc('attendancePhotos/s1_in').delete());
+  });
+});
+
 describe('kiosks', () => {
   it('an admin creates, lists, revokes and deletes them', async () => {
     const ref = db('admin').doc(`kiosks/${KIOSK_ID}`);

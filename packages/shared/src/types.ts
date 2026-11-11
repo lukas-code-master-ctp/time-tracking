@@ -339,5 +339,22 @@ export interface Kiosk {
   lastUsedAt?: EpochMs | null;
 }
 
+/**
+ * `attendancePhotos/{sessionId}_{kind}` (spec 2026-11-10-marcaciones, foto
+ * en el tótem): the kiosk's camera photo of the person marking. Written only
+ * by `kioskPunch`; read only by admins. The JPEG lives in Storage at `path`.
+ */
+export interface AttendancePhoto {
+  uid: string;
+  sessionId: string;
+  kind: 'in' | 'out';
+  at: EpochMs;
+  /** Day of the mark (America/Santiago), to list a period. */
+  date: string;
+  kioskId: string;
+  /** Storage path: `attendancePhotos/{uid}/{date}/{sessionId}-{kind}.jpg`. */
+  path: string;
+}
+
 /** Firestore documents together with their id. */
 export type WithId<T> = T & { id: string };

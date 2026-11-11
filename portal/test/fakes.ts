@@ -7,6 +7,7 @@ import {
   type ActivitySlot,
   type Announcement,
   type AnnouncementRead,
+  type AttendancePhoto,
   type AttendanceSettings,
   type Celebration,
   type Kiosk,
@@ -45,6 +46,7 @@ export interface FakeDb {
   /** RUT and attendance mode by person, and kiosks (optional). */
   attendance?: WithId<AttendanceSettings>[];
   kiosks?: WithId<Kiosk>[];
+  attendancePhotos?: WithId<AttendancePhoto>[];
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
 }
@@ -124,6 +126,7 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     saveAttendanceSettings: async (uid, a) => {
       db.attendance = [...(db.attendance ?? []).filter((x) => x.id !== uid), { ...a, id: uid }];
     },
+    listAttendancePhotos: async (from, to) => (db.attendancePhotos ?? []).filter((p) => p.date >= from && p.date <= to),
     listKiosks: async () => [...(db.kiosks ?? [])],
     createKiosk: async (id, k) => {
       db.kiosks = [...(db.kiosks ?? []), { ...k, id }];
