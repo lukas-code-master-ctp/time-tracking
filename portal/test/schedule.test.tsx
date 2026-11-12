@@ -671,8 +671,8 @@ describe('Pausa activa', () => {
     expect(row('Ana Rojas')).toHaveTextContent(`Horario: general11:50 · ${first}15:40 · ${second}`);
     // Beto: Tuesday 09:30–12:00 (exception).
     expect(row('Beto Díaz')).toHaveTextContent(`Horario: personalizado10:20 · ${first}11:10 · ${second}`);
-    // All the exercises, in the order they rotate.
-    expect(within(screen.getByRole('list', { name: 'Ejercicios' })).getAllByRole('listitem')).toHaveLength(ACTIVE_BREAK_EXERCISES.length);
+    // The whole library, by zone.
+    expect(within(screen.getByRole('region', { name: 'Biblioteca de ejercicios' })).getAllByRole('listitem')).toHaveLength(ACTIVE_BREAK_EXERCISES.length);
     // Sunday: nobody works.
     fireEvent.change(screen.getByLabelText('Día'), { target: { value: '2026-09-27' } });
     expect(row('Ana Rojas')).toHaveTextContent('No trabaja este día');

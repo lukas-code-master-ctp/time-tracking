@@ -8,6 +8,8 @@ import {
   exerciseInstructions,
   exerciseAt,
   exerciseById,
+  exerciseArt,
+  EXERCISE_ZONES,
   breakPlanSize,
   breakTargets,
   fixedBreakTargets,
@@ -69,10 +71,35 @@ describe('active breaks', () => {
     const ids = ACTIVE_BREAK_EXERCISES.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.every((id) => id.length <= 40)).toBe(true);
-    expect(exerciseAt(0)).toBe(ACTIVE_BREAK_EXERCISES[0]);
-    expect(exerciseAt(ACTIVE_BREAK_EXERCISES.length + 1)).toBe(ACTIVE_BREAK_EXERCISES[1]);
     expect(exerciseById('vista')?.title).toBe('Descansa la vista (20-20-20)');
     expect(exerciseById('nope')).toBeNull();
+  });
+
+  it('library: 56 exercises, 8 per zone, the 8 of extension ≤ 0.2.25 kept', () => {
+    expect(ACTIVE_BREAK_EXERCISES).toHaveLength(56);
+    for (const z of EXERCISE_ZONES) expect(ACTIVE_BREAK_EXERCISES.filter((e) => e.zone === z.id)).toHaveLength(8);
+    for (const id of ['cuello', 'vista', 'munecas', 'caminar', 'espalda', 'hombros', 'respirar', 'piernas']) expect(exerciseById(id)).not.toBeNull();
+  });
+
+  it('rotation: every exercise once per cycle of 56, shuffled per cycle, never the same zone within 7 in a row', () => {
+    const n = ACTIVE_BREAK_EXERCISES.length;
+    const seq = Array.from({ length: n * 6 }, (_, i) => exerciseAt(1000 * n + i));
+    for (let c = 0; c < 6; c++) expect(new Set(seq.slice(c * n, (c + 1) * n).map((e) => e.id)).size).toBe(n);
+    for (let i = 0; i + 7 <= seq.length; i++) expect(new Set(seq.slice(i, i + 7).map((e) => e.zone)).size).toBe(7);
+    // No exercise comes back within a week of 3 breaks a day, also across cycles.
+    for (let i = 0; i + 15 <= seq.length; i++) expect(new Set(seq.slice(i, i + 15).map((e) => e.id)).size).toBe(15);
+    // Each cycle is shuffled differently, the same on every device.
+    expect(seq.slice(0, n).map((e) => e.id)).not.toEqual(seq.slice(n, 2 * n).map((e) => e.id));
+    expect(exerciseAt(12345)).toBe(exerciseAt(12345));
+  });
+
+  it('art: every exercise draws a self-contained animated SVG', () => {
+    for (const e of ACTIVE_BREAK_EXERCISES) {
+      const svg = exerciseArt(e, { elapsedSeconds: 3 });
+      expect(svg.startsWith('<svg')).toBe(true);
+      expect(svg).toContain('@keyframes');
+      expect(svg).not.toMatch(/<script|href=|url\((?!#)/);
+    }
   });
 
   it('daily targets split the working time of the day in perDay + 1 parts (lunch excluded)', () => {
@@ -93,7 +120,9 @@ describe('active breaks', () => {
     const ids = (date: string) => [0, 1, 2].map((i) => dailyExercise(date, i, 3).id);
     expect(new Set(ids('2026-10-22')).size).toBe(3);
     // The next day starts where the previous one ended.
-    expect(dailyExercise('2026-10-23', 0, 3)).toBe(exerciseAt(ACTIVE_BREAK_EXERCISES.indexOf(dailyExercise('2026-10-22', 2, 3)) + 1));
+    const day = Math.floor(Date.parse('2026-10-22T00:00:00Z') / 86_400_000);
+    expect(dailyExercise('2026-10-22', 2, 3)).toBe(exerciseAt(day * 3 + 2));
+    expect(dailyExercise('2026-10-23', 0, 3)).toBe(exerciseAt(day * 3 + 3));
   });
 
   it('instructions: the exercise plus what to do with the rest of the break', () => {

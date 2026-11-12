@@ -10,6 +10,8 @@ export * from './reports.js';
 export * from './schedule.js';
 export * from './holidays-cl.js';
 export * from './breaks.js';
+export * from './exercises.js';
+export * from './exerciseArt.js';
 export * from './absences.js';
 export * from './announcements.js';
 export * from './celebrations.js';

@@ -27,7 +27,7 @@ import { getTheme, nextTheme, setTheme, THEME_LABEL } from '../ui/theme';
 import { clock, el, hoursMinutes, percent, send, workDayElapsed } from '../ui/dom';
 import { usesGoogleAccountChooser } from '../browser';
 import { ALLOWED_DOMAINS } from '../env';
-import { MOOD_OPTIONS, type MoodScore } from '@timetracking/shared';
+import { exerciseArt, exerciseById, MOOD_OPTIONS, type MoodScore } from '@timetracking/shared';
 
 const root = document.getElementById('app') as HTMLElement;
 let busy = false;
@@ -525,8 +525,13 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
   if (b.pending) {
     return el('section', { className: 'card breaks due', role: 'status' }, [
       el('div', { className: 'breaks-head' }, [el('span', { className: 'eyebrow', textContent: 'Pausa activa' })]),
-      el('div', { className: 'breaks-title', textContent: b.pending.title }),
-      el('p', { className: 'small', textContent: b.pending.text }),
+      el('div', { className: 'breaks-body' }, [
+        breakArt(b.pending.exercise),
+        el('div', { className: 'breaks-copy' }, [
+          el('div', { className: 'breaks-title', textContent: b.pending.title }),
+          el('p', { className: 'small', textContent: b.pending.text }),
+        ]),
+      ]),
       el('div', { className: 'row' }, [
         button('Tomé la pausa', 'primary', () => void act({ type: 'breaks.answer', answer: 'taken' })),
         button('En 10 min', '', () => void act({ type: 'breaks.answer', answer: 'postponed' })),
@@ -551,6 +556,18 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
     ]),
     sw,
   ]);
+}
+
+/**
+ * The animation of the exercise (our own SVG, no text from users: safe as
+ * innerHTML). It continues where it was on every refresh of the popup.
+ */
+function breakArt(id: string | null): HTMLElement | null {
+  const exercise = id ? exerciseById(id) : null;
+  if (!exercise) return null;
+  const box = el('div', { className: 'breaks-art' });
+  box.innerHTML = exerciseArt(exercise);
+  return box;
 }
 
 /**

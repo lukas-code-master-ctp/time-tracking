@@ -189,7 +189,8 @@ export interface StatusView {
     times: string[];
     durationMinutes: number;
     enabled: boolean;
-    pending: { at: number; title: string; text: string } | null;
+    /** `exercise`: id in the library (draws its animation; null when unknown to this version). */
+    pending: { at: number; title: string; text: string; exercise: string | null } | null;
     nextAt: number | null;
   } | null;
   /**
