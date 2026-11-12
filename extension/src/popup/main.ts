@@ -328,7 +328,7 @@ function renderReady(s: StatusView): void {
           textContent: 'Iniciaste en el tótem. Para cerrar la jornada, marca tu salida ahí con tu RUT.',
         })
       : on
-      ? button('Cerrar jornada', 'stop big', () => void act({ type: 'session.stop' }))
+      ? closeWithMood(s)
       : kioskOnly
         ? el('p', {
             className: 'kiosk-note',
@@ -424,7 +424,63 @@ function renderReady(s: StatusView): void {
   root.append(el('footer', { className: 'footer small muted' }, [sync, el('span', { className: 'actions' }, [absences, out])]));
 }
 
-/** Mood pulse (spec 2026-11-05-pulso-de-animo): one click after closing the work day. */
+/** Face chosen next to "Cerrar jornada" (sent with the close); null = none. */
+let chosenMood: MoodScore | null = null;
+
+/**
+ * "Cerrar jornada" and, when the organization has the mood pulse on and it
+ * was not answered today, the five faces right above it (0.2.24): the chosen
+ * one goes with the close. Without a face the question shows after closing.
+ */
+function closeWithMood(s: StatusView): HTMLElement {
+  const close = button('Cerrar jornada', 'stop big', () => void closeWorkDay());
+  if (!s.mood || s.mood.doneToday || s.mood.pending) return close;
+  const faces = MOOD_OPTIONS.map((o) => {
+    const pressed = chosenMood === o.score;
+    const b = el('button', {
+      type: 'button',
+      className: `mood-chip${pressed ? ' chosen' : ''}`,
+      disabled: busy,
+      title: o.label,
+      ariaLabel: o.label,
+      textContent: o.emoji,
+    });
+    b.setAttribute('aria-pressed', String(pressed));
+    b.addEventListener('click', () => {
+      chosenMood = pressed ? null : o.score;
+      render();
+    });
+    return b;
+  });
+  const group = el('div', { className: 'mood-chips', role: 'group' }, faces);
+  group.setAttribute('aria-labelledby', 'mood-close-title');
+  const hint = chosenMood ? `${MOOD_OPTIONS[chosenMood - 1]!.label} · va al cerrar` : 'Opcional y anónimo';
+  return el('div', { className: 'close-block' }, [
+    el('div', { className: 'mood-close' }, [
+      el('div', { className: 'mood-close-text' }, [
+        el('span', { className: 'mood-close-title', id: 'mood-close-title', textContent: '¿Cómo estuvo tu día?' }),
+        el('span', { className: 'small muted', textContent: hint }),
+      ]),
+      group,
+    ]),
+    close,
+  ]);
+}
+
+async function closeWorkDay(): Promise<void> {
+  const mood = chosenMood;
+  await act(mood ? { type: 'session.stop', mood } : { type: 'session.stop' });
+  if (!lastError) {
+    chosenMood = null;
+    if (mood) {
+      lastInfo = 'Jornada cerrada. ¡Gracias! Tu respuesta se guardó sin tu nombre.';
+      lastRendered = key();
+      render();
+    }
+  }
+}
+
+/** Mood pulse (spec 2026-11-05-pulso-de-animo): one click after closing the work day (when no face was chosen before). */
 function renderMood(): HTMLElement {
   const faces = MOOD_OPTIONS.map((o) => {
     const b = el('button', { type: 'button', className: 'mood-face', disabled: busy, title: o.label, ariaLabel: o.label }, [

@@ -36,7 +36,8 @@ export function isContentMessage(msg: unknown): msg is ContentMessage {
 export type PopupRequest =
   | { type: 'status' }
   | { type: 'session.start' }
-  | { type: 'session.stop' }
+  /** `mood`: the face chosen next to "Cerrar jornada" (mood pulse, 1–5), sent with the close. */
+  | { type: 'session.stop'; mood?: number }
   /** Dev build only: fake Google credential accepted by the Auth emulator. */
   | { type: 'auth.devSignIn'; email: string }
   /** Google login with chrome.identity (prod). */
@@ -104,6 +105,10 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
     return answer === 'taken' || answer === 'postponed';
   }
   if (m.type === 'breaks.setEnabled') return typeof (msg as { enabled?: unknown }).enabled === 'boolean';
+  if (m.type === 'session.stop') {
+    const mood = (msg as { mood?: unknown }).mood;
+    return mood === undefined || isMoodScore(mood);
+  }
   if (m.type === 'mood.answer') {
     const score = (msg as { score?: unknown }).score;
     return score === null || isMoodScore(score);
@@ -204,7 +209,11 @@ export interface StatusView {
    * it off. `pending`: the person closed today's work day and has not answered
    * "¿Cómo estuvo tu día?" nor skipped it.
    */
-  mood: { pending: boolean } | null;
+  mood: {
+    pending: boolean;
+    /** Already answered or skipped today: the faces next to "Cerrar jornada" are not shown. */
+    doneToday: boolean;
+  } | null;
   /**
    * How the person marks attendance (spec 2026-11-10-marcaciones), from the
    * last read; `kiosk`: on the kiosk at the entrance only (no "Iniciar

@@ -821,8 +821,10 @@ export class App {
    * Closes the work day by hand (popup or the "Cerrar jornada" reminder) and,
    * when the organization has the mood pulse on, leaves "¿Cómo estuvo tu
    * día?" pending for the popup, once a day. Automatic closes do not ask.
+   * `mood`: the face already chosen next to "Cerrar jornada" (0.2.24): it is
+   * queued right away and nothing is left pending.
    */
-  async closeWorkDay(): Promise<void> {
+  async closeWorkDay(mood?: MoodScore): Promise<void> {
     await this.session.stop();
     await this.auth.ready();
     const user = this.auth.currentUser();
@@ -832,6 +834,13 @@ export class App {
       if (!uid || meta.org?.uid !== uid || meta.org.moodPulse !== true) return;
       const date = dateKey(this.now(), DEFAULT_TIME_ZONE);
       if (meta.mood?.uid === uid && meta.mood.date === date) return; // asked already today
+      if (mood !== undefined) {
+        meta.mood = { uid, date, status: 'done' };
+        enqueueOp(this.store.queue, { kind: 'mood', uid, date, week: isoWeekKey(date), score: mood });
+        await this.store.save('queue', 'meta');
+        void this.sync.kick();
+        return;
+      }
       meta.mood = { uid, date, status: 'pending' };
       await this.store.save('meta');
     });
@@ -866,7 +875,8 @@ export class App {
     if (!uid || !enabled) return null;
     const m = this.store.meta.mood;
     const today = dateKey(this.now(), DEFAULT_TIME_ZONE);
-    return { pending: m !== null && m.uid === uid && m.date === today && m.status === 'pending' };
+    const todays = m !== null && m.uid === uid && m.date === today;
+    return { pending: todays && m.status === 'pending', doneToday: todays && m.status === 'done' };
   }
 
   /** Click on the body (or button) of a reminder, an active break or an announcement: the popup. */
@@ -948,7 +958,7 @@ export class App {
           await this.startWorkDay();
           break;
         case 'session.stop':
-          await this.closeWorkDay();
+          await this.closeWorkDay(req.mood as MoodScore | undefined);
           break;
         case 'mood.answer':
           await this.answerMood(req.score as MoodScore | null);
