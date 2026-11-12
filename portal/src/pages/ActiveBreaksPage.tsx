@@ -1,15 +1,18 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import {
   ACTIVE_BREAK_DURATION_OPTIONS,
   ACTIVE_BREAK_INTERVAL_OPTIONS,
   ACTIVE_BREAK_EXERCISES,
   ACTIVE_BREAK_PER_DAY_OPTIONS,
+  EXERCISE_ZONES,
   DEFAULT_ACTIVE_BREAK_TIMES,
   MAX_ACTIVE_BREAK_TIMES,
   breakClosing,
   breakPlanSize,
   dailyExercise,
+  exerciseArt,
   exerciseInstructions,
+  type ActiveBreakExercise,
   type ActiveBreakSettings,
   type OrgConfig,
   type PersonSchedule,
@@ -268,12 +271,15 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
     <>
       <ol className="break-plan plain" aria-label="Plan del día">
         {plan.map((ex, i) => (
-          <li key={i}>
-            <span className="strong">
-              Pausa {i + 1}
-              {fixed ? ` · ${settings.times[i]}` : ''}: {ex.title}
+          <li key={i} className="break-plan-item">
+            <ExerciseArt exercise={ex} />
+            <span>
+              <span className="strong">
+                Pausa {i + 1}
+                {fixed ? ` · ${settings.times[i]}` : ''}: {ex.title}
+              </span>
+              <span className="muted small block">{exerciseInstructions(ex, settings.durationMinutes)}</span>
             </span>
-            <span className="muted small block">{exerciseInstructions(ex, settings.durationMinutes)}</span>
           </li>
         ))}
       </ol>
@@ -313,27 +319,54 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
   );
 }
 
-/** The exercises the extension suggests, in the order they rotate. */
+/**
+ * The animation of an exercise (our own SVG from packages/shared, no text
+ * from users). Decorative: the title is always next to it.
+ */
+export function ExerciseArt({ exercise }: { exercise: ActiveBreakExercise }) {
+  const html = useMemo(() => exerciseArt(exercise, { label: '' }), [exercise]);
+  return <span className="exercise-art-box" aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+const POSTURE_LABEL: Record<ActiveBreakExercise['posture'], string> = {
+  sentado: 'Sentado',
+  'de pie': 'De pie',
+  'sentado o de pie': 'Sentado o de pie',
+  'sentado y de pie': 'Sentado y de pie',
+};
+
+/** The library of exercises the extension suggests, by zone. */
 export function ExerciseCatalog({ mode, durationMinutes }: { mode: ActiveBreakSettings['mode']; durationMinutes: number }) {
   const closing = breakClosing(durationMinutes);
   return (
     <>
       <p className="muted small">
-        {mode === 'times'
-          ? 'Con "A horas fijas" todos hacen el mismo ejercicio en cada pausa: el plan avanza en este orden de una pausa a la siguiente y de un día al otro.'
-          : mode === 'daily'
-          ? 'Con "Veces al día" todos hacen el mismo ejercicio en cada pausa: el plan avanza en este orden de una pausa a la siguiente y de un día al otro.'
-          : 'Con "Según el trabajo continuo" cada persona recorre estos ejercicios en orden, a su propio ritmo.'}
+        {ACTIVE_BREAK_EXERCISES.length} ejercicios en {EXERCISE_ZONES.length} zonas. Se recorren todos, en un orden
+        distinto cada vuelta, antes de repetir uno, y nunca tocan dos de la misma zona seguidos.{' '}
+        {mode === 'interval'
+          ? 'Con "Según el trabajo continuo" cada persona avanza a su propio ritmo.'
+          : 'Con "Veces al día" y "A horas fijas" todos hacen el mismo ejercicio en cada pausa.'}
         {closing ? ` Con pausas de ${durationMinutes} min, cada ejercicio termina con: "${closing}"` : ''}
       </p>
-      <ol className="break-plan" aria-label="Ejercicios">
-        {ACTIVE_BREAK_EXERCISES.map((ex) => (
-          <li key={ex.id}>
-            <span className="strong">{ex.title}</span>
-            <span className="muted small block">{ex.text}</span>
-          </li>
+      <div className="exercise-zones" role="region" aria-label="Biblioteca de ejercicios">
+        {EXERCISE_ZONES.map((zone) => (
+          <section key={zone.id} className="exercise-zone" aria-labelledby={`zone-${zone.id}`}>
+            <h3 id={`zone-${zone.id}`}>{zone.label}</h3>
+            <ul className="exercise-grid plain">
+              {ACTIVE_BREAK_EXERCISES.filter((ex) => ex.zone === zone.id).map((ex) => (
+                <li key={ex.id} className="exercise-item">
+                  <ExerciseArt exercise={ex} />
+                  <span>
+                    <span className="strong block">{ex.title}</span>
+                    <span className="muted small block">{ex.text}</span>
+                    <span className="tag small">{POSTURE_LABEL[ex.posture]}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
         ))}
-      </ol>
+      </div>
     </>
   );
 }

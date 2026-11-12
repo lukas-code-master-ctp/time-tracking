@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACTIVE_BREAK_EXERCISES, dailyExercise, zonedDateTimeToMs, type ActiveBreakSettings } from '@timetracking/shared';
+import { dailyExercise, exerciseAt, zonedDateTimeToMs, type ActiveBreakSettings } from '@timetracking/shared';
 import {
   BREAK_SNOOZE_MS,
   DAILY_MIN_GAP_MS,
@@ -47,12 +47,12 @@ describe('active breaks (pure)', () => {
   it('reminds after 60 min of continuous work, with a rotating exercise, and not again for another interval', () => {
     const { state, prompts } = run(null, T0, T0 + 60 * MIN);
     expect(prompts).toEqual([T0 + 60 * MIN]);
-    expect(state.pending).toEqual({ at: T0 + 60 * MIN, sessionId: 's1', exercise: ACTIVE_BREAK_EXERCISES[0]!.id });
+    expect(state.pending).toEqual({ at: T0 + 60 * MIN, sessionId: 's1', exercise: exerciseAt(0).id });
     // Unanswered: the next one an interval later replaces it, with the next exercise.
     const quiet = run(state, T0 + 60.5 * MIN, T0 + 119.5 * MIN);
     expect(quiet.prompts).toEqual([]);
     const r = breakTick(quiet.state, input(T0 + 120 * MIN));
-    expect(r.prompt?.exercise).toBe(ACTIVE_BREAK_EXERCISES[1]!.id);
+    expect(r.prompt?.exercise).toBe(exerciseAt(1).id);
     expect(r.replaced).toEqual(state.pending);
   });
 
@@ -93,7 +93,7 @@ describe('active breaks (pure)', () => {
       answeredAt: at + 7 * MIN,
       start: at + 2 * MIN,
       end: at + 7 * MIN,
-      exercise: ACTIVE_BREAK_EXERCISES[0]!.id,
+      exercise: exerciseAt(0).id,
     });
     expect(taken.state).toMatchObject({ pending: null, workSince: at + 7 * MIN, quietUntil: null });
     // (The pulses go on while the break is marked.)
@@ -270,7 +270,7 @@ describe('active breaks (extension)', () => {
       requireInteraction: true,
     });
     const promptAt = parseBreakNotificationId(shown!.id)!;
-    expect((await h.app.status()).breaks?.pending).toMatchObject({ at: promptAt, title: 'Estira el cuello' });
+    expect((await h.app.status()).breaks?.pending).toMatchObject({ at: promptAt, title: exerciseAt(0).title });
 
     vi.setSystemTime(promptAt + 4 * MIN);
     for (const l of h.chrome.events.notificationButton.listeners) l(shown!.id, 0);
@@ -288,7 +288,7 @@ describe('active breaks (extension)', () => {
           answeredAt: promptAt + 4 * MIN,
           start: promptAt + MIN,
           end: promptAt + 4 * MIN,
-          exercise: 'cuello',
+          exercise: exerciseAt(0).id,
         },
       ],
     ]);

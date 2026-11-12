@@ -4,6 +4,7 @@
  */
 import { DEFAULT_TIME_ZONE } from './collections.js';
 import { zonedDateTimeToMs } from './schedule.js';
+import { ACTIVE_BREAK_EXERCISES, EXERCISE_ZONES, type ActiveBreakExercise } from './exercises.js';
 
 /**
  * How the reminders are spread: `interval` after `intervalMinutes` of
@@ -145,57 +146,6 @@ export function breakPlanSize(settings: Pick<ActiveBreakSettings, 'mode' | 'perD
   return settings.mode === 'daily' ? settings.perDay : 0;
 }
 
-export interface ActiveBreakExercise {
-  id: string;
-  title: string;
-  /** What to do, one or two short sentences (fits a notification). */
-  text: string;
-}
-
-/** Suggested exercises, in the order they rotate. Ids are stored in `breaks`: never change them. */
-export const ACTIVE_BREAK_EXERCISES: readonly ActiveBreakExercise[] = [
-  {
-    id: 'cuello',
-    title: 'Estira el cuello',
-    text: 'Inclina la cabeza hacia cada hombro y mantén 15 segundos por lado. Luego gira los hombros hacia atrás 10 veces.',
-  },
-  {
-    id: 'vista',
-    title: 'Descansa la vista (20-20-20)',
-    text: 'Mira algo a unos 6 metros durante 20 segundos y parpadea varias veces. Repite 3 veces.',
-  },
-  {
-    id: 'munecas',
-    title: 'Muñecas y manos',
-    text: 'Con el brazo estirado, tira suave de los dedos hacia abajo 15 segundos por mano. Abre y cierra los puños 10 veces.',
-  },
-  {
-    id: 'caminar',
-    title: 'Ponte de pie y camina',
-    text: 'Levántate y camina un par de minutos. Aprovecha de tomar agua.',
-  },
-  {
-    id: 'espalda',
-    title: 'Estira la espalda',
-    text: 'De pie, entrelaza los dedos y estira los brazos hacia arriba 15 segundos. Luego inclínate suave a cada lado.',
-  },
-  {
-    id: 'hombros',
-    title: 'Abre el pecho',
-    text: 'Entrelaza las manos detrás de la espalda y lleva los hombros hacia atrás 20 segundos. Repite 3 veces.',
-  },
-  {
-    id: 'respirar',
-    title: 'Respira profundo',
-    text: 'Inhala por la nariz 4 segundos, mantén 4 y exhala en 6. Repite 5 veces.',
-  },
-  {
-    id: 'piernas',
-    title: 'Activa las piernas',
-    text: 'Haz 10 sentadillas suaves o 20 elevaciones de talones apoyándote en la silla.',
-  },
-];
-
 /**
  * What to say after the exercise so it fills a break of `durationMinutes`:
  * the exercises take 1–2 minutes, the rest of the break is spelled out.
@@ -213,11 +163,66 @@ export function exerciseInstructions(exercise: ActiveBreakExercise, durationMinu
   return closing ? `${exercise.text} ${closing}` : exercise.text;
 }
 
-/** The exercise of the `n`-th reminder (rotates). */
+/** Small deterministic PRNG (mulberry32): the same seed gives the same shuffle on every device. */
+function random(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const BY_ZONE: readonly (readonly ActiveBreakExercise[])[] = EXERCISE_ZONES.map((z) =>
+  ACTIVE_BREAK_EXERCISES.filter((e) => e.zone === z.id),
+);
+const ROUND = EXERCISE_ZONES.length;
+const CYCLE = ACTIVE_BREAK_EXERCISES.length;
+
+/** The order of the exercises of zone `z` in cycle `c` (a seeded shuffle). */
+function zoneOrder(c: number, z: number): readonly ActiveBreakExercise[] {
+  const list = [...BY_ZONE[z]!];
+  const next = random(c * 7919 + z * 104729 + 1);
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1));
+    [list[i], list[j]] = [list[j]!, list[i]!];
+  }
+  return list;
+}
+
+const orders = new Map<string, readonly ActiveBreakExercise[]>();
+/**
+ * `zoneOrder` without repeating across cycles: the first two of a cycle are
+ * never the last two of the cycle before (those stay in place, so the check
+ * against the plain shuffle of the cycle before holds).
+ */
+function cycleZone(c: number, z: number): readonly ActiveBreakExercise[] {
+  const key = `${c}:${z}`;
+  const hit = orders.get(key);
+  if (hit) return hit;
+  const raw = zoneOrder(c, z);
+  const before = zoneOrder(c - 1, z);
+  const tail = new Set(before.slice(-2));
+  const front = raw.filter((e) => !tail.has(e)).slice(0, 2);
+  const list = [...front, ...raw.filter((e) => !front.includes(e))];
+  if (orders.size > 512) orders.clear();
+  orders.set(key, list);
+  return list;
+}
+
+/**
+ * The exercise of the `n`-th reminder. The rotation goes through all the
+ * exercises (a "cycle", shuffled differently each time) before repeating
+ * one, visiting the zones always in the order of `EXERCISE_ZONES`: any 7
+ * reminders in a row are of 7 different zones.
+ */
 export function exerciseAt(n: number): ActiveBreakExercise {
-  const list = ACTIVE_BREAK_EXERCISES;
-  const i = ((Math.floor(n) % list.length) + list.length) % list.length;
-  return list[i]!;
+  const i = Math.floor(n);
+  const c = Math.floor(i / CYCLE);
+  const k = i - c * CYCLE;
+  return cycleZone(c, k % ROUND)[Math.floor(k / ROUND)]!;
 }
 
 /**

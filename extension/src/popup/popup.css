@@ -208,6 +208,39 @@ body {
   font-size: 15px;
 }
 
+.breaks-body {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.breaks-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.breaks-copy p {
+  margin: 0;
+}
+
+/* The exercise animation (packages/shared exerciseArt), on the surface so its soft fills show. */
+.breaks-art {
+  flex: none;
+  width: 92px;
+  height: 92px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.breaks-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .breaks .row {
   display: flex;
   gap: 8px;
