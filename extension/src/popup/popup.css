@@ -263,6 +263,86 @@ body {
   min-height: 38px;
 }
 
+/* Mood pulse next to "Cerrar jornada" (0.2.24): compact faces above the button. */
+.close-block {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.workday .close-block .btn {
+  margin-top: 0;
+}
+
+.mood-close {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.mood-close-text {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mood-close-title {
+  font-weight: 650;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.mood-chips {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.mood-chip {
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  filter: grayscale(0.35);
+  transition: background-color 0.15s var(--ease), transform 0.15s var(--ease), filter 0.15s var(--ease);
+}
+
+.mood-chip:hover:not(:disabled) {
+  background: var(--surface);
+  filter: none;
+  transform: translateY(-1px);
+}
+
+.mood-chip.chosen {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  filter: none;
+}
+
+.mood-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-chip {
+    transition: none;
+  }
+  .mood-chip:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
 /* Mood pulse: five faces after closing the work day. */
 .mood {
   display: grid;

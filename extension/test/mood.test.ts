@@ -21,18 +21,31 @@ describe('mood pulse', () => {
 
   it('asks once after closing the work day by hand and uploads the anonymous counter', async () => {
     await h.app.session.start();
-    expect((await h.app.status()).mood).toEqual({ pending: false });
+    expect((await h.app.status()).mood).toEqual({ pending: false, doneToday: false });
     await h.app.handlePopup({ type: 'session.stop' });
-    expect((await h.app.status()).mood).toEqual({ pending: true });
+    expect((await h.app.status()).mood).toEqual({ pending: true, doneToday: false });
     await h.app.handlePopup({ type: 'mood.answer', score: 4 });
     await h.settle();
-    expect((await h.app.status()).mood).toEqual({ pending: false });
+    expect((await h.app.status()).mood).toEqual({ pending: false, doneToday: true });
     expect(h.backend.moodWeeks.get('2026-W45')).toEqual({ n4: 1 });
     expect(h.backend.moodVotes.get('u1_2026-W45')).toEqual(['2026-11-05']);
     // Closing again the same day does not ask again.
     await h.app.session.start();
     await h.app.handlePopup({ type: 'session.stop' });
-    expect((await h.app.status()).mood).toEqual({ pending: false });
+    expect((await h.app.status()).mood).toEqual({ pending: false, doneToday: true });
+  });
+
+  it('sends the face chosen next to "Cerrar jornada" with the close, without asking again', async () => {
+    await h.app.session.start();
+    await h.app.handlePopup({ type: 'session.stop', mood: 5 });
+    await h.settle();
+    expect((await h.app.status()).mood).toEqual({ pending: false, doneToday: true });
+    expect(h.backend.moodWeeks.get('2026-W45')).toEqual({ n5: 1 });
+    // Already answered today: a face chosen at a second close is not sent.
+    await h.app.session.start();
+    await h.app.handlePopup({ type: 'session.stop', mood: 1 });
+    await h.settle();
+    expect(h.backend.moodWeeks.get('2026-W45')).toEqual({ n5: 1 });
   });
 
   it('"Omitir" sends nothing; a pending question expires with the day', async () => {
@@ -45,9 +58,9 @@ describe('mood pulse', () => {
     vi.setSystemTime(zonedDateTimeToMs('2026-11-06', '18:30'));
     await h.app.session.start();
     await h.app.handlePopup({ type: 'session.stop' });
-    expect((await h.app.status()).mood).toEqual({ pending: true });
+    expect((await h.app.status()).mood).toEqual({ pending: true, doneToday: false });
     vi.setSystemTime(zonedDateTimeToMs('2026-11-07', '09:00'));
-    expect((await h.app.status()).mood).toEqual({ pending: false });
+    expect((await h.app.status()).mood).toEqual({ pending: false, doneToday: false });
     await h.app.handlePopup({ type: 'mood.answer', score: 2 });
     await h.settle();
     expect(h.backend.calls.filter((c) => c.op === 'putMood')).toEqual([]);
@@ -66,5 +79,8 @@ describe('mood pulse', () => {
     expect(isPopupRequest({ type: 'mood.answer', score: null })).toBe(true);
     expect(isPopupRequest({ type: 'mood.answer', score: 6 })).toBe(false);
     expect(isPopupRequest({ type: 'mood.answer' })).toBe(false);
+    expect(isPopupRequest({ type: 'session.stop', mood: 3 })).toBe(true);
+    expect(isPopupRequest({ type: 'session.stop', mood: 0 })).toBe(false);
+    expect(isPopupRequest({ type: 'session.stop', mood: '3' })).toBe(false);
   });
 });
