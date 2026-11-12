@@ -433,8 +433,9 @@ let chosenMood: MoodScore | null = null;
  * one goes with the close. Without a face the question shows after closing.
  */
 function closeWithMood(s: StatusView): HTMLElement {
-  const close = button('Cerrar jornada', 'stop big', () => void closeWorkDay());
-  if (!s.mood || s.mood.doneToday || s.mood.pending) return close;
+  const show = !!s.mood && !s.mood.doneToday && !s.mood.pending;
+  const close = button(show && chosenMood ? 'Enviar y cerrar jornada' : 'Cerrar jornada', 'stop big', () => void closeWorkDay());
+  if (!show) return close;
   const faces = MOOD_OPTIONS.map((o) => {
     const pressed = chosenMood === o.score;
     const b = el('button', {
@@ -454,7 +455,7 @@ function closeWithMood(s: StatusView): HTMLElement {
   });
   const group = el('div', { className: 'mood-chips', role: 'group' }, faces);
   group.setAttribute('aria-labelledby', 'mood-close-title');
-  const hint = chosenMood ? `${MOOD_OPTIONS[chosenMood - 1]!.label} · va al cerrar` : 'Opcional y anónimo';
+  const hint = chosenMood ? MOOD_OPTIONS[chosenMood - 1]!.label : 'Opcional y anónimo';
   return el('div', { className: 'close-block' }, [
     el('div', { className: 'mood-close' }, [
       el('div', { className: 'mood-close-text' }, [
