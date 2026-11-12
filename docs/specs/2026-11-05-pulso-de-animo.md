@@ -24,3 +24,5 @@ Extensión 0.2.16. Reglas de Firestore nuevas (`moodWeeks`, `moodVotes`, campo `
 ## 2026-11-12: junto a "Cerrar jornada" (extensión 0.2.24)
 
 Lukas pidió que la pregunta aparezca junto al botón de cerrar jornada. Con la jornada abierta, la empresa con el pulso activo y sin respuesta hoy, la tarjeta de la jornada muestra las cinco caras sobre "Cerrar jornada" ("Opcional y anónimo"). Elegir una solo la marca (se puede cambiar o desmarcar); al cerrar se envía con el cierre (`session.stop` con `mood`) y no se vuelve a preguntar. Sin cara elegida, todo sigue como antes: la pregunta aparece después de cerrar. El cierre desde la notificación de salida no lleva cara.
+
+2026-11-12 (0.2.25): con una cara elegida, el botón dice "Enviar y cerrar jornada"; sin cara sigue diciendo "Cerrar jornada".
