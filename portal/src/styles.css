@@ -3436,3 +3436,81 @@ input[type='time'][aria-invalid='true'] {
     margin-left: auto;
   }
 }
+
+/* ---------- Grupos (spec 2026-11-13-grupos-y-comunicados-agendados) ---------- */
+
+.group-form {
+  display: grid;
+  gap: 16px;
+}
+
+.group-members {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.group-members legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.group-members-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-members-tools input {
+  flex: 1;
+  min-width: 0;
+}
+
+.group-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.group-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.group-pick:hover {
+  background: var(--surface-2);
+}
+
+.group-pick input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.group-pick-email {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-item .person-name {
+  overflow-wrap: anywhere;
+}

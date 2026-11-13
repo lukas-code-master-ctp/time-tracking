@@ -16,6 +16,7 @@ import type {
   MoodWeek,
   Feedback,
   OrgConfig,
+  PersonGroup,
   PersonSchedule,
   Role,
   ScheduleConfig,
@@ -93,6 +94,11 @@ export interface DataSource {
   /** Archives (a time) or brings back (null) an announcement. */
   setAnnouncementArchived(id: string, archivedAt: number | null): Promise<void>;
   deleteAnnouncement(id: string): Promise<void>;
+  /** Every valid `groups/{id}` (spec 2026-11-13-grupos-y-comunicados-agendados). `[]` while the rules are not deployed. */
+  listGroups(): Promise<WithId<PersonGroup>[]>;
+  /** Writes the whole group: a new document when `id` is null. Returns its id. */
+  saveGroup(id: string | null, group: PersonGroup): Promise<string>;
+  deleteGroup(id: string): Promise<void>;
   /** Every valid `celebrations/{uid}` (id = uid). `[]` while the rules are not deployed. */
   listCelebrations(): Promise<WithId<Celebration>[]>;
   /** Writes the whole `celebrations/{uid}`. */

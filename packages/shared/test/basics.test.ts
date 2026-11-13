@@ -114,6 +114,7 @@ describe('collections', () => {
       absences: 'absences',
       announcements: 'announcements',
       announcementReads: 'announcementReads',
+      groups: 'groups',
       celebrations: 'celebrations',
       moodWeeks: 'moodWeeks',
       moodVotes: 'moodVotes',

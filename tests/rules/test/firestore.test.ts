@@ -11,6 +11,7 @@ import {
   type Announcement,
   type AnnouncementRead,
   type Celebration,
+  type PersonGroup,
   type ActiveBreak,
   type AttendanceSettings,
   type Kiosk,
@@ -1427,6 +1428,52 @@ describe('announcements', () => {
     await assertFails(db('alice').collection('announcementReads').get());
     await assertFails(db('alice').doc('announcementReads/n1_bob').get());
     await assertSucceeds(db('admin').collection('announcementReads').get());
+  });
+});
+
+// ---------- groups (spec 2026-11-13-grupos-y-comunicados-agendados) ----------
+
+function group(overrides: Partial<PersonGroup> = {}): PersonGroup {
+  return { name: 'Terreno', memberUids: ['alice', 'bob'], createdAt: NOW, createdBy: 'admin', updatedAt: NOW, updatedBy: 'admin', ...overrides };
+}
+
+describe('groups', () => {
+  it('an admin creates, edits and deletes them', async () => {
+    const ref = db('admin').doc('groups/g1');
+    await assertSucceeds(ref.set(group()));
+    await assertSucceeds(ref.set(group({ name: 'Ventas', memberUids: ['alice'], updatedAt: NOW + 1 })));
+    // createdAt / createdBy stay.
+    await assertFails(ref.set(group({ createdAt: NOW + 5 })));
+    await assertSucceeds(ref.delete());
+  });
+
+  it('rejects malformed groups', async () => {
+    const put = (g: Partial<PersonGroup> & Record<string, unknown>) => db('admin').doc('groups/g1').set({ ...group(), ...g });
+    await assertFails(put({ name: ' ' }));
+    await assertFails(put({ name: 'x'.repeat(61) }));
+    await assertFails(put({ memberUids: [] }));
+    await assertFails(put({ memberUids: ['alice', 'alice'] }));
+    await assertFails(put({ memberUids: Array.from({ length: 501 }, (_, i) => `u${i}`) }));
+    await assertFails(put({ updatedBy: 'alice' }));
+    await assertFails(put({ createdBy: 'alice' }));
+    await assertFails(put({ extra: 1 }));
+  });
+
+  it('members and strangers cannot write them', async () => {
+    await assertFails(db('alice').doc('groups/g1').set(group({ createdBy: 'alice', updatedBy: 'alice' })));
+    await assertFails(db('eve').doc('groups/g1').set(group({ createdBy: 'eve', updatedBy: 'eve' })));
+    await seed(env, { 'groups/g1': group() });
+    await assertFails(db('alice').doc('groups/g1').delete());
+  });
+
+  it('a person reads only the groups she is in; an admin reads all', async () => {
+    await seed(env, { 'groups/g1': group(), 'groups/g2': group({ name: 'Oficina', memberUids: ['carol'] }) });
+    await assertSucceeds(db('alice').collection('groups').where('memberUids', 'array-contains', 'alice').get());
+    await assertSucceeds(db('alice').doc('groups/g1').get());
+    await assertFails(db('alice').doc('groups/g2').get());
+    await assertFails(db('alice').collection('groups').get());
+    await assertSucceeds(db('admin').collection('groups').get());
+    await assertFails(db(null).collection('groups').get());
   });
 });
 
