@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { UserProfile } from '@timetracking/shared';
+import { isFieldWorker, type UserProfile } from '@timetracking/shared';
 import { authErrorMessage, errorMessage } from '../lib/messages';
 import { JoinError, type AuthUser, type Backend, type DataSource } from './types';
 
@@ -20,7 +20,9 @@ export type SessionState =
   | { status: 'signedOut'; error?: string; notice?: string }
   | { status: 'joining'; user: AuthUser }
   | { status: 'noAccess'; user: AuthUser; message: string }
-  | { status: 'ready'; user: AuthUser; profile: UserProfile };
+  | { status: 'ready'; user: AuthUser; profile: UserProfile }
+  /** A collaborator marked "Terreno": the portal shows only the phone page of the daily report. */
+  | { status: 'field'; user: AuthUser; profile: UserProfile };
 
 interface SessionApi {
   state: SessionState;
@@ -80,6 +82,11 @@ export function BackendProvider({
       try {
         const profile = await backend.auth.joinOrg();
         if (ticket !== current) return;
+        // People in the field use the same sign-in and land on the phone page.
+        if (profile.status === 'active' && profile.role !== 'admin' && isFieldWorker(profile)) {
+          setState({ status: 'field', user, profile });
+          return;
+        }
         if (profile.status !== 'active' || (access === 'admin' && profile.role !== 'admin')) {
           setState({
             status: 'noAccess',

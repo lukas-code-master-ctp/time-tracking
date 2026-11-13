@@ -4,12 +4,14 @@ import {
   DAILY_REPORT_MAX_AUDIO_SECONDS,
   DAILY_REPORT_MAX_CHARS,
   dailyReportDocId,
+  isFieldWorker,
   readDailyReportSettings,
   recordingToWav,
   requiresDailyReport,
   toBase64,
   validateDailyReport,
   type DailyReport,
+  type UserProfile,
 } from '@timetracking/shared';
 import { BackendProvider, useData, useSession } from '../data/context';
 import type { Backend } from '../data/types';
@@ -27,7 +29,6 @@ import { LoginPage, NoAccessPage, SplashPage } from './LoginPage';
  */
 export function FieldArea({ getBackend }: { getBackend: () => Backend }) {
   const [backend] = useState(getBackend);
-  useHomeScreenTags();
   return (
     <BackendProvider backend={backend} access="member">
       <FieldGate />
@@ -72,7 +73,8 @@ function FieldGate() {
     case 'noAccess':
       return <NoAccessPage variant="field" />;
     case 'ready':
-      return <FieldReport uid={state.user.uid} name={state.profile.displayName || state.profile.email} />;
+    case 'field':
+      return <FieldReport uid={state.user.uid} profile={state.profile} />;
   }
 }
 
@@ -103,7 +105,9 @@ interface Loaded {
   report: DailyReport | null;
 }
 
-export function FieldReport({ uid, name }: { uid: string; name: string }) {
+export function FieldReport({ uid, profile }: { uid: string; profile: UserProfile }) {
+  const name = profile.displayName || profile.email;
+  useHomeScreenTags();
   const data = useData();
   const { signOut } = useSession();
   const [date] = useState(() => zonedDate(Date.now()));
@@ -133,7 +137,7 @@ export function FieldReport({ uid, name }: { uid: string; name: string }) {
           data.getDailyReport(dailyReportDocId(uid, date)),
         ]);
         if (!live) return;
-        const required = requiresDailyReport(readDailyReportSettings(config), groups);
+        const required = requiresDailyReport(readDailyReportSettings(config), groups, profile);
         setLoaded({ required, report });
         if (report) {
           setSent(report);
@@ -147,7 +151,7 @@ export function FieldReport({ uid, name }: { uid: string; name: string }) {
     return () => {
       live = false;
     };
-  }, [data, uid, date, attempt]);
+  }, [data, uid, profile, date, attempt]);
 
   // Timer of the recording; stops by itself at the limit.
   useEffect(() => {
@@ -281,8 +285,9 @@ export function FieldReport({ uid, name }: { uid: string; name: string }) {
         <section className="card field-card">
           <h2>No tienes minuta pendiente</h2>
           <p className="muted">
-            Tu empresa no te pidió la minuta diaria. Si crees que es un error, avísale a tu jefatura para que te agregue al
-            grupo que corresponde.
+            {isFieldWorker(profile)
+              ? 'Tu empresa aún no activa la minuta diaria. Cuando la active, aquí podrás enviarla.'
+              : 'Tu empresa no te pidió la minuta diaria. Si crees que es un error, avísale a tu jefatura.'}
           </p>
         </section>
       ) : (

@@ -84,6 +84,13 @@ export interface Invitation {
 }
 
 /** `users/{uid}` */
+/**
+ * Where a person works (spec 2026-11-13-minuta-terreno): at the office (with
+ * the extension) or in the field (no computer: signing in to the portal opens
+ * the phone page of the daily report). Set by an admin; missing = office.
+ */
+export type Workplace = 'office' | 'field';
+
 export interface UserProfile {
   email: string;
   displayName: string;
@@ -91,6 +98,8 @@ export interface UserProfile {
   role: Role;
   status: UserStatus;
   createdAt: EpochMs;
+  /** Missing in older documents (= `'office'`). */
+  workplace?: Workplace;
   consentAcceptedAt?: EpochMs;
   consentVersion?: string;
 }

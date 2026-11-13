@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { type Role, type UserProfile, type UserStatus, type WithId } from '@timetracking/shared';
+import { type Role, type UserProfile, type UserStatus, type WithId, type Workplace } from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
 import { PersonScheduleEditor } from '../components/ScheduleEditor';
 import { initials } from '../components/TeamTable';
@@ -16,6 +16,8 @@ import { useLoad } from '../lib/useLoad';
 type Change = { user: WithId<UserProfile>; role: Role; status: UserStatus };
 
 const ROLE_LABEL: Record<Role, string> = { admin: 'Administrador', member: 'Colaborador' };
+
+export const WORKPLACE_LABEL: Record<Workplace, string> = { office: 'Oficina', field: 'Terreno' };
 
 function describeChange(c: Change): { title: string; message: string; confirm: string; danger: boolean } {
   const name = c.user.displayName || c.user.email;
@@ -79,6 +81,25 @@ export function UsersPage() {
     }
   };
 
+  /** Office or field: saved right away (it only changes what the person sees when signing in). */
+  const saveWorkplace = async (user: WithId<UserProfile>, workplace: Workplace): Promise<void> => {
+    setNotice(null);
+    setError(null);
+    try {
+      await data.setWorkplace(user.id, workplace);
+      const name = user.displayName || user.email;
+      setNotice(
+        workplace === 'field'
+          ? `${name} ahora es de terreno: al entrar a la página con su correo verá la minuta del día.`
+          : `${name} ahora es de oficina.`,
+      );
+      load.reload();
+    } catch (err) {
+      setNotice(null);
+      setError(errorMessage(err));
+    }
+  };
+
   const users = [...(load.data?.users ?? [])].sort(
     (a, b) =>
       (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1) ||
@@ -88,11 +109,16 @@ export function UsersPage() {
 
   return (
     <>
-      <PageHeader title="Colaboradores" subtitle="Personas registradas. Cambia su rol, su horario o desactiva su cuenta." />
+      <PageHeader title="Colaboradores" subtitle="Personas registradas. Cambia su rol, si trabaja en oficina o en terreno, su horario o desactiva su cuenta." />
       <PeopleTabs />
       {notice ? (
         <p className="banner ok" role="status">
           {notice}
+        </p>
+      ) : null}
+      {error && !change ? (
+        <p className="banner error" role="alert">
+          {error}
         </p>
       ) : null}
       <section className="card flush" aria-label="Colaboradores registrados">
@@ -148,6 +174,22 @@ export function UsersPage() {
                       <option value="member">{ROLE_LABEL.member}</option>
                       <option value="admin">{ROLE_LABEL.admin}</option>
                     </select>
+                    {u.role === 'member' ? (
+                      <>
+                        <label className="sr-only" htmlFor={`workplace-${u.id}`}>
+                          Lugar de trabajo de {name}
+                        </label>
+                        <select
+                          id={`workplace-${u.id}`}
+                          value={u.workplace ?? 'office'}
+                          title="Terreno: no usa computador; entra desde el celular y envía la minuta del día"
+                          onChange={(e) => void saveWorkplace(u, e.target.value as Workplace)}
+                        >
+                          <option value="office">{WORKPLACE_LABEL.office}</option>
+                          <option value="field">{WORKPLACE_LABEL.field}</option>
+                        </select>
+                      </>
+                    ) : null}
                     {u.status === 'active' ? (
                       <span className="chip ok">Activo</span>
                     ) : (

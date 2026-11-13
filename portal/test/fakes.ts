@@ -100,6 +100,9 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     updateUser: async (uid, patch) => {
       db.users = db.users.map((u) => (u.id === uid ? { ...u, ...patch } : u));
     },
+    setWorkplace: async (uid, workplace) => {
+      db.users = db.users.map((u) => (u.id === uid ? { ...u, workplace } : u));
+    },
     listInvitations: async () => [...db.invitations],
     putInvitation: async (id, inv) => {
       db.invitations = [...db.invitations.filter((i) => i.id !== id), { ...inv, id }];

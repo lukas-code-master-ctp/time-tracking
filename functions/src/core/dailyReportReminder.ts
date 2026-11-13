@@ -2,7 +2,7 @@
  * Reminder email of the daily report (spec 2026-11-13-minuta-terreno,
  * `dailyReportReminders`): people in the field have no computer, so nothing
  * reminds them when they close the day. Every 15 minutes the job looks for
- * the people asked for the report whose schedule ended in the last hours,
+ * the people asked for the report (in the field, or in the chosen groups) whose schedule ended in the last hours,
  * who did not send today's report yet, and emails each one the link to the
  * phone page (`/terreno`). Once per person and day
  * (`dailyReportReminders/{uid_date}`).
@@ -79,15 +79,19 @@ export async function sendDailyReportRemindersCore(deps: ReminderDeps): Promise<
   const { db, now } = deps;
   const orgSnap = await db.collection(COLLECTIONS.config).doc(ORG_CONFIG_DOC_ID).get();
   const settings = readDailyReportSettings(orgSnap.data() as OrgConfig | undefined);
-  if (!settings.enabled || settings.groupIds.length === 0) return { asked: 0, reminded: [] };
+  if (!settings.enabled) return { asked: 0, reminded: [] };
 
-  const groupRefs = settings.groupIds.map((id) => db.collection(COLLECTIONS.groups).doc(id));
+  // People in the field, plus the members of the chosen groups.
   const groups: WithId<PersonGroup>[] = [];
-  for (const snap of await db.getAll(...groupRefs)) {
-    const g = snap.exists ? readGroup(snap.data()) : null;
-    if (g) groups.push({ ...g, id: snap.id });
+  if (settings.groupIds.length > 0) {
+    const groupRefs = settings.groupIds.map((id) => db.collection(COLLECTIONS.groups).doc(id));
+    for (const snap of await db.getAll(...groupRefs)) {
+      const g = snap.exists ? readGroup(snap.data()) : null;
+      if (g) groups.push({ ...g, id: snap.id });
+    }
   }
-  const uids = membersOf(groups, settings.groupIds);
+  const field = await db.collection(COLLECTIONS.users).where('workplace', '==', 'field').get();
+  const uids = [...new Set([...field.docs.map((d) => d.id), ...membersOf(groups, settings.groupIds)])];
   if (uids.length === 0) return { asked: 0, reminded: [] };
 
   const date = dateKey(now, DEFAULT_TIME_ZONE);

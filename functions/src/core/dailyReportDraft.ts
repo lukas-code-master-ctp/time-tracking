@@ -4,8 +4,8 @@
  * audio she recorded in the extension; the AI model transcribes it and writes
  * a draft of the report, which she reviews before sending it herself.
  *
- * - Only an active person in one of the groups of `config/org.dailyReportGroupIds`
- *   (with the report on) may ask: the model costs money.
+ * - Only an active person in the field (`users.workplace`) or in one of the groups of
+ *   `config/org.dailyReportGroupIds` (with the report on) may ask: the model costs money.
  * - At most `DAILY_REPORT_MAX_DRAFTS_PER_DAY` drafts per person and day
  *   (`dailyReportDrafts/{uid_date}`, counted in a transaction before calling the model).
  * - The audio is never stored: it goes to the model and is dropped.
@@ -83,7 +83,7 @@ export async function draftDailyReportCore(
   const user = userSnap.data() as UserProfile | undefined;
   if (!user || user.status !== 'active') throw new HttpsError('permission-denied', 'Tu cuenta no está activa.');
   const settings = readDailyReportSettings(orgSnap.data() as OrgConfig | undefined);
-  if (!requiresDailyReport(settings, groups)) {
+  if (!requiresDailyReport(settings, groups, user)) {
     throw new HttpsError('failed-precondition', 'Tu empresa no te pidió la minuta diaria.');
   }
 

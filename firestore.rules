@@ -352,11 +352,13 @@ service cloud.firestore {
           && incoming().consentVersion is string
           && incoming().consentVersion.size() > 0)
         ||
-        // Admin: role/status of other users (never their own, to avoid lock-out).
+        // Admin: role/status/workplace of other users (never their own, to avoid lock-out).
         (isAdmin() && !isSelf(uid)
-          && changedKeys().hasOnly(['role', 'status'])
+          && changedKeys().hasOnly(['role', 'status', 'workplace'])
           && incoming().role in ['admin', 'member']
-          && incoming().status in ['active', 'disabled']);
+          && incoming().status in ['active', 'disabled']
+          // Office or field (spec 2026-11-13-minuta-terreno); missing = office.
+          && (!('workplace' in incoming()) || incoming().workplace in ['office', 'field']));
 
       allow delete: if false;
     }

@@ -34,6 +34,8 @@ beforeEach(async () => {
     'users/carla': user('carla@impulseai.cl'),
     'users/dani': user('dani@impulseai.cl', 'disabled'),
     'users/eva': user('eva@impulseai.cl'),
+    // Fabi works in the field and is in no group.
+    'users/fabi': { ...user('fabi@impulseai.cl'), workplace: 'field' },
     'config/org': { dailyReportEnabled: true, dailyReportGroupIds: ['terreno'] },
     'config/schedule': { week, holidays: [], toleranceMinutes: 5, remindersEnabled: true, updatedAt: 1, updatedBy: 'admin' },
     // Beto finishes at 20:00 on Fridays.
@@ -54,14 +56,14 @@ describe('sendDailyReportRemindersCore', () => {
     expect((await run(zonedDateTimeToMs(DATE, '17:45'))).reminded).toEqual([]);
 
     const r = await run(zonedDateTimeToMs(DATE, '18:05'));
-    expect(r.reminded).toEqual(['ana']);
-    expect(sent.map((m) => m.to)).toEqual(['ana@impulseai.cl']);
+    expect([...r.reminded].sort()).toEqual(['ana', 'fabi']);
+    expect(sent.map((m) => m.to).sort()).toEqual(['ana@impulseai.cl', 'fabi@impulseai.cl']);
     expect(await getDoc(`dailyReportReminders/ana_${DATE}`)).toMatchObject({ uid: 'ana', date: DATE });
 
     // Next run: Ana is not emailed again; Beto after his own 20:00.
     expect((await run(zonedDateTimeToMs(DATE, '18:20'))).reminded).toEqual([]);
     expect((await run(zonedDateTimeToMs(DATE, '20:10'))).reminded).toEqual(['beto']);
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(3);
   });
 
   it('does nothing when the daily report is off', async () => {

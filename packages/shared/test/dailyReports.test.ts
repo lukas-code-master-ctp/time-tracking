@@ -32,6 +32,10 @@ describe('daily reports', () => {
     expect(requiresDailyReport(s, ['x', 'b'])).toBe(true);
     expect(requiresDailyReport(s, ['x'])).toBe(false);
     expect(requiresDailyReport({ ...s, enabled: false }, ['a'])).toBe(false);
+    // People in the field always, when the report is on (even without groups).
+    expect(requiresDailyReport({ enabled: true, groupIds: [] }, [], { workplace: 'field' })).toBe(true);
+    expect(requiresDailyReport({ enabled: true, groupIds: [] }, [], { workplace: 'office' })).toBe(false);
+    expect(requiresDailyReport({ enabled: false, groupIds: [] }, [], { workplace: 'field' })).toBe(false);
   });
 
   it('builds the id', () => {

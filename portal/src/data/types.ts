@@ -28,6 +28,7 @@ import type {
   UserProfile,
   UserStatus,
   WithId,
+  Workplace,
 } from '@timetracking/shared';
 
 export interface TimeRange {
@@ -63,6 +64,8 @@ export interface DataSource {
   listUsers(): Promise<WithId<UserProfile>[]>;
   getUser(uid: string): Promise<WithId<UserProfile> | null>;
   updateUser(uid: string, patch: { role: Role; status: UserStatus }): Promise<void>;
+  /** Office or field (spec 2026-11-13-minuta-terreno). */
+  setWorkplace(uid: string, workplace: Workplace): Promise<void>;
 
   listInvitations(): Promise<WithId<Invitation>[]>;
   /** Full `set` of `invitations/{id}` (create or update). */
