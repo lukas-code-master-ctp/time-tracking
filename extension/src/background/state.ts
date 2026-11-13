@@ -87,6 +87,11 @@ export interface OrgConfigCache {
   moodPulse?: boolean;
   /** Anonymous comments of the organization. Missing in caches before 0.2.27 (= off). */
   feedback?: boolean;
+  /**
+   * The organization asks this person for the daily report (it is on and she
+   * is in one of its groups, spec 2026-11-13-minuta-diaria). Missing before 0.2.30 (= no).
+   */
+  dailyReport?: boolean;
   fetchedAt: number;
 }
 
@@ -142,6 +147,28 @@ export interface Meta {
    * the popup has no "Iniciar jornada". Missing before 0.2.20 (= extension).
    */
   attendance: AttendanceCache | null;
+  /**
+   * Daily report of today (spec 2026-11-13-minuta-diaria): `pending` after the
+   * person closed the work day, until she sends it or says "Ahora no"
+   * (`skipped`); `sent` once sent. Another day or user counts as none.
+   * Missing before 0.2.30.
+   */
+  dailyReport: DailyReportState | null;
+}
+
+export interface DailyReportState {
+  uid: string;
+  /** `YYYY-MM-DD` (America/Santiago). */
+  date: string;
+  status: 'pending' | 'sent' | 'skipped';
+}
+
+export function dailyReportStateFromJSON(raw: unknown): DailyReportState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Partial<DailyReportState>;
+  if (typeof m.uid !== 'string' || typeof m.date !== 'string') return null;
+  if (m.status !== 'pending' && m.status !== 'sent' && m.status !== 'skipped') return null;
+  return { uid: m.uid, date: m.date, status: m.status };
 }
 
 export interface AttendanceCache {
@@ -202,6 +229,7 @@ export function defaultMeta(): Meta {
     mood: null,
     feedback: null,
     attendance: null,
+    dailyReport: null,
   };
 }
 
@@ -317,6 +345,7 @@ export class StateStore {
     this.meta.mood = moodStateFromJSON(this.meta.mood);
     this.meta.feedback = feedbackStateFromJSON(this.meta.feedback);
     this.meta.attendance = attendanceCacheFromJSON(this.meta.attendance);
+    this.meta.dailyReport = dailyReportStateFromJSON(this.meta.dailyReport);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);
     this.shots = shotQueueFromJSON(data[STORAGE_KEYS.shots]);

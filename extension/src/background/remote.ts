@@ -2,7 +2,16 @@
  * Everything the service worker needs from Firebase, behind one interface
  * (Firestore/Storage in firebase.ts, a fake in the unit tests).
  */
-import type { Absence, AnnouncementRead, Celebration, OrgConfig, ScreenshotMeta, WithId } from '@timetracking/shared';
+import type {
+  Absence,
+  AnnouncementRead,
+  Celebration,
+  DailyReport,
+  DailyReportDraft,
+  OrgConfig,
+  ScreenshotMeta,
+  WithId,
+} from '@timetracking/shared';
 import type { Backend } from './sync';
 
 export interface Remote extends Backend {
@@ -51,4 +60,16 @@ export interface Remote extends Backend {
    * `[]` while the rules are not deployed (permission-denied).
    */
   fetchCelebrations(): Promise<WithId<Celebration>[]>;
+  /**
+   * Ids of the groups the person is in (`groups where memberUids
+   * array-contains uid`), spec 2026-11-13-minuta-diaria; `[]` while the
+   * groups rules are not deployed.
+   */
+  listMyGroupIds(uid: string): Promise<string[]>;
+  /** `getDoc(dailyReports/{uid_date})`; null when it does not exist. */
+  getDailyReport(docId: string): Promise<DailyReport | null>;
+  /** `setDoc(dailyReports/{uid_date})` (create or same-day correction). Online only: not queued. */
+  putDailyReport(docId: string, data: DailyReport): Promise<void>;
+  /** `draftDailyReport` callable: transcript + AI draft of the recorded audio (WAV, base64). */
+  draftDailyReport(audio: string, mimeType: string): Promise<DailyReportDraft>;
 }

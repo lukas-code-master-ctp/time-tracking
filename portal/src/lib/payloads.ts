@@ -18,6 +18,8 @@ import {
   readActiveBreakSettings,
   readMoodPulseEnabled,
   readFeedbackEnabled,
+  readDailyReportSettings,
+  DAILY_REPORT_MAX_GROUPS,
   type ActiveBreakMode,
   type Invitation,
   type OrgConfig,
@@ -49,6 +51,9 @@ export interface OrgConfigForm {
   moodPulseEnabled: boolean;
   /** Anonymous comments from the popup (spec 2026-11-13-comentarios-anonimos). */
   feedbackEnabled: boolean;
+  /** Daily report of some groups (spec 2026-11-13-minuta-diaria). Optional: missing = off, no groups. */
+  dailyReportEnabled?: boolean;
+  dailyReportGroupIds?: string[];
 }
 
 export type FieldErrors<K extends string> = Partial<Record<K, string>>;
@@ -144,6 +149,11 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
     ...(form.moodPulseEnabled ? { moodPulseEnabled: true } : {}),
     // Same for the anonymous comments.
     ...(form.feedbackEnabled ? { feedbackEnabled: true } : {}),
+    // Same: only when set (rules before the daily report do not know them).
+    ...(form.dailyReportEnabled ? { dailyReportEnabled: true } : {}),
+    ...(form.dailyReportGroupIds && form.dailyReportGroupIds.length > 0
+      ? { dailyReportGroupIds: [...new Set(form.dailyReportGroupIds)].slice(0, DAILY_REPORT_MAX_GROUPS) }
+      : {}),
     updatedAt: Math.floor(now),
     updatedBy: uid,
   };
@@ -160,6 +170,8 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
     ...activeBreaksForm(config),
     moodPulseEnabled: readMoodPulseEnabled(config),
     feedbackEnabled: readFeedbackEnabled(config),
+    dailyReportEnabled: readDailyReportSettings(config).enabled,
+    dailyReportGroupIds: readDailyReportSettings(config).groupIds,
   };
 }
 

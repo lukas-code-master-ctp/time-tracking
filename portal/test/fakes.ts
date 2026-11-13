@@ -10,6 +10,7 @@ import {
   type AttendancePhoto,
   type AttendanceSettings,
   type Celebration,
+  type DailyReport,
   type Kiosk,
   type Invitation,
   type MoodWeek,
@@ -51,6 +52,8 @@ export interface FakeDb {
   attendancePhotos?: WithId<AttendancePhoto>[];
   /** Groups of people (optional). */
   groups?: WithId<PersonGroup>[];
+  /** Daily reports (optional). */
+  dailyReports?: WithId<DailyReport>[];
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
   /** Anonymous comments (optional). */
@@ -106,6 +109,7 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     deleteFeedback: async (id: string) => {
       db.feedback = (db.feedback ?? []).filter((f) => f.id !== id);
     },
+    listDailyReports: async (from, to) => (db.dailyReports ?? []).filter((r) => r.date >= from && r.date <= to),
     listPendingAbsences: async () => (db.absences ?? []).filter((a) => a.status === 'pending'),
     saveAbsence: async (id, absence) => {
       const newId = id ?? `abs-${(db.absences ?? []).length + 1}`;

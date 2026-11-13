@@ -7,6 +7,8 @@ import {
   type Announcement,
   type AnnouncementRead,
   type Celebration,
+  type DailyReport,
+  type DailyReportDraft,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
@@ -36,7 +38,9 @@ export type BackendCall =
   | { op: 'putBreak'; docId: string; data: ActiveBreak }
   | { op: 'putAnnouncementRead'; docId: string; data: AnnouncementRead }
   | { op: 'putMood'; uid: string; week: string; date: string; score: number }
-  | { op: 'putFeedback'; uid: string; week: string; date: string; tone: string; text: string };
+  | { op: 'putFeedback'; uid: string; week: string; date: string; tone: string; text: string }
+  | { op: 'putDailyReport'; docId: string; data: DailyReport }
+  | { op: 'draftDailyReport'; bytes: number; mimeType: string };
 
 export const ORG: OrgConfig = {
   allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -262,6 +266,31 @@ export class FakeBackend implements Remote {
       .map(([id, a]) => ({ ...structuredClone(a), id }))
       .sort((a, b) => (b.publishAt ?? 0) - (a.publishAt ?? 0))
       .slice(0, max);
+  }
+  /** `groups` ids by member uid (spec 2026-11-13-minuta-diaria). */
+  groupsOf = new Map<string, string[]>();
+  dailyReports = new Map<string, DailyReport>();
+  draft: DailyReportDraft = { transcript: 'Hoy visité dos clientes.', text: '- Visité dos clientes.' };
+  async listMyGroupIds(uid: string): Promise<string[]> {
+    this.check();
+    return this.groupsOf.get(uid) ?? [];
+  }
+  async getDailyReport(docId: string): Promise<DailyReport | null> {
+    this.check();
+    return this.dailyReports.get(docId) ?? null;
+  }
+  async putDailyReport(docId: string, data: DailyReport): Promise<void> {
+    this.check();
+    const existing = this.dailyReports.get(docId);
+    // firestore.rules: createdAt never changes.
+    if (existing && existing.createdAt !== data.createdAt) throw new BackendError('permission-denied');
+    this.calls.push({ op: 'putDailyReport', docId, data });
+    this.dailyReports.set(docId, data);
+  }
+  async draftDailyReport(audio: string, mimeType: string): Promise<DailyReportDraft> {
+    this.check();
+    this.calls.push({ op: 'draftDailyReport', bytes: audio.length, mimeType });
+    return this.draft;
   }
   async listAnnouncementReads(uid: string): Promise<string[]> {
     this.check();

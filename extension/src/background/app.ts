@@ -38,6 +38,12 @@ import {
   normalizeFeedbackText,
   FEEDBACK_MAX_LENGTH,
   type FeedbackTone,
+  readDailyReportSettings,
+  requiresDailyReport,
+  dailyReportDocId,
+  validateDailyReport,
+  type DailyReport,
+  type DailyReportDraft,
   type MoodScore,
   readPersonSchedule,
   announcementReadId,
@@ -204,6 +210,7 @@ export class App {
       const promptAt = parseBreakNotificationId(id);
       if (promptAt !== null) void this.onBreakButton(promptAt, index).catch(logError('pausa activa'));
       else if (parseAnnouncementNotificationId(id) !== null) void this.onReminderClicked(id).catch(logError('comunicado'));
+      else if (id.startsWith(DAILY_REPORT_NOTIFICATION_PREFIX)) void this.onReminderClicked(id).catch(logError('minuta'));
       else void this.onReminderAction(id).catch(logError('recordatorio'));
     });
     chrome.notifications?.onClicked.addListener((id) => void this.onReminderClicked(id).catch(logError('recordatorio')));
@@ -286,6 +293,17 @@ export class App {
       console.warn(`[timetracking] no se pudo leer config/org (${errorCode(err)})`);
       return;
     }
+    // Daily report (spec 2026-11-13-minuta-diaria): asked of the members of its groups.
+    const reportSettings = readDailyReportSettings(config);
+    let dailyReport: boolean | null = false;
+    if (reportSettings.enabled && reportSettings.groupIds.length > 0) {
+      try {
+        dailyReport = requiresDailyReport(reportSettings, await this.backend.listMyGroupIds(user.uid));
+      } catch (err) {
+        console.warn(`[timetracking] no se pudieron leer los grupos (${errorCode(err)})`);
+        dailyReport = null; // keep what was cached
+      }
+    }
     await this.store.run(async () => {
       this.store.meta.org = {
         uid: user.uid,
@@ -296,6 +314,8 @@ export class App {
         activeBreaks: readActiveBreakSettings(config),
         moodPulse: readMoodPulseEnabled(config),
         feedback: readFeedbackEnabled(config),
+        dailyReport:
+          dailyReport ?? (this.store.meta.org?.uid === user.uid ? this.store.meta.org.dailyReport === true : false),
         fetchedAt: this.now(),
       };
       await this.store.save('meta');
@@ -850,6 +870,7 @@ export class App {
     await this.session.stop();
     await this.auth.ready();
     const user = this.auth.currentUser();
+    await this.askDailyReport(user?.uid);
     await this.store.run(async () => {
       const uid = this.activeUid(user?.uid);
       const { meta } = this.store;
@@ -942,8 +963,149 @@ export class App {
     return { sentToday: f !== null && f.uid === uid && f.date === dateKey(this.now(), DEFAULT_TIME_ZONE) };
   }
 
+  // ---------- daily report (spec 2026-11-13-minuta-diaria) ----------
+
+  /**
+   * After a manual close: when the organization asks this person for the
+   * daily report and today's was not sent nor skipped on this device, leaves
+   * it pending for the popup and shows a notification that opens the page.
+   */
+  private async askDailyReport(uid: string | null | undefined): Promise<void> {
+    const date = await this.store.run(async () => {
+      const id = this.activeUid(uid);
+      const { meta } = this.store;
+      if (!id || meta.org?.uid !== id || meta.org.dailyReport !== true) return null;
+      const today = dateKey(this.now(), DEFAULT_TIME_ZONE);
+      if (meta.dailyReport?.uid === id && meta.dailyReport.date === today) return null;
+      meta.dailyReport = { uid: id, date: today, status: 'pending' };
+      await this.store.save('meta');
+      return today;
+    });
+    if (!date) return;
+    try {
+      await chrome.notifications.create(`${DAILY_REPORT_NOTIFICATION_PREFIX}${date}`, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+        title: 'Envía tu minuta del día',
+        message: 'Cuéntanos qué hiciste hoy: escríbelo o graba un audio y la armamos por ti.',
+        buttons: [{ title: 'Escribir minuta' }],
+        priority: 2,
+        requireInteraction: true,
+      });
+    } catch (err) {
+      console.warn('[timetracking] no se pudo mostrar el aviso de la minuta', err);
+    }
+  }
+
+  /** The daily report page in a tab. */
+  private async openDailyReportPage(): Promise<void> {
+    await chrome.tabs.create({ url: chrome.runtime.getURL('minuta.html') });
+  }
+
+  /** Signed-in person asked for the daily report; throws a Spanish message otherwise. */
+  private async dailyReportUid(): Promise<string> {
+    const uid = await this.memberUid();
+    const asked = await this.store.run(() => this.store.meta.org?.uid === uid && this.store.meta.org.dailyReport === true);
+    if (!asked) {
+      // The groups may have changed since the last read.
+      await this.refreshOrgConfig(0);
+      const again = await this.store.run(() => this.store.meta.org?.uid === uid && this.store.meta.org.dailyReport === true);
+      if (!again) throw new AuthError('daily-report-off', 'Tu empresa no te pidió la minuta diaria.');
+    }
+    return uid;
+  }
+
+  private async dailyReportCall<T>(what: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      console.warn(`[timetracking] minuta (${what})`, err);
+      const code = errorCode(err);
+      const message = (err as { message?: unknown } | null)?.message;
+      throw new AuthError(
+        'daily-report-failed',
+        code === 'permission-denied'
+          ? 'Tu empresa aún no tiene habilitada la minuta diaria, o ya no puedes cambiar la de ese día.'
+          : // The function answers Spanish messages for these.
+            (code === 'resource-exhausted' || code === 'invalid-argument' || code === 'failed-precondition' || code === 'unavailable') &&
+              typeof message === 'string' && message !== ''
+            ? message
+            : 'No se pudo conectar. Revisa tu conexión y vuelve a intentarlo.',
+      );
+    }
+  }
+
+  /** Today's report of the person (null = not sent yet). */
+  async getDailyReport(): Promise<DailyReport | null> {
+    const uid = await this.dailyReportUid();
+    const date = dateKey(this.now(), DEFAULT_TIME_ZONE);
+    return this.dailyReportCall('leer', () => this.backend.getDailyReport(dailyReportDocId(uid, date)));
+  }
+
+  async draftDailyReport(audio: string, mimeType: string): Promise<DailyReportDraft> {
+    await this.dailyReportUid();
+    return this.dailyReportCall('transcribir', () => this.backend.draftDailyReport(audio, mimeType));
+  }
+
+  /** Sends (or corrects) today's report. */
+  async sendDailyReport(text: string, source: 'text' | 'audio', transcript: string | null): Promise<DailyReport> {
+    const uid = await this.dailyReportUid();
+    const date = dateKey(this.now(), DEFAULT_TIME_ZONE);
+    const docId = dailyReportDocId(uid, date);
+    const previous = await this.dailyReportCall('leer', () => this.backend.getDailyReport(docId));
+    const at = Math.round(this.now());
+    const report: DailyReport = {
+      uid,
+      date,
+      text: text.trim(),
+      source,
+      transcript: source === 'audio' ? (transcript?.trim() || null) : null,
+      createdAt: previous?.createdAt ?? at,
+      updatedAt: Math.max(at, previous?.createdAt ?? at),
+    };
+    if (validateDailyReport(report).includes('text')) {
+      throw new AuthError('daily-report-invalid', report.text === '' ? 'Escribe tu minuta antes de enviarla.' : 'La minuta es demasiado larga.');
+    }
+    await this.dailyReportCall('enviar', () => this.backend.putDailyReport(docId, report));
+    await this.store.run(async () => {
+      this.store.meta.dailyReport = { uid, date, status: 'sent' };
+      await this.store.save('meta');
+    });
+    await chrome.notifications.clear(`${DAILY_REPORT_NOTIFICATION_PREFIX}${date}`).catch(() => undefined);
+    return report;
+  }
+
+  /** "Ahora no" on the popup card. */
+  async skipDailyReport(): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const date = await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      const r = this.store.meta.dailyReport;
+      if (!uid || !r || r.uid !== uid || r.status !== 'pending') return null;
+      this.store.meta.dailyReport = { ...r, status: 'skipped' };
+      await this.store.save('meta');
+      return r.date;
+    });
+    if (date) await chrome.notifications.clear(`${DAILY_REPORT_NOTIFICATION_PREFIX}${date}`).catch(() => undefined);
+  }
+
+  /** Daily report for the popup (inside store.run); null when not asked of this person. */
+  private dailyReportView(uid: string | null): StatusView['dailyReport'] {
+    const { org, dailyReport } = this.store.meta;
+    if (!uid || org?.uid !== uid || org.dailyReport !== true) return null;
+    const today = dateKey(this.now(), DEFAULT_TIME_ZONE);
+    const todays = dailyReport !== null && dailyReport.uid === uid && dailyReport.date === today;
+    return { pending: todays && dailyReport.status === 'pending', sentToday: todays && dailyReport.status === 'sent' };
+  }
+
   /** Click on the body (or button) of a reminder, an active break or an announcement: the popup. */
   async onReminderClicked(notificationId: string): Promise<void> {
+    if (notificationId.startsWith(DAILY_REPORT_NOTIFICATION_PREFIX)) {
+      await chrome.notifications.clear(notificationId).catch(() => undefined);
+      await this.openDailyReportPage();
+      return;
+    }
     if (
       !parseReminderNotificationId(notificationId) &&
       parseBreakNotificationId(notificationId) === null &&
@@ -1063,6 +1225,19 @@ export class App {
           return { ok: true, status: await this.status(), absences: await this.listAbsences() };
         case 'announcements.ack':
           await this.acknowledgeAnnouncement(req.id);
+          break;
+        case 'dailyReport.get':
+          return { ok: true, status: await this.status(), dailyReport: await this.getDailyReport() };
+        case 'dailyReport.draft':
+          return { ok: true, status: await this.status(), draft: await this.draftDailyReport(req.audio, req.mimeType) };
+        case 'dailyReport.send':
+          return {
+            ok: true,
+            dailyReport: await this.sendDailyReport(req.text, req.source, req.transcript),
+            status: await this.status(),
+          };
+        case 'dailyReport.skip':
+          await this.skipDailyReport();
           break;
         default:
           break;
@@ -1290,6 +1465,7 @@ export class App {
       }
       this.store.meta.mood = null;
       this.store.meta.feedback = null;
+      this.store.meta.dailyReport = null;
       if (pendingBreak) await chrome.notifications.clear(breakNotificationId(pendingBreak.at)).catch(() => undefined);
       await this.store.save('acc', 'meta');
       await this.ensureScheduleAlarm(null, this.now());
@@ -1368,6 +1544,7 @@ export class App {
         mood: this.moodView(profile && user ? user.uid : null, org?.moodPulse === true),
         feedback: this.feedbackView(profile && user ? user.uid : null, org?.feedback === true),
         attendanceMode: user && meta.attendance?.uid === user.uid ? meta.attendance.mode : null,
+        dailyReport: this.dailyReportView(profile && user ? this.activeUid(user.uid) : null),
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,
         lastSyncOkAt: meta.lastSyncOkAt,
@@ -1410,6 +1587,8 @@ export const KIOSK_ALARM = 'tt-kiosk';
 /** With the popup open, the kiosk entry is checked at most this often. */
 const KIOSK_POPUP_CHECK_MS = 15_000;
 const KIOSK_NOTIFICATION_PREFIX = 'tt-kiosk-in:';
+/** `tt-daily-report:{YYYY-MM-DD}`: "Envía tu minuta del día" (spec 2026-11-13-minuta-diaria). */
+export const DAILY_REPORT_NOTIFICATION_PREFIX = 'tt-daily-report:';
 
 export function kioskNotificationId(sessionId: string): string {
   return `${KIOSK_NOTIFICATION_PREFIX}${sessionId}`;

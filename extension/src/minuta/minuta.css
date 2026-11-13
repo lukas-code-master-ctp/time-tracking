@@ -1,0 +1,61 @@
+/* "Minuta del día" page (spec 2026-11-13-minuta-diaria); layout from absences.css. */
+.card > p.small {
+  margin: 0 0 12px;
+}
+
+.recorder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn.primary.recording {
+  background: var(--danger);
+  border-color: transparent;
+}
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.level {
+  width: 120px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.level > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+#count {
+  justify-self: end;
+}
+
+.transcript summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.transcript p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .level {
+    display: none;
+  }
+}
+
+.form + p.small {
+  margin: 12px 0 0;
+}

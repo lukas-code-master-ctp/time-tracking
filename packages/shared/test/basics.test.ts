@@ -123,6 +123,8 @@ describe('collections', () => {
       attendanceSettings: 'attendanceSettings',
       kiosks: 'kiosks',
       attendancePhotos: 'attendancePhotos',
+      dailyReports: 'dailyReports',
+      dailyReportDrafts: 'dailyReportDrafts',
     });
   });
 

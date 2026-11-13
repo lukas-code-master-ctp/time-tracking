@@ -15,6 +15,10 @@
  *   emulator (which only logs). Used by `onInvitationWritten` and
  *   `weeklyCelebrationsDigest`.
  * - Env `PORTAL_URL` (optional): link to the portal in the weekly digest.
+ * - Daily report drafts (spec 2026-11-13-minuta-diaria): secret
+ *   `OPENROUTER_API_KEY` (asked by `firebase deploy` the first time) and env
+ *   `DAILY_REPORT_MODEL` (optional, default `google/gemini-2.5-flash`). The
+ *   emulator never calls OpenRouter: it answers a fixed draft.
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -51,6 +55,8 @@ import { sendCelebrationsDigestCore } from './core/celebrationsDigest.js';
 import { purgeOldScreenshotsCore } from './core/purge.js';
 import { autoCloseStaleSessionsCore } from './core/autoClose.js';
 import { kioskPunchCore } from './core/kiosk.js';
+import { draftDailyReportCore, type DraftModel } from './core/dailyReportDraft.js';
+import { OPENROUTER_SECRET_NAME, dailyReportModel, openRouterModel } from './core/openrouter.js';
 
 initializeApp();
 setGlobalOptions({ region: FUNCTIONS_REGION, maxInstances: 10 });
@@ -121,6 +127,33 @@ export const joinOrg = onCall(async (request) => {
 export const kioskPunch = onCall(async (request) => {
   return kioskPunchCore({ db: getFirestore(), now: Date.now(), bucket: getStorage().bucket() }, request.data);
 });
+
+// ---------- draftDailyReport ----------
+
+const OPENROUTER_API_KEY = defineSecret(OPENROUTER_SECRET_NAME);
+
+/** Emulator and tests: a fixed draft, no network. */
+const fakeDraftModel: DraftModel = async () => ({
+  transcript: 'Hoy visité a dos clientes en Providencia y dejé instalado el equipo.',
+  text: '- Visité dos clientes en Providencia.\n- Dejé instalado el equipo.',
+});
+
+// Spec 2026-11-13-minuta-diaria: the audio recorded in the extension becomes a
+// transcript and a draft of the daily report (OpenRouter). Nothing is stored
+// but a per-day counter.
+export const draftDailyReport = onCall(
+  { secrets: isEmulator() ? [] : [OPENROUTER_API_KEY], timeoutSeconds: 120, memory: '512MiB' },
+  async (request) => {
+    const model = isEmulator()
+      ? fakeDraftModel
+      : openRouterModel({
+          apiKey: OPENROUTER_API_KEY.value().trim(),
+          model: dailyReportModel(process.env),
+          referer: process.env.PORTAL_URL?.trim() || undefined,
+        });
+    return draftDailyReportCore({ db: getFirestore(), now: Date.now(), model }, request.auth?.uid, request.data);
+  },
+);
 
 // ---------- onInvitationWritten ----------
 

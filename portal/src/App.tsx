@@ -6,6 +6,7 @@ import { ActiveBreaksPage } from './pages/ActiveBreaksPage';
 import { AttendancePage } from './pages/AttendancePage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { CelebrationsPage } from './pages/CelebrationsPage';
+import { DailyReportsPage } from './pages/DailyReportsPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { LoginPage, NoAccessPage, SplashPage } from './pages/LoginPage';
@@ -44,6 +45,7 @@ export function App() {
             <Route path="comunicados" element={<AnnouncementsPage />} />
             <Route path="animo" element={<MoodPage />} />
             <Route path="comentarios" element={<FeedbackPage />} />
+            <Route path="minutas" element={<DailyReportsPage />} />
             <Route path="configuracion" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

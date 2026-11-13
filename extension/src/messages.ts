@@ -15,6 +15,8 @@ import {
   type FeedbackTone,
   type Absence,
   type AbsenceType,
+  type DailyReport,
+  type DailyReportDraft,
   type Role,
   type UpcomingCelebration,
   type UserStatus,
@@ -69,6 +71,14 @@ export type PopupRequest =
   | { type: 'absences.cancel'; id: string }
   /** "Confirmo que lo leí" of an internal announcement (spec 2026-11-05-comunicados). */
   | { type: 'announcements.ack'; id: string }
+  /** Daily report page (spec 2026-11-13-minuta-diaria): today's report, if sent. */
+  | { type: 'dailyReport.get' }
+  /** Transcript + AI draft of a recorded audio (WAV, base64). */
+  | { type: 'dailyReport.draft'; audio: string; mimeType: string }
+  /** Send (or correct) today's report. `transcript`: of the audio the draft came from, else null. */
+  | { type: 'dailyReport.send'; text: string; source: 'text' | 'audio'; transcript: string | null }
+  /** "Ahora no" on the popup card: not reminded again today (the page still works). */
+  | { type: 'dailyReport.skip' }
   /** Dev build only (e2e): run the 30-second pulse now. */
   | { type: 'debug.forcePulse' }
   /** Dev build only (e2e): refresh config/org and take this block's screenshot now. */
@@ -94,6 +104,10 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'absences.request',
   'absences.cancel',
   'announcements.ack',
+  'dailyReport.get',
+  'dailyReport.draft',
+  'dailyReport.send',
+  'dailyReport.skip',
   // Dropped from the prod bundle (`__APP_ENV__` is replaced literally).
   ...(__APP_ENV__ === 'dev' ? (['auth.devSignIn', 'debug.forcePulse', 'debug.forceScreenshot'] as const) : []),
 ];
@@ -125,6 +139,18 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
   if (m.type === 'absences.cancel' || m.type === 'announcements.ack') {
     const id = (msg as { id?: unknown }).id;
     return typeof id === 'string' && id !== '';
+  }
+  if (m.type === 'dailyReport.draft') {
+    const d = msg as { audio?: unknown; mimeType?: unknown };
+    return typeof d.audio === 'string' && typeof d.mimeType === 'string';
+  }
+  if (m.type === 'dailyReport.send') {
+    const d = msg as { text?: unknown; source?: unknown; transcript?: unknown };
+    return (
+      typeof d.text === 'string' &&
+      (d.source === 'text' || d.source === 'audio') &&
+      (d.transcript === null || typeof d.transcript === 'string')
+    );
   }
   if (m.type === 'absences.request') {
     const a = (msg as { absence?: unknown }).absence;
@@ -235,6 +261,12 @@ export interface StatusView {
    * jornada" in the popup). null = not read yet (as `extension`).
    */
   attendanceMode: AttendanceMode | null;
+  /**
+   * Daily report (spec 2026-11-13-minuta-diaria); null = not asked of this
+   * person. `pending`: she closed today's work day and has not sent it nor
+   * said "Ahora no". `sentToday`: today's report was sent from this device.
+   */
+  dailyReport: { pending: boolean; sentToday: boolean } | null;
   /** Operations waiting to be uploaded. */
   pendingOps: number;
   /** Screenshots waiting to be uploaded. */
@@ -247,5 +279,14 @@ export interface StatusView {
 }
 
 export type PopupResponse =
-  | { ok: true; status: StatusView; debug?: unknown; absences?: WithId<Absence>[] }
+  | {
+      ok: true;
+      status: StatusView;
+      debug?: unknown;
+      absences?: WithId<Absence>[];
+      /** `dailyReport.get` / `dailyReport.send`: today's report (null = not sent). */
+      dailyReport?: DailyReport | null;
+      /** `dailyReport.draft`. */
+      draft?: DailyReportDraft;
+    }
   | { ok: false; error: string; reason?: string; status?: StatusView };
