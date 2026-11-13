@@ -3601,3 +3601,72 @@ input[type='time'][aria-invalid='true'] {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- daily reports (spec 2026-11-13-minuta-diaria) ---------- */
+
+.report-day {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.report-day input[type='date'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  min-height: 32px;
+}
+
+.report-count {
+  margin: 0 18px 4px;
+}
+
+.report-item {
+  display: grid;
+  gap: 8px;
+}
+
+.report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.report-head .person-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.report-body {
+  padding-left: 38px;
+  display: grid;
+  gap: 6px;
+}
+
+.report-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.report-transcript summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.report-transcript p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 560px) {
+  .report-body {
+    padding-left: 0;
+  }
+}

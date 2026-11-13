@@ -140,6 +140,8 @@ describe('org config', () => {
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
       feedbackEnabled: false,
+      dailyReportEnabled: false,
+      dailyReportGroupIds: [],
     });
   });
 
@@ -166,6 +168,8 @@ describe('org config', () => {
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
       feedbackEnabled: false,
+      dailyReportEnabled: false,
+      dailyReportGroupIds: [],
     });
     expect(orgConfigToForm({ ...legacy, pauseTimerAtLunch: true }, ['x.cl']).pauseTimerAtLunch).toBe(true);
   });

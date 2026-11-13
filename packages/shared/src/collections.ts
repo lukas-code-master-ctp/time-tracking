@@ -35,6 +35,10 @@ export const COLLECTIONS = {
   kiosks: 'kiosks',
   /** `attendancePhotos/{sessionId_in|out}`: photo taken by the kiosk at the entry or exit (written by `kioskPunch`). */
   attendancePhotos: 'attendancePhotos',
+  /** `dailyReports/{uid_YYYY-MM-DD}`: daily report ("minuta") of people in the groups asked for it (dailyReports.ts). */
+  dailyReports: 'dailyReports',
+  /** `dailyReportDrafts/{uid_YYYY-MM-DD}`: AI drafts used that day (written by `draftDailyReport`). */
+  dailyReportDrafts: 'dailyReportDrafts',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -60,6 +60,14 @@ export interface OrgConfig {
    * happened. Optional (missing = off): read it with `readFeedbackEnabled`.
    */
   feedbackEnabled?: boolean;
+  /**
+   * "Minuta diaria" (spec 2026-11-13-minuta-diaria): people in
+   * `dailyReportGroupIds` (`groups/{id}`, 1–20) are asked for a report of
+   * their day when they close the work day. Optional (missing = off): read
+   * them with `readDailyReportSettings`.
+   */
+  dailyReportEnabled?: boolean;
+  dailyReportGroupIds?: string[];
   updatedAt: EpochMs;
   /** uid of the admin who last changed it (or 'system'). */
   updatedBy: string;

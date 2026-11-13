@@ -11,6 +11,7 @@ import type {
   AttendancePhoto,
   AttendanceSettings,
   Celebration,
+  DailyReport,
   Kiosk,
   Invitation,
   MoodWeek,
@@ -111,6 +112,11 @@ export interface DataSource {
   listCelebrations(): Promise<WithId<Celebration>[]>;
   /** Writes the whole `celebrations/{uid}`. */
   saveCelebration(uid: string, celebration: Celebration): Promise<void>;
+  /**
+   * Daily reports of the days `fromDate`…`toDate` (YYYY-MM-DD, inclusive),
+   * spec 2026-11-13-minuta-diaria. `[]` while the rules are not deployed.
+   */
+  listDailyReports(fromDate: string, toDate: string): Promise<WithId<DailyReport>[]>;
   /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
   listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
   /**

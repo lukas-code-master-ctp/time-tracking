@@ -20,3 +20,4 @@ export * from './mood.js';
 export * from './feedback.js';
 export * from './sessions.js';
 export * from './attendance.js';
+export * from './dailyReports.js';

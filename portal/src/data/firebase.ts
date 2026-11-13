@@ -55,6 +55,7 @@ import {
   readAllowedDomains,
   readAttendanceSettings,
   readCelebration,
+  readDailyReport,
   readGroup,
   readKiosk,
   readPersonSchedule,
@@ -66,6 +67,7 @@ import {
   type Announcement,
   type AnnouncementRead,
   type Celebration,
+  type DailyReport,
   type Invitation,
   type MoodWeek,
   isFeedback,
@@ -377,6 +379,23 @@ export function createFirebaseBackend(): Backend {
         const snap = await getDocs(collection(db, COLLECTIONS.announcementReads));
         return snap.docs.map((d) => d.data() as AnnouncementRead);
       } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
+    async listDailyReports(fromDate, toDate) {
+      try {
+        const snap = await getDocs(
+          query(collection(db, COLLECTIONS.dailyReports), where('date', '>=', fromDate), where('date', '<=', toDate)),
+        );
+        const out: WithId<DailyReport>[] = [];
+        for (const d of snap.docs) {
+          const r = readDailyReport(d.data());
+          if (r) out.push({ ...r, id: d.id });
+        }
+        return out;
+      } catch (err) {
+        // Rules of the daily report not deployed yet: no reports.
         if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
         throw err;
       }

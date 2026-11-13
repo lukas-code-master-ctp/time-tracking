@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minuta del día — Mi Pega HR</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <img src="icons/icon-48.png" alt="" width="40" height="40" />
+        <div>
+          <h1>Minuta del día</h1>
+          <p class="muted" id="subtitle">Cuenta qué hiciste hoy: dónde estuviste, qué quedó listo y qué quedó pendiente.</p>
+        </div>
+      </header>
+
+      <p id="status" class="banner" role="status" hidden></p>
+
+      <section class="card" aria-labelledby="h-audio">
+        <h2 id="h-audio">Grabar un audio</h2>
+        <p class="small muted">Habla como si le contaras tu día a tu jefatura (máximo 4 minutos). La IA lo transcribe y arma la minuta; tú la revisas antes de enviarla. El audio no se guarda.</p>
+        <div class="recorder">
+          <button type="button" id="record" class="btn primary">Grabar audio</button>
+          <span id="timer" class="timer" aria-live="off" hidden>0:00</span>
+          <span id="level" class="level" aria-hidden="true" hidden><span></span></span>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="h-text">
+        <h2 id="h-text">Tu minuta</h2>
+        <form id="form" class="form" novalidate>
+          <div class="field">
+            <label for="text">Minuta</label>
+            <textarea id="text" rows="10" maxlength="4000" placeholder="- Visité al cliente X en Maipú: quedó instalado el equipo.&#10;- Pendiente: volver el jueves con el repuesto."></textarea>
+            <span id="count" class="small muted">0 / 4000</span>
+          </div>
+          <details id="transcript-box" class="transcript" hidden>
+            <summary class="small">Ver transcripción del audio</summary>
+            <p id="transcript" class="small muted"></p>
+          </details>
+          <div class="actions">
+            <button type="submit" id="submit" class="btn primary">Enviar minuta</button>
+          </div>
+        </form>
+        <p class="small muted">Tu empresa ve la minuta con tu nombre. Puedes corregirla hasta el final del día.</p>
+      </section>
+    </main>
+    <script type="module" src="/src/minuta/main.ts"></script>
+  </body>
+</html>
