@@ -10,7 +10,7 @@ import { ADMIN, backendOf, emptyDb } from './fakes';
 // Friday 2026-11-13, 10:00 in Santiago (week 2026-W46).
 const NOW = Date.UTC(2026, 10, 13, 13, 0);
 
-function renderApp(backend: Backend, path = '/comentarios') {
+function renderApp(backend: Backend, path = '/animo') {
   return render(
     <BackendProvider backend={backend}>
       <MemoryRouter initialEntries={[path]}>
@@ -37,7 +37,8 @@ describe('Comentarios anónimos', () => {
       { id: 'c', week: '2026-W44', tone: 'positive', text: 'Buena capacitación' },
       { id: 'old', week: '2026-W20', tone: 'negative', text: 'Muy antiguo' },
     ];
-    renderApp(backendOf(db, ADMIN));
+    // The old address leads to the shared page.
+    renderApp(backendOf(db, ADMIN), '/comentarios');
     const week46 = await screen.findByRole('region', { name: 'Semana 9–15 nov' });
     expect(within(week46).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
       expect.stringContaining('Gran almuerzo de equipo'),
@@ -76,8 +77,22 @@ describe('Comentarios anónimos', () => {
     };
     renderApp(backendOf(db, ADMIN));
     await userEvent.click(await screen.findByLabelText(/Permitir comentarios anónimos/));
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await userEvent.click(screen.getAllByRole('button', { name: 'Guardar cambios' })[1]!);
     expect(await screen.findByText(/Configuración guardada/)).toBeInTheDocument();
     expect(db.config).toMatchObject({ feedbackEnabled: true, moodPulseEnabled: true, screenshotRetentionDays: 30 });
+  });
+
+  it('shares the page with the mood pulse; each switch keeps the other', async () => {
+    const db = emptyDb();
+    db.config = { allowedDomains: ['impulseai.cl'], screenshotsEnabled: false, blurScreenshots: true, screenshotRetentionDays: 90, updatedAt: 1, updatedBy: 'x' };
+    renderApp(backendOf(db, ADMIN));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Ánimo y comentarios' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByLabelText(/Cómo estuvo tu día/));
+    const [saveMood, saveFeedback] = screen.getAllByRole('button', { name: 'Guardar cambios' });
+    await userEvent.click(saveMood!);
+    expect(await screen.findByText(/Configuración guardada/)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/Permitir comentarios anónimos/));
+    await userEvent.click(saveFeedback!);
+    await vi.waitFor(() => expect(db.config).toMatchObject({ moodPulseEnabled: true, feedbackEnabled: true }));
   });
 });

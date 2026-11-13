@@ -3788,3 +3788,18 @@ input[type='time'][aria-invalid='true'] {
     padding-left: 0;
   }
 }
+
+/* Page with several features (Ánimo y comentarios): one title per feature. */
+.section-title {
+  margin: 8px 0 2px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.section-title:not(:first-of-type) {
+  margin-top: 28px;
+}
+
+.section-subtitle {
+  margin: 0 0 12px;
+}

@@ -73,7 +73,7 @@ describe('Pulso de ánimo', () => {
     };
     renderApp(backendOf(db, ADMIN));
     await userEvent.click(await screen.findByLabelText(/Cómo estuvo tu día/));
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await userEvent.click(screen.getAllByRole('button', { name: 'Guardar cambios' })[0]!);
     expect(await screen.findByText(/Configuración guardada/)).toBeInTheDocument();
     expect(db.config).toMatchObject({ moodPulseEnabled: true, screenshotsEnabled: true, screenshotRetentionDays: 30, activeBreaksEnabled: true });
   });
