@@ -237,6 +237,23 @@ export interface Announcement {
   archivedAt: EpochMs | null;
 }
 
+/**
+ * `groups/{autoId}` — a named group of people (spec 2026-11-13-grupos-y-comunicados-agendados),
+ * defined by an admin in the portal (Colaboradores › Grupos). Used to send an
+ * announcement to some people only, and by other features that apply to a
+ * part of the team. An active person can read the groups she belongs to.
+ */
+export interface PersonGroup {
+  /** 1–60 characters, unique among the groups (checked by the portal). */
+  name: string;
+  /** uids of the members, without repeats. At most 500. */
+  memberUids: string[];
+  createdAt: EpochMs;
+  createdBy: string;
+  updatedAt: EpochMs;
+  updatedBy: string;
+}
+
 /** `announcementReads/{announcementId_uid}` — "Confirmo que lo leí", written once by the person. */
 export interface AnnouncementRead {
   announcementId: string;

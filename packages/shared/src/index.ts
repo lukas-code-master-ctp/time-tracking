@@ -14,6 +14,7 @@ export * from './exercises.js';
 export * from './exerciseArt.js';
 export * from './absences.js';
 export * from './announcements.js';
+export * from './groups.js';
 export * from './celebrations.js';
 export * from './mood.js';
 export * from './feedback.js';

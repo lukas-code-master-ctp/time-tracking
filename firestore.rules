@@ -18,6 +18,8 @@ rules_version = '2';
 // - `announcements` (spec 2026-11-05-comunicados) are published, archived
 //   and deleted by an admin and read by every active person, who confirms
 //   the reading once in `announcementReads`.
+// - `groups` (spec 2026-11-13-grupos-y-comunicados-agendados): named groups
+//   of people, written by an admin; a person reads the groups she is in.
 // - `celebrations/{uid}` (birthdays and work anniversaries, spec
 //   2026-11-05-cumpleanos-aniversarios): written by an admin, read by every
 //   active person (the extension popup shows the team's).
@@ -590,6 +592,35 @@ service cloud.firestore {
         && validAnnouncementRead(incoming(), docId)
         && changedKeys().size() == 0;
       allow delete: if false;
+    }
+
+    // ---------- groups (spec 2026-11-13-grupos-y-comunicados-agendados) ----------
+
+    // Same limits as packages/shared/src/groups.ts.
+    function validGroup(d) {
+      return d.keys().hasOnly(['name', 'memberUids', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.keys().hasAll(['name', 'memberUids', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.name is string && d.name.trim().size() > 0 && d.name.size() <= 60
+        && d.memberUids is list && d.memberUids.size() > 0 && d.memberUids.size() <= 500
+        && d.memberUids.toSet().size() == d.memberUids.size()
+        && d.createdAt is int && d.createdBy is string
+        && d.updatedAt is int && d.updatedBy == request.auth.uid
+        && notFuture(d.updatedAt);
+    }
+
+    // An admin defines them; an active person reads only the groups she is
+    // in (query `where('memberUids', 'array-contains', uid)`).
+    match /groups/{id} {
+      allow read: if isAdmin() || (isActive() && request.auth.uid in resource.data.memberUids);
+      allow create: if isAdmin()
+        && validGroup(incoming())
+        && incoming().createdBy == request.auth.uid
+        && notFuture(incoming().createdAt);
+      allow update: if isAdmin()
+        && validGroup(incoming())
+        && incoming().createdAt == resource.data.createdAt
+        && incoming().createdBy == resource.data.createdBy;
+      allow delete: if isAdmin();
     }
 
     // ---------- celebrations/{uid} (birthdays and work anniversaries) ----------

@@ -15,6 +15,7 @@ import {
   type MoodWeek,
   type Feedback,
   type OrgConfig,
+  type PersonGroup,
   type PersonSchedule,
   type ScheduleConfig,
   type ScreenshotMeta,
@@ -48,6 +49,8 @@ export interface FakeDb {
   attendance?: WithId<AttendanceSettings>[];
   kiosks?: WithId<Kiosk>[];
   attendancePhotos?: WithId<AttendancePhoto>[];
+  /** Groups of people (optional). */
+  groups?: WithId<PersonGroup>[];
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
   /** Anonymous comments (optional). */
@@ -124,6 +127,15 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     },
     deleteAnnouncement: async (id) => {
       db.announcements = (db.announcements ?? []).filter((a) => a.id !== id);
+    },
+    listGroups: async () => [...(db.groups ?? [])],
+    saveGroup: async (id, g) => {
+      const gid = id ?? `grp-${(db.groups ?? []).length + 1}`;
+      db.groups = [...(db.groups ?? []).filter((x) => x.id !== gid), { ...g, id: gid }];
+      return gid;
+    },
+    deleteGroup: async (id) => {
+      db.groups = (db.groups ?? []).filter((g) => g.id !== id);
     },
     listCelebrations: async () => [...(db.celebrations ?? [])],
     saveCelebration: async (uid, c) => {

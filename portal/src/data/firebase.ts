@@ -55,6 +55,7 @@ import {
   readAllowedDomains,
   readAttendanceSettings,
   readCelebration,
+  readGroup,
   readKiosk,
   readPersonSchedule,
   readScheduleConfig,
@@ -329,6 +330,17 @@ export function createFirebaseBackend(): Backend {
         }
         throw err;
       }
+    },
+    async listGroups() {
+      return readValid(COLLECTIONS.groups, readGroup, 'los grupos');
+    },
+    async saveGroup(id, group) {
+      const target = id ? doc(db, COLLECTIONS.groups, id) : doc(collection(db, COLLECTIONS.groups));
+      await setDoc(target, group);
+      return target.id;
+    },
+    async deleteGroup(id) {
+      await deleteDoc(doc(db, COLLECTIONS.groups, id));
     },
     async listKiosks() {
       return readValid(COLLECTIONS.kiosks, readKiosk, 'los tótems');

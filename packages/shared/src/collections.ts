@@ -17,6 +17,8 @@ export const COLLECTIONS = {
   announcements: 'announcements',
   /** `announcementReads/{announcementId_uid}`: read confirmations. */
   announcementReads: 'announcementReads',
+  /** `groups/{autoId}`: named groups of people (groups.ts). */
+  groups: 'groups',
   /** `celebrations/{uid}`: birthday and hire date (team birthdays and anniversaries). */
   celebrations: 'celebrations',
   /** `moodWeeks/{YYYY-Www}`: anonymous counters of the mood pulse (mood.ts). */
