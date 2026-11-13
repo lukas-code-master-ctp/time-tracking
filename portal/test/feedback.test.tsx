@@ -10,7 +10,7 @@ import { ADMIN, backendOf, emptyDb } from './fakes';
 // Friday 2026-11-13, 10:00 in Santiago (week 2026-W46).
 const NOW = Date.UTC(2026, 10, 13, 13, 0);
 
-function renderApp(backend: Backend, path = '/comentarios') {
+function renderApp(backend: Backend, path = '/animo/comentarios') {
   return render(
     <BackendProvider backend={backend}>
       <MemoryRouter initialEntries={[path]}>

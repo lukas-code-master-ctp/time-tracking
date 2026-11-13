@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
+import { PulseTabs } from '../components/PulseTabs';
 import {
   FEEDBACK_TONE_EMOJI,
   FEEDBACK_TONE_LABEL,
@@ -170,6 +171,7 @@ export function FeedbackPage() {
   return (
     <>
       <PageHeader title="Comentarios" subtitle="Lo que el equipo cuenta de su día, bueno o por mejorar, sin nombres" />
+      <PulseTabs />
       {load.error && load.data === undefined ? (
         <section className="card">
           <ErrorState error={load.error} onRetry={load.reload} />

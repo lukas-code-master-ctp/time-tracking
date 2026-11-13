@@ -44,7 +44,8 @@ export function App() {
             <Route path="pausa-activa" element={<ActiveBreaksPage />} />
             <Route path="comunicados" element={<AnnouncementsPage />} />
             <Route path="animo" element={<MoodPage />} />
-            <Route path="comentarios" element={<FeedbackPage />} />
+            <Route path="animo/comentarios" element={<FeedbackPage />} />
+            <Route path="comentarios" element={<Navigate to="/animo/comentarios" replace />} />
             <Route path="minutas" element={<DailyReportsPage />} />
             <Route path="configuracion" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

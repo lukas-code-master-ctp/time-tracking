@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
+import { PulseTabs } from '../components/PulseTabs';
 import {
   MOOD_MIN_RESPONSES,
   MOOD_OPTIONS,
@@ -221,6 +222,7 @@ export function MoodPage() {
   return (
     <>
       <PageHeader title="Pulso de ánimo" subtitle="Cómo se siente el equipo al cerrar el día, en forma anónima" />
+      <PulseTabs />
       {load.error && load.data === undefined ? (
         <section className="card">
           <ErrorState error={load.error} onRetry={load.reload} />
