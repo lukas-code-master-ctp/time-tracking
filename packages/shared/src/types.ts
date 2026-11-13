@@ -220,8 +220,9 @@ export interface Absence {
 /**
  * `announcements/{autoId}` — an internal announcement published by an admin
  * in the portal (spec 2026-11-05-comunicados). Every active person sees it
- * in the extension until they confirm they read it. Never edited: an admin
- * archives it (`archivedAt`) to stop showing it, or deletes it.
+ * in the extension until they confirm they read it. Only a scheduled one
+ * (`publishAt` in the future) is edited; once sent an admin archives it
+ * (`archivedAt`) to stop showing it, or deletes it.
  */
 export interface Announcement {
   /** 1–120 characters. */
@@ -235,6 +236,20 @@ export interface Announcement {
   createdBy: string;
   /** When an admin archived it (null = shown in the extension). */
   archivedAt: EpochMs | null;
+  /**
+   * When it reaches the extension (spec 2026-11-13-grupos-y-comunicados-agendados):
+   * `createdAt` when sent right away, a future time when scheduled. Missing in
+   * announcements published before 0.2.29 (read it with `announcementPublishAt`).
+   */
+  publishAt?: EpochMs;
+  /**
+   * Who sees it: `['*']` (ANNOUNCEMENT_EVERYONE, every active person) or the uids
+   * of the members of `groupIds` copied when it was saved (1–500). The
+   * extension queries with `array-contains-any ['*', uid]`. Missing before 0.2.29 (= everyone).
+   */
+  audience?: string[];
+  /** Groups chosen in the portal ([] = everyone). Missing before 0.2.29. */
+  groupIds?: string[];
 }
 
 /**

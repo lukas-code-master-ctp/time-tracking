@@ -122,6 +122,9 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
       db.announcements = [...(db.announcements ?? []), { ...a, id }];
       return id;
     },
+    updateAnnouncement: async (id, patch) => {
+      db.announcements = (db.announcements ?? []).map((a) => (a.id === id ? { ...a, ...patch } : a));
+    },
     setAnnouncementArchived: async (id, archivedAt) => {
       db.announcements = (db.announcements ?? []).map((a) => (a.id === id ? { ...a, archivedAt } : a));
     },

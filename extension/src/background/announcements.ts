@@ -8,8 +8,13 @@
  * (once: `notified`) and a card in the popup until the person presses
  * "Confirmo que lo leí", which writes `announcementReads/{id_uid}` online.
  * Pure helpers; the wiring is in app.ts.
+ *
+ * Since 0.2.29 (spec 2026-11-13-grupos-y-comunicados-agendados) the read asks
+ * only for the announcements addressed to everyone or to this person
+ * (`audience`), and a scheduled one is kept in the cache but neither shown
+ * nor notified until its `publishAt` passes.
  */
-import type { Announcement, WithId } from '@timetracking/shared';
+import { announcementPublishAt, type Announcement, type WithId } from '@timetracking/shared';
 
 /** Latest announcements read (older ones are not shown in the extension). */
 export const ANNOUNCEMENTS_LIMIT = 30;
@@ -25,6 +30,8 @@ export interface CachedAnnouncement {
   body: string;
   authorName: string;
   createdAt: number;
+  /** When it can be shown (createdAt in caches before 0.2.29). */
+  publishAt: number;
 }
 
 /** `tt.meta.announcements`: last read of the signed-in user. Missing before 0.2.14. */
@@ -57,7 +64,8 @@ export function announcementCacheFromJSON(v: unknown): AnnouncementCache | null 
   if (!v || typeof v !== 'object') return null;
   const c = v as Partial<AnnouncementCache>;
   if (typeof c.uid !== 'string' || typeof c.fetchedAt !== 'number' || !Array.isArray(c.items)) return null;
-  return { uid: c.uid, items: c.items.filter(isCached), readIds: strings(c.readIds), notified: strings(c.notified), fetchedAt: c.fetchedAt };
+  const items = c.items.filter(isCached).map((a) => ({ ...a, publishAt: typeof a.publishAt === 'number' ? a.publishAt : a.createdAt }));
+  return { uid: c.uid, items, readIds: strings(c.readIds), notified: strings(c.notified), fetchedAt: c.fetchedAt };
 }
 
 /**
@@ -75,8 +83,8 @@ export function mergeAnnouncements(
   const same = previous?.uid === uid ? previous : null;
   const items = list
     .filter((a) => a.archivedAt === null)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .map(({ id, title, body, authorName, createdAt }) => ({ id, title, body, authorName, createdAt }));
+    .map((a) => ({ id: a.id, title: a.title, body: a.body, authorName: a.authorName, createdAt: a.createdAt, publishAt: announcementPublishAt(a) }))
+    .sort((a, b) => b.publishAt - a.publishAt);
   const ids = new Set(items.map((a) => a.id));
   // Only ids still listed are kept, so the arrays do not grow forever.
   const read = new Set([...readIds, ...(same?.readIds ?? [])].filter((id) => ids.has(id)));
@@ -84,17 +92,20 @@ export function mergeAnnouncements(
   return { uid, items, readIds: [...read], notified, fetchedAt: at };
 }
 
-/** Announcements the person has not confirmed, oldest first (the popup shows them in order). */
-export function unreadAnnouncements(cache: AnnouncementCache | null, uid: string | null): CachedAnnouncement[] {
+/**
+ * Announcements already sent (`publishAt <= now`) that the person has not
+ * confirmed, oldest first (the popup shows them in order).
+ */
+export function unreadAnnouncements(cache: AnnouncementCache | null, uid: string | null, now: number): CachedAnnouncement[] {
   if (!cache || !uid || cache.uid !== uid) return [];
   const read = new Set(cache.readIds);
-  return cache.items.filter((a) => !read.has(a.id)).reverse();
+  return cache.items.filter((a) => a.publishAt <= now && !read.has(a.id)).reverse();
 }
 
 /** Unread announcements not notified yet on this device (oldest first). */
-export function toNotify(cache: AnnouncementCache | null, uid: string | null): CachedAnnouncement[] {
+export function toNotify(cache: AnnouncementCache | null, uid: string | null, now: number): CachedAnnouncement[] {
   const notified = new Set(cache?.notified ?? []);
-  return unreadAnnouncements(cache, uid).filter((a) => !notified.has(a.id));
+  return unreadAnnouncements(cache, uid, now).filter((a) => !notified.has(a.id));
 }
 
 export function announcementNotificationId(id: string): string {

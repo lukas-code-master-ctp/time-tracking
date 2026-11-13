@@ -57,6 +57,7 @@ import {
   moodVoteDocId,
   type Absence,
   type ActiveBreak,
+  ANNOUNCEMENT_EVERYONE,
   type AnnouncementRead,
   type ActivitySlot,
   type Celebration,
@@ -201,8 +202,15 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     async deleteAbsence(id: string) {
       await deleteDoc(doc(db, COLLECTIONS.absences, id));
     },
-    async listAnnouncements(max: number) {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.announcements), orderBy('createdAt', 'desc'), limit(max)));
+    async listAnnouncements(uid: string, max: number) {
+      const snap = await getDocs(
+        query(
+          collection(db, COLLECTIONS.announcements),
+          where('audience', 'array-contains-any', [ANNOUNCEMENT_EVERYONE, uid]),
+          orderBy('publishAt', 'desc'),
+          limit(max),
+        ),
+      );
       return snap.docs.map((d) => ({ ...(d.data() as object), id: d.id }));
     },
     async listAnnouncementReads(uid: string) {

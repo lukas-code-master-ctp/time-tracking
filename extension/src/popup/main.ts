@@ -698,7 +698,7 @@ function breakArt(id: string | null): HTMLElement | null {
  */
 function renderAnnouncement(list: StatusView['announcements']): HTMLElement {
   const a = list[0]!;
-  const when = new Date(a.createdAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
+  const when = new Date(a.publishAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
   return el('section', { className: 'card announcement', ariaLabel: 'Comunicado interno' }, [
     el('div', { className: 'announcement-head' }, [
       el('span', { className: 'eyebrow', textContent: 'Comunicado' }),

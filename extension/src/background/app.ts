@@ -64,6 +64,7 @@ import {
 import {
   ANNOUNCEMENTS_LIMIT,
   ANNOUNCEMENTS_POPUP_REFRESH_MS,
+  type CachedAnnouncement,
   announcementNotificationId,
   announcementNotificationText,
   mergeAnnouncements,
@@ -330,12 +331,17 @@ export class App {
       if (!uid) return false;
       return !cache || cache.uid !== uid || this.now() - cache.fetchedAt >= maxAgeMs;
     });
-    if (!user || !due) return;
+    if (!user) return;
+    if (!due) {
+      // Fresh cache: a scheduled announcement whose time came is notified from it.
+      await this.notifyAnnouncements(user.uid);
+      return;
+    }
     let list: Awaited<ReturnType<Remote['listAnnouncements']>>;
     let readIds: string[];
     try {
       [list, readIds] = await Promise.all([
-        this.backend.listAnnouncements(ANNOUNCEMENTS_LIMIT),
+        this.backend.listAnnouncements(user.uid, ANNOUNCEMENTS_LIMIT),
         this.backend.listAnnouncementReads(user.uid),
       ]);
     } catch (err) {
@@ -346,19 +352,30 @@ export class App {
       const a = readAnnouncement(raw);
       return a ? [{ ...a, id: raw.id }] : [];
     });
+    const ok = await this.store.run(async () => {
+      if (this.activeUid(user.uid) !== user.uid) return false; // signed out meanwhile
+      this.store.meta.announcements = mergeAnnouncements(this.store.meta.announcements, user.uid, valid, readIds, this.now());
+      await this.store.save('meta');
+      return true;
+    });
+    if (ok) await this.notifyAnnouncements(user.uid);
+  }
+
+  /** One notification for the sent announcements not notified yet on this device. */
+  private async notifyAnnouncements(uid: string): Promise<void> {
     const fresh = await this.store.run(async () => {
-      if (this.activeUid(user.uid) !== user.uid) return []; // signed out meanwhile
-      const cache = mergeAnnouncements(this.store.meta.announcements, user.uid, valid, readIds, this.now());
-      const out = toNotify(cache, user.uid);
+      const cache = this.store.meta.announcements;
+      if (this.activeUid(uid) !== uid || !cache) return [];
+      const out = toNotify(cache, uid, this.now());
+      if (out.length === 0) return [];
       cache.notified = [...cache.notified, ...out.map((a) => a.id)];
-      this.store.meta.announcements = cache;
       await this.store.save('meta');
       return out;
     });
     if (fresh.length > 0) await this.showAnnouncement(fresh);
   }
 
-  private async showAnnouncement(fresh: { id: string; title: string; body: string; authorName: string; createdAt: number }[]): Promise<void> {
+  private async showAnnouncement(fresh: CachedAnnouncement[]): Promise<void> {
     const { title, message } = announcementNotificationText(fresh);
     try {
       await chrome.notifications.create(announcementNotificationId(fresh[fresh.length - 1]!.id), {
@@ -1344,7 +1361,7 @@ export class App {
         capture: org ? { screenshots: org.screenshotsEnabled, blur: org.blurScreenshots } : null,
         schedule: profile ? scheduleView(this.scheduleOf(user?.uid), this.now()) : null,
         breaks: this.breaksView(profile && user ? user.uid : null, org?.activeBreaks ?? null),
-        announcements: profile && user ? unreadAnnouncements(meta.announcements, this.activeUid(user.uid)) : [],
+        announcements: profile && user ? unreadAnnouncements(meta.announcements, this.activeUid(user.uid), this.now()) : [],
         celebrations: profile && user && meta.celebrations?.uid === user.uid
           ? celebrationsView(meta.celebrations.items, user.uid, dateKey(this.now(), DEFAULT_TIME_ZONE))
           : [],

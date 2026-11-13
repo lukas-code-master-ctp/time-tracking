@@ -39,6 +39,14 @@
         { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "start", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "announcements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "audience", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "publishAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
