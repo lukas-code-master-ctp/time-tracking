@@ -502,6 +502,15 @@ body {
   white-space: nowrap;
 }
 
+.card.report {
+  display: grid;
+  gap: 8px;
+}
+
+.card.report p {
+  margin: 0;
+}
+
 .mood-foot {
   display: flex;
   align-items: center;
@@ -843,9 +852,10 @@ body {
 .footer {
   padding: 0 2px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
 }
 
 .footer .actions {

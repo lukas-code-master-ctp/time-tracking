@@ -38,7 +38,7 @@ export interface ActiveBreakSettings {
   durationMinutes: number;
   /**
    * Videos of the company (spec 2026-11-13-videos-pausa-activa); [] = only
-   * the exercises. Optional: missing in extension caches before 0.2.30.
+   * the exercises. Optional: missing in extension caches before 0.2.31.
    */
   videos?: BreakVideo[];
   /** How the videos mix with the exercises. */

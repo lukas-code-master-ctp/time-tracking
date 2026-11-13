@@ -425,6 +425,8 @@ describe('SettingsForm', () => {
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
       feedbackEnabled: false,
+      dailyReportEnabled: false,
+      dailyReportGroupIds: [],
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });

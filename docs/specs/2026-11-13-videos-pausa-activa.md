@@ -19,4 +19,4 @@ Pedido de Lukas (2026-11-13): "Pausa activa: poder anclar videos personalizados"
 
 ## Versión
 
-Extensión 0.2.30. Reglas nuevas (`config/breakVideos`): hay que desplegarlas. Antes de eso el portal no puede guardar videos (el resto de la configuración se guarda igual) y la extensión sigue solo con ejercicios.
+Extensión 0.2.31. Reglas nuevas (`config/breakVideos`): hay que desplegarlas. Antes de eso el portal no puede guardar videos (el resto de la configuración se guarda igual) y la extensión sigue solo con ejercicios.

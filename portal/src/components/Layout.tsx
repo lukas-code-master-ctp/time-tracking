@@ -10,6 +10,7 @@ const NAV = [
   { to: '/colaboradores', label: 'Colaboradores', end: false, icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8v-1a7 7 0 0 1 14 0v1' },
   { to: '/pausa-activa', label: 'Pausa activa', end: false, icon: 'M3 12h4l3-8 4 16 3-8h4' },
   { to: '/comunicados', label: 'Comunicados', end: false, icon: 'M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1Zm14-2a4 4 0 0 1 0 6M7 14l1 5h3' },
+  { to: '/minutas', label: 'Minutas', end: false, icon: 'M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1ZM8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2M9 11h6M9 15h4' },
   { to: '/animo', label: 'Pulso de ánimo', end: false, icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01' },
   { to: '/comentarios', label: 'Comentarios', end: false, icon: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12ZM8 11h8M8 14.5h5' },
 ];

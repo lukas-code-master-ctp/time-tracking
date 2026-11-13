@@ -144,6 +144,13 @@ export function PrivacyPage() {
               (no cuál). Lo que escribas sí puede dar pistas de quién eres: evita datos que te identifiquen si no quieres
               que te reconozcan.
             </li>
+            <li>
+              <strong>Minuta del día, solo si tu empresa te la pide:</strong> al cerrar tu jornada, la extensión te
+              recuerda enviar una minuta de tu día. La escribes tú o grabas un audio: el audio se envía a un servicio de
+              inteligencia artificial (OpenRouter) para transcribirlo y armar un borrador, y{' '}
+              <strong>no se guarda</strong>. Se guarda solo lo que tú envías (la minuta y, si grabaste, su
+              transcripción), con tu nombre, y lo ven los administradores de tu empresa.
+            </li>
           </ul>
           <p>
             <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte recordatorios de

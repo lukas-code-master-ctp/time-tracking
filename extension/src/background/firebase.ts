@@ -43,7 +43,7 @@ import {
   increment,
   writeBatch,
 } from 'firebase/firestore/lite';
-import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
+import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
 import {
   COLLECTIONS,
   EMULATOR_PORTS,
@@ -62,6 +62,8 @@ import {
   type ActivitySlot,
   type Celebration,
   type FeedbackTone,
+  type DailyReport,
+  type DailyReportDraft,
   type MoodScore,
   BREAK_VIDEOS_DOC_ID,
   type OrgConfig,
@@ -224,6 +226,29 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     },
     async putAnnouncementRead(docId: string, data: AnnouncementRead) {
       await setDoc(doc(db, COLLECTIONS.announcementReads, docId), data);
+    },
+    async listMyGroupIds(uid: string) {
+      try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.groups), where('memberUids', 'array-contains', uid)));
+        return snap.docs.map((d) => d.id);
+      } catch (err) {
+        // Groups rules not deployed yet: in no group.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
+    async getDailyReport(docId: string) {
+      const snap = await getDoc(doc(db, COLLECTIONS.dailyReports, docId));
+      return snap.exists() ? (snap.data() as DailyReport) : null;
+    },
+    async putDailyReport(docId: string, data: DailyReport) {
+      await setDoc(doc(db, COLLECTIONS.dailyReports, docId), data);
+    },
+    async draftDailyReport(audio: string, mimeType: string) {
+      const call = httpsCallable<{ audio: string; mimeType: string }, DailyReportDraft>(h.functions, 'draftDailyReport', {
+        timeout: 130_000,
+      });
+      return (await call({ audio, mimeType })).data;
     },
     async fetchCelebrations() {
       try {

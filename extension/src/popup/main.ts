@@ -363,6 +363,7 @@ function renderReady(s: StatusView): void {
 
   if (!on && s.mood?.pending) root.append(renderMood());
   if (s.feedback && !s.feedback.sentToday) root.append(renderFeedback());
+  if (!on && s.dailyReport?.pending) root.append(renderDailyReport());
   if (s.breaks) root.append(renderBreaks(s.breaks, on));
   if (s.celebrations.length > 0) root.append(renderCelebrations(s.celebrations));
 
@@ -435,7 +436,14 @@ function renderReady(s: StatusView): void {
   }
   const absences = el('button', { type: 'button', className: 'link quiet', textContent: 'Solicitar ausencia' });
   absences.addEventListener('click', () => void chrome.tabs.create({ url: chrome.runtime.getURL('absences.html') }));
-  root.append(el('footer', { className: 'footer small muted' }, [sync, el('span', { className: 'actions' }, [absences, out])]));
+  // Daily report (spec 2026-11-13-minuta-diaria): always reachable for the people asked for it.
+  const report = s.dailyReport
+    ? el('button', { type: 'button', className: 'link quiet', textContent: s.dailyReport.sentToday ? 'Minuta ✓' : 'Minuta' })
+    : null;
+  report?.addEventListener('click', openDailyReport);
+  root.append(
+    el('footer', { className: 'footer small muted' }, [sync, el('span', { className: 'actions' }, [report, absences, out])]),
+  );
 }
 
 /** Face chosen next to "Cerrar jornada" (sent with the close); null = none. */
@@ -493,6 +501,23 @@ async function closeWorkDay(): Promise<void> {
       render();
     }
   }
+}
+
+function openDailyReport(): void {
+  void chrome.tabs.create({ url: chrome.runtime.getURL('minuta.html') });
+}
+
+/** Daily report (spec 2026-11-13-minuta-diaria): after closing the work day, until sent or "Ahora no". */
+function renderDailyReport(): HTMLElement {
+  const write = button('Escribir o grabar minuta', 'primary', openDailyReport);
+  const later = el('button', { type: 'button', className: 'link quiet', textContent: 'Ahora no', disabled: busy });
+  later.addEventListener('click', () => void act({ type: 'dailyReport.skip' }));
+  return el('section', { className: 'card report', role: 'status' }, [
+    el('div', { className: 'mood-title', textContent: 'Envía tu minuta del día' }),
+    el('p', { className: 'small muted', textContent: 'Cuenta qué hiciste hoy. Puedes grabar un audio y la armamos por ti.' }),
+    write,
+    el('div', { className: 'mood-foot small muted' }, [el('span', { textContent: 'La ve tu empresa con tu nombre.' }), later]),
+  ]);
 }
 
 /** Mood pulse (spec 2026-11-05-pulso-de-animo): one click after closing the work day (when no face was chosen before). */

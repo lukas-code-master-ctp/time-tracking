@@ -1386,6 +1386,63 @@ describe('anonymous feedback', () => {
 
 // ---------- anything else ----------
 
+describe('daily reports (minuta diaria)', () => {
+  const report = (uid: string, overrides: Record<string, unknown> = {}) => ({
+    uid,
+    date: '2026-11-13',
+    text: '- Visité Maipú.',
+    source: 'text',
+    transcript: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  });
+
+  it('the person writes her own report, with the deterministic id', async () => {
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-12').set(report('alice')));
+    await assertFails(db('bob').doc('dailyReports/alice_2026-11-13').set(report('alice')));
+    await assertFails(db('dave').doc('dailyReports/dave_2026-11-13').set(report('dave')));
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { text: '' })));
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { text: 'x'.repeat(4001) })));
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { transcript: 'hola' })));
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { extra: 1 })));
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { updatedAt: Date.now() + 3_600_000 })));
+    await assertSucceeds(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { source: 'audio', transcript: 'Hoy fui…' })));
+  });
+
+  it('she can correct it the same day, never change createdAt nor delete it', async () => {
+    await seed(env, { 'dailyReports/alice_2026-11-13': report('alice') });
+    await assertSucceeds(
+      db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { text: '- Visité Maipú y Pudahuel.', updatedAt: NOW + 60_000 })),
+    );
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { createdAt: NOW + 1, updatedAt: NOW + 60_000 })));
+    await assertFails(
+      db('alice').doc('dailyReports/alice_2026-11-13').set(report('alice', { updatedAt: NOW + 2 * 24 * 3_600_000 })),
+    );
+    await assertFails(db('bob').doc('dailyReports/alice_2026-11-13').set(report('alice', { updatedAt: NOW + 60_000 })));
+    await assertFails(db('alice').doc('dailyReports/alice_2026-11-13').delete());
+  });
+
+  it('admins read every report; a person only hers (also before it exists)', async () => {
+    await seed(env, { 'dailyReports/alice_2026-11-13': report('alice') });
+    await assertSucceeds(db('admin').collection('dailyReports').get());
+    await assertSucceeds(db('alice').doc('dailyReports/alice_2026-11-13').get());
+    await assertSucceeds(db('bob').doc('dailyReports/bob_2026-11-13').get());
+    await assertFails(db('bob').doc('dailyReports/alice_2026-11-13').get());
+    await assertFails(db('bob').collection('dailyReports').get());
+    await assertFails(db('alice').doc('dailyReportDrafts/alice_2026-11-13').get());
+    await assertFails(db('alice').doc('dailyReportDrafts/alice_2026-11-13').set({ count: 0 }));
+  });
+
+  it('config/org accepts the settings', async () => {
+    await assertSucceeds(
+      db('admin').doc('config/org').set(orgConfig({ dailyReportEnabled: true, dailyReportGroupIds: ['g1', 'g2'] })),
+    );
+    await assertFails(db('admin').doc('config/org').set(orgConfig({ dailyReportGroupIds: ['g1', 'g1'] })));
+    await assertFails(db('admin').doc('config/org').set(orgConfig({ dailyReportEnabled: 'yes' as unknown as boolean })));
+  });
+});
+
 describe('unknown collections', () => {
   it('are denied, even for admin', async () => {
     await assertFails(db('admin').doc('otra/cosa').set({ a: 1 }));
