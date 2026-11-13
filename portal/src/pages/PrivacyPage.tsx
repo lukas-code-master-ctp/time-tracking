@@ -136,6 +136,14 @@ export function PrivacyPage() {
               tu empresa no ve semanas con menos de 3 respuestas. Aparte se guarda, visible solo para ti, qué días de la
               semana ya respondiste (no qué respondiste), para que se cuente una vez al día.
             </li>
+            <li>
+              <strong>Comentarios anónimos, solo si tu empresa los activa:</strong> desde la extensión puedes dejar,
+              cuando quieras, un comentario sobre algo de tu día, marcado como "Algo bueno" o "Algo por mejorar" (uno al
+              día). Se guarda <strong>sin tu nombre, sin el día y sin la hora</strong>: tu empresa solo ve el texto y la
+              semana, y puede eliminarlo. Aparte se guarda, visible solo para ti, qué días de la semana ya dejaste uno
+              (no cuál). Lo que escribas sí puede dar pistas de quién eres: evita datos que te identifiquen si no quieres
+              que te reconozcan.
+            </li>
           </ul>
           <p>
             <strong>Recordatorios:</strong> si tu empresa los activa, la extensión puede mostrarte recordatorios de

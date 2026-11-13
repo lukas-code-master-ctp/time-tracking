@@ -17,6 +17,7 @@ import {
   normalizeDomainList,
   readActiveBreakSettings,
   readMoodPulseEnabled,
+  readFeedbackEnabled,
   type ActiveBreakMode,
   type Invitation,
   type OrgConfig,
@@ -46,6 +47,8 @@ export interface OrgConfigForm {
   activeBreakMinutes: number;
   /** Mood pulse when closing the work day (spec 2026-11-05-pulso-de-animo). */
   moodPulseEnabled: boolean;
+  /** Anonymous comments from the popup (spec 2026-11-13-comentarios-anonimos). */
+  feedbackEnabled: boolean;
 }
 
 export type FieldErrors<K extends string> = Partial<Record<K, string>>;
@@ -139,6 +142,8 @@ export function buildOrgConfig(form: OrgConfigForm, uid: string, now: number, ad
       : {}),
     // Only when on (rules before the mood pulse do not know the field).
     ...(form.moodPulseEnabled ? { moodPulseEnabled: true } : {}),
+    // Same for the anonymous comments.
+    ...(form.feedbackEnabled ? { feedbackEnabled: true } : {}),
     updatedAt: Math.floor(now),
     updatedBy: uid,
   };
@@ -154,6 +159,7 @@ export function orgConfigToForm(config: OrgConfig | null, fallbackDomains: reado
     pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
     ...activeBreaksForm(config),
     moodPulseEnabled: readMoodPulseEnabled(config),
+    feedbackEnabled: readFeedbackEnabled(config),
   };
 }
 

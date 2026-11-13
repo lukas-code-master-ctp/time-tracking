@@ -34,6 +34,10 @@ import {
   isoWeekKey,
   readActiveBreakSettings,
   readMoodPulseEnabled,
+  readFeedbackEnabled,
+  normalizeFeedbackText,
+  FEEDBACK_MAX_LENGTH,
+  type FeedbackTone,
   type MoodScore,
   readPersonSchedule,
   announcementReadId,
@@ -290,6 +294,7 @@ export class App {
         pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
         activeBreaks: readActiveBreakSettings(config),
         moodPulse: readMoodPulseEnabled(config),
+        feedback: readFeedbackEnabled(config),
         fetchedAt: this.now(),
       };
       await this.store.save('meta');
@@ -879,6 +884,47 @@ export class App {
     return { pending: todays && m.status === 'pending', doneToday: todays && m.status === 'done' };
   }
 
+  // ---------- anonymous comments ----------
+
+  /**
+   * "Contar algo de tu día" (spec 2026-11-13-comentarios-anonimos): queues
+   * one anonymous comment for today. Only `week`, `tone` and `text` reach
+   * `feedback`; the day goes to the person's private `feedbackVotes`.
+   */
+  async sendFeedback(tone: FeedbackTone, rawText: string): Promise<void> {
+    await this.auth.ready();
+    const user = this.auth.currentUser();
+    const text = normalizeFeedbackText(rawText);
+    if (text === null) {
+      throw new AuthError(
+        'feedback-invalid',
+        rawText.trim() === '' ? 'Escribe tu comentario.' : `El comentario puede tener hasta ${FEEDBACK_MAX_LENGTH} caracteres.`,
+      );
+    }
+    await this.store.run(async () => {
+      const uid = this.activeUid(user?.uid);
+      const { meta } = this.store;
+      if (!uid || meta.org?.uid !== uid || meta.org.feedback !== true) {
+        throw new AuthError('feedback-off', 'Tu empresa no tiene activos los comentarios anónimos.');
+      }
+      const date = dateKey(this.now(), DEFAULT_TIME_ZONE);
+      if (meta.feedback?.uid === uid && meta.feedback.date === date) {
+        throw new AuthError('feedback-done', 'Ya dejaste un comentario hoy. Mañana puedes dejar otro.');
+      }
+      meta.feedback = { uid, date };
+      enqueueOp(this.store.queue, { kind: 'feedback', uid, date, week: isoWeekKey(date), tone, text });
+      await this.store.save('queue', 'meta');
+    });
+    void this.sync.kick();
+  }
+
+  /** Anonymous comments for the popup (inside store.run); null when the organization has them off. */
+  private feedbackView(uid: string | null, enabled: boolean): StatusView['feedback'] {
+    if (!uid || !enabled) return null;
+    const f = this.store.meta.feedback;
+    return { sentToday: f !== null && f.uid === uid && f.date === dateKey(this.now(), DEFAULT_TIME_ZONE) };
+  }
+
   /** Click on the body (or button) of a reminder, an active break or an announcement: the popup. */
   async onReminderClicked(notificationId: string): Promise<void> {
     if (
@@ -962,6 +1008,9 @@ export class App {
           break;
         case 'mood.answer':
           await this.answerMood(req.score as MoodScore | null);
+          break;
+        case 'feedback.send':
+          await this.sendFeedback(req.tone, req.text);
           break;
         case 'auth.signIn':
           await this.signIn();
@@ -1223,6 +1272,7 @@ export class App {
         await chrome.notifications.clear(announcementNotificationId(a.id)).catch(() => undefined);
       }
       this.store.meta.mood = null;
+      this.store.meta.feedback = null;
       if (pendingBreak) await chrome.notifications.clear(breakNotificationId(pendingBreak.at)).catch(() => undefined);
       await this.store.save('acc', 'meta');
       await this.ensureScheduleAlarm(null, this.now());
@@ -1299,6 +1349,7 @@ export class App {
           ? celebrationsView(meta.celebrations.items, user.uid, dateKey(this.now(), DEFAULT_TIME_ZONE))
           : [],
         mood: this.moodView(profile && user ? user.uid : null, org?.moodPulse === true),
+        feedback: this.feedbackView(profile && user ? user.uid : null, org?.feedback === true),
         attendanceMode: user && meta.attendance?.uid === user.uid ? meta.attendance.mode : null,
         pendingOps: queue.items.length,
         pendingScreenshots: shots.items.length,

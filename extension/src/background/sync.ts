@@ -23,6 +23,7 @@ import {
   breakDocId,
   type ActiveBreak,
   type ActivitySlot,
+  type FeedbackTone,
   type MoodScore,
   type Session,
 } from '@timetracking/shared';
@@ -49,6 +50,12 @@ export interface Backend {
    * The rules refuse a second answer of the same day (`permission-denied`).
    */
   putMood(uid: string, week: string, date: string, score: MoodScore): Promise<void>;
+  /**
+   * One batch: adds `date` to `feedbackVotes/{uid_week}` and creates
+   * `feedback/{autoId}` with only `{ week, tone, text }` (no uid). The rules
+   * refuse a second comment of the same day (`permission-denied`).
+   */
+  putFeedback(uid: string, week: string, date: string, tone: FeedbackTone, text: string): Promise<void>;
 }
 
 /** Error with a Firebase-like code (`permission-denied`, `unavailable`…). */
@@ -193,6 +200,9 @@ export async function execOp(backend: Backend, op: SyncOp): Promise<void> {
       return;
     case 'mood':
       await backend.putMood(op.uid, op.week, op.date, op.score);
+      return;
+    case 'feedback':
+      await backend.putFeedback(op.uid, op.week, op.date, op.tone, op.text);
       return;
   }
 }

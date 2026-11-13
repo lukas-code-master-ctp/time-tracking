@@ -25,6 +25,9 @@ rules_version = '2';
 //   holds only counters (admins read them); `moodVotes` says which days the
 //   person answered, never what (only she reads it). A counter grows by one
 //   only in the same write that adds a new day to the person's vote.
+// - Anonymous comments (spec 2026-11-13-comentarios-anonimos): `feedback`
+//   holds week, tone and text, no uid (admins read it); `feedbackVotes`, like
+//   `moodVotes`, allows one comment per person and day.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -113,7 +116,8 @@ service cloud.firestore {
                                 'screenshotRetentionDays', 'pauseTimerAtLunch',
                                 'activeBreaksEnabled', 'activeBreakMode',
                                 'activeBreakIntervalMinutes', 'activeBreaksPerDay', 'activeBreakTimes',
-                                'activeBreakMinutes', 'moodPulseEnabled', 'updatedAt', 'updatedBy'])
+                                'activeBreakMinutes', 'moodPulseEnabled', 'feedbackEnabled',
+                                'updatedAt', 'updatedBy'])
         && d.keys().hasAll(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                             'screenshotRetentionDays', 'updatedAt', 'updatedBy'])
         && validDomainList(d.allowedDomains)
@@ -145,6 +149,8 @@ service cloud.firestore {
                 && d.activeBreakMinutes >= 1 && d.activeBreakMinutes <= 15))
         // Mood pulse (optional; spec 2026-11-05-pulso-de-animo).
         && (!('moodPulseEnabled' in d) || d.moodPulseEnabled is bool)
+        // Anonymous comments (optional; spec 2026-11-13-comentarios-anonimos).
+        && (!('feedbackEnabled' in d) || d.feedbackEnabled is bool)
         && d.screenshotRetentionDays is int
         && d.screenshotRetentionDays >= 1 && d.screenshotRetentionDays <= 3650
         && d.updatedAt is int
@@ -632,16 +638,21 @@ service cloud.firestore {
           '[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(,[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))*');
     }
 
-    function votePath(week) {
-      return /databases/$(database)/documents/moodVotes/$(request.auth.uid + '_' + week);
+    // `votes`: 'moodVotes' or 'feedbackVotes' (same shape).
+    function votePath(votes, week) {
+      return /databases/$(database)/documents/$(votes)/$(request.auth.uid + '_' + week);
     }
 
-    // This write adds exactly one day to the caller's vote of `week`.
+    // This write adds exactly one day to the caller's vote of `week` in `votes`.
+    function addsOneDay(votes, week) {
+      return existsAfter(votePath(votes, week))
+        && ((!exists(votePath(votes, week)) && getAfter(votePath(votes, week)).data.dates.size() == 1)
+            || (exists(votePath(votes, week))
+                && getAfter(votePath(votes, week)).data.dates.size() == get(votePath(votes, week)).data.dates.size() + 1));
+    }
+
     function addsOneVote(week) {
-      return existsAfter(votePath(week))
-        && ((!exists(votePath(week)) && getAfter(votePath(week)).data.dates.size() == 1)
-            || (exists(votePath(week))
-                && getAfter(votePath(week)).data.dates.size() == get(votePath(week)).data.dates.size() + 1));
+      return addsOneDay('moodVotes', week);
     }
 
     function count(d, k) {
@@ -692,6 +703,45 @@ service cloud.firestore {
       allow create: if isActive() && validMoodVote(incoming(), docId)
         && incoming().dates.size() == 1;
       // Only new days are added.
+      allow update: if isActive() && ownsExisting()
+        && validMoodVote(incoming(), docId)
+        && changedKeys().hasOnly(['dates'])
+        && incoming().dates.size() == resource.data.dates.size() + 1
+        && incoming().dates.hasAll(resource.data.dates);
+      allow delete: if false;
+    }
+
+    // ---------- anonymous comments (spec 2026-11-13-comentarios-anonimos) ----------
+    //
+    // `feedback/{autoId}` holds { week, tone, text }: no uid, no day, no time.
+    // A comment is accepted only in the same write that adds a new day to the
+    // author's `feedbackVotes/{uid_week}` (one comment per person and day),
+    // which only the author can read.
+
+    function validFeedback(d) {
+      return d.keys().hasOnly(['week', 'tone', 'text'])
+        && d.keys().hasAll(['week', 'tone', 'text'])
+        && validWeekKey(d.week)
+        && d.tone in ['positive', 'negative']
+        && d.text is string
+        && d.text.size() >= 1 && d.text.size() <= 500;
+    }
+
+    match /feedback/{id} {
+      allow read: if isAdmin();
+      allow create: if isActive() && validFeedback(incoming())
+        && addsOneDay('feedbackVotes', incoming().week);
+      allow update: if false;
+      // Moderation: an admin can remove an offensive comment.
+      allow delete: if isAdmin();
+    }
+
+    match /feedbackVotes/{docId} {
+      // Nobody else, not even an admin: it would tell who wrote.
+      allow get: if isActive() && ownsExisting();
+      allow list: if false;
+      allow create: if isActive() && validMoodVote(incoming(), docId)
+        && incoming().dates.size() == 1;
       allow update: if isActive() && ownsExisting()
         && validMoodVote(incoming(), docId)
         && changedKeys().hasOnly(['dates'])

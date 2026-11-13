@@ -54,6 +54,12 @@ export interface OrgConfig {
    * off): read it with `readMoodPulseEnabled`.
    */
   moodPulseEnabled?: boolean;
+  /**
+   * "Comentarios anónimos" (spec 2026-11-13-comentarios-anonimos): the popup
+   * lets each person leave one anonymous comment a day about something that
+   * happened. Optional (missing = off): read it with `readFeedbackEnabled`.
+   */
+  feedbackEnabled?: boolean;
   updatedAt: EpochMs;
   /** uid of the admin who last changed it (or 'system'). */
   updatedBy: string;

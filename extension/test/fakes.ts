@@ -35,7 +35,8 @@ export type BackendCall =
   | { op: 'deleteAbsence'; id: string }
   | { op: 'putBreak'; docId: string; data: ActiveBreak }
   | { op: 'putAnnouncementRead'; docId: string; data: AnnouncementRead }
-  | { op: 'putMood'; uid: string; week: string; date: string; score: number };
+  | { op: 'putMood'; uid: string; week: string; date: string; score: number }
+  | { op: 'putFeedback'; uid: string; week: string; date: string; tone: string; text: string };
 
 export const ORG: OrgConfig = {
   allowedDomains: ['impulseai.cl', 'compratuparcela.cl'],
@@ -168,6 +169,18 @@ export class FakeBackend implements Remote {
     const counters = this.moodWeeks.get(week) ?? {};
     counters[`n${score}`] = (counters[`n${score}`] ?? 0) + 1;
     this.moodWeeks.set(week, counters);
+  }
+  /** `feedbackVotes` days by `uid_week`; `feedback` documents as written (no uid). */
+  feedbackVotes = new Map<string, string[]>();
+  feedback: { week: string; tone: string; text: string }[] = [];
+  async putFeedback(uid: string, week: string, date: string, tone: string, text: string): Promise<void> {
+    this.check();
+    const key = `${uid}_${week}`;
+    const dates = this.feedbackVotes.get(key) ?? [];
+    if (dates.includes(date)) throw new BackendError('permission-denied');
+    this.calls.push({ op: 'putFeedback', uid, week, date, tone, text });
+    this.feedbackVotes.set(key, [...dates, date]);
+    this.feedback.push({ week, tone, text });
   }
   async fetchOrgConfig(): Promise<OrgConfig | null> {
     this.check();

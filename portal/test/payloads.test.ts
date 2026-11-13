@@ -32,7 +32,13 @@ describe('org config', () => {
     activeBreakTimes: ['11:00', '16:00'],
     activeBreakMinutes: 5,
     moodPulseEnabled: false,
+    feedbackEnabled: false,
   };
+
+  it('adds feedbackEnabled only when on', () => {
+    expect(buildOrgConfig({ ...form, feedbackEnabled: true }, 'uid-admin', NOW).feedbackEnabled).toBe(true);
+    expect('feedbackEnabled' in buildOrgConfig(form, 'uid-admin', NOW)).toBe(false);
+  });
 
   it('adds moodPulseEnabled only when on', () => {
     expect(buildOrgConfig({ ...form, moodPulseEnabled: true }, 'uid-admin', NOW).moodPulseEnabled).toBe(true);
@@ -133,6 +139,7 @@ describe('org config', () => {
       activeBreakTimes: ['11:00', '16:00'],
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
+      feedbackEnabled: false,
     });
   });
 
@@ -158,6 +165,7 @@ describe('org config', () => {
       activeBreakTimes: ['11:00', '16:00'],
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
+      feedbackEnabled: false,
     });
     expect(orgConfigToForm({ ...legacy, pauseTimerAtLunch: true }, ['x.cl']).pauseTimerAtLunch).toBe(true);
   });

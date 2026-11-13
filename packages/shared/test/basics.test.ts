@@ -117,6 +117,8 @@ describe('collections', () => {
       celebrations: 'celebrations',
       moodWeeks: 'moodWeeks',
       moodVotes: 'moodVotes',
+      feedback: 'feedback',
+      feedbackVotes: 'feedbackVotes',
       attendanceSettings: 'attendanceSettings',
       kiosks: 'kiosks',
       attendancePhotos: 'attendancePhotos',

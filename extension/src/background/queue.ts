@@ -11,10 +11,19 @@
  * - sessionCreate: one per session.
  * - break: one per answered active break reminder (`breakDocId`).
  * - mood: one per person and day (mood pulse; the rules accept one answer a day).
+ * - feedback: one per person and day (anonymous comment; same rule).
  * Order is FIFO, so a session is created before its heartbeats and closed
  * after them.
  */
-import { activityDocId, breakDocId, type ActiveBreak, type ActivitySlot, type MoodScore, type Session } from '@timetracking/shared';
+import {
+  activityDocId,
+  breakDocId,
+  type ActiveBreak,
+  type ActivitySlot,
+  type FeedbackTone,
+  type MoodScore,
+  type Session,
+} from '@timetracking/shared';
 
 export type SyncOp =
   | { kind: 'sessionCreate'; uid: string; sessionId: string; session: Session }
@@ -24,7 +33,9 @@ export type SyncOp =
   /** Active break answer (breaks.ts). No top-level `sessionId`: not a session operation. */
   | { kind: 'break'; uid: string; data: ActiveBreak }
   /** Mood pulse answer (spec 2026-11-05-pulso-de-animo): `date` is the person's day, `week` its ISO week. */
-  | { kind: 'mood'; uid: string; date: string; week: string; score: MoodScore };
+  | { kind: 'mood'; uid: string; date: string; week: string; score: MoodScore }
+  /** Anonymous comment (spec 2026-11-13-comentarios-anonimos): only `week`, `tone` and `text` reach `feedback`. */
+  | { kind: 'feedback'; uid: string; date: string; week: string; tone: FeedbackTone; text: string };
 
 export interface QueueItem {
   /** Coalescing key, see {@link opKey}. */
@@ -66,6 +77,8 @@ export function opKey(op: SyncOp): string {
       return `break:${breakDocId(op.uid, op.data.promptedAt)}`;
     case 'mood':
       return `mood:${op.uid}_${op.date}`;
+    case 'feedback':
+      return `feedback:${op.uid}_${op.date}`;
   }
 }
 
@@ -127,7 +140,7 @@ export function queueFromJSON(raw: unknown): QueueState {
     if (!item || typeof item !== 'object') continue;
     const op = (item as QueueItem).op;
     if (!op || typeof op !== 'object' || typeof op.uid !== 'string') continue;
-    if (!['activity', 'heartbeat', 'sessionClose', 'sessionCreate', 'break', 'mood'].includes(op.kind)) continue;
+    if (!['activity', 'heartbeat', 'sessionClose', 'sessionCreate', 'break', 'mood', 'feedback'].includes(op.kind)) continue;
     try {
       const key = opKey(op);
       q.items.push({

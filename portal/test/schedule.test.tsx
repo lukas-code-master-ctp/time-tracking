@@ -747,7 +747,7 @@ describe('Pausa activa', () => {
     const tabs = await screen.findByRole('navigation', { name: 'Colaboradores' });
     expect(within(tabs).getByRole('link', { name: 'Invitaciones' })).toHaveClass('active');
     const main = screen.getByRole('navigation', { name: 'Principal' });
-    expect(within(main).getAllByRole('link').map((l) => l.textContent)).toEqual(['Equipo', 'Colaboradores', 'Pausa activa', 'Comunicados', 'Pulso de ánimo']);
+    expect(within(main).getAllByRole('link').map((l) => l.textContent)).toEqual(['Equipo', 'Colaboradores', 'Pausa activa', 'Comunicados', 'Pulso de ánimo', 'Comentarios']);
     expect(within(main).getByRole('link', { name: 'Colaboradores' })).toHaveClass('active');
     expect(within(screen.getByRole('navigation', { name: 'Ajustes' })).getByRole('link', { name: 'Configuración' })).toBeInTheDocument();
   });

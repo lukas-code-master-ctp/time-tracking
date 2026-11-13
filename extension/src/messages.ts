@@ -9,8 +9,10 @@
  *   see {@link PopupRequest}; every request answers {@link PopupResponse}.
  */
 import {
+  isFeedbackTone,
   isMoodScore,
   type AttendanceMode,
+  type FeedbackTone,
   type Absence,
   type AbsenceType,
   type Role,
@@ -57,6 +59,8 @@ export type PopupRequest =
   | { type: 'breaks.setEnabled'; enabled: boolean }
   /** Mood pulse after closing the work day: a face 1–5, or null = "Omitir". */
   | { type: 'mood.answer'; score: number | null }
+  /** Anonymous comment about the day (spec 2026-11-13-comentarios-anonimos), one a day. */
+  | { type: 'feedback.send'; tone: FeedbackTone; text: string }
   /** Absences page (spec 2026-10-22-solicitud-ausencias): the person's absences and requests. */
   | { type: 'absences.list' }
   /** Request an absence (pending until an admin decides). */
@@ -85,6 +89,7 @@ const POPUP_TYPES: readonly PopupRequestType[] = [
   'breaks.answer',
   'breaks.setEnabled',
   'mood.answer',
+  'feedback.send',
   'absences.list',
   'absences.request',
   'absences.cancel',
@@ -112,6 +117,10 @@ export function isPopupRequest(msg: unknown): msg is PopupRequest {
   if (m.type === 'mood.answer') {
     const score = (msg as { score?: unknown }).score;
     return score === null || isMoodScore(score);
+  }
+  if (m.type === 'feedback.send') {
+    const f = msg as { tone?: unknown; text?: unknown };
+    return isFeedbackTone(f.tone) && typeof f.text === 'string'; // the text is normalized by the worker
   }
   if (m.type === 'absences.cancel' || m.type === 'announcements.ack') {
     const id = (msg as { id?: unknown }).id;
@@ -215,6 +224,11 @@ export interface StatusView {
     /** Already answered or skipped today: the faces next to "Cerrar jornada" are not shown. */
     doneToday: boolean;
   } | null;
+  /**
+   * Anonymous comments (spec 2026-11-13-comentarios-anonimos); null = the
+   * organization has them off. `sentToday`: one was sent today (one a day).
+   */
+  feedback: { sentToday: boolean } | null;
   /**
    * How the person marks attendance (spec 2026-11-10-marcaciones), from the
    * last read; `kiosk`: on the kiosk at the entrance only (no "Iniciar
