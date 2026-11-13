@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { Layout } from './components/Layout';
 import { useSession } from './data/context';
+import { syncScheduledAnnouncements } from './lib/announcements';
 import { ActiveBreaksPage } from './pages/ActiveBreaksPage';
 import { AttendancePage } from './pages/AttendancePage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
@@ -35,7 +36,7 @@ export function App() {
             <Route path="colaborador/:uid" element={<MemberPage />} />
             <Route path="colaboradores" element={<UsersPage />} />
             <Route path="colaboradores/invitaciones" element={<InvitationsPage />} />
-            <Route path="colaboradores/grupos" element={<GroupsPage />} />
+            <Route path="colaboradores/grupos" element={<GroupsPage onGroupSaved={syncScheduledAnnouncements} />} />
             <Route path="colaboradores/fechas" element={<CelebrationsPage />} />
             <Route path="colaboradores/marcaciones" element={<AttendancePage />} />
             <Route path="invitaciones" element={<Navigate to="/colaboradores/invitaciones" replace />} />

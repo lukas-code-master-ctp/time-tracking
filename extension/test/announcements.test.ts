@@ -8,7 +8,19 @@ import { createHarness, type Harness } from './fakes';
 const NOW = slotStartOf(1_790_000_000_000) + SLOT_MS;
 
 function ann(overrides: Partial<Announcement> = {}): Announcement {
-  return { title: 'Nuevo reglamento', body: 'Lee el reglamento interno actualizado.', authorName: 'Recursos Humanos', createdAt: NOW - 60_000, createdBy: 'admin', archivedAt: null, ...overrides };
+  const createdAt = overrides.createdAt ?? NOW - 60_000;
+  return {
+    title: 'Nuevo reglamento',
+    body: 'Lee el reglamento interno actualizado.',
+    authorName: 'Recursos Humanos',
+    createdAt,
+    createdBy: 'admin',
+    archivedAt: null,
+    publishAt: createdAt,
+    audience: ['*'],
+    groupIds: [],
+    ...overrides,
+  };
 }
 
 describe('internal announcements (spec 2026-11-05-comunicados)', () => {
@@ -106,5 +118,45 @@ describe('internal announcements (spec 2026-11-05-comunicados)', () => {
     expect(mergeAnnouncements(prev, 'u2', [{ ...ann(), id: 'a' }], [], 2).notified).toEqual([]);
     expect(announcementCacheFromJSON(JSON.parse(JSON.stringify(next)))).toEqual(next);
     expect(announcementCacheFromJSON({ uid: 1 })).toBeNull();
+  });
+
+  // Spec 2026-11-13-grupos-y-comunicados-agendados.
+  it('only announcements for everyone or for this person arrive', async () => {
+    h.backend.announcements.set('all', ann({ title: 'Para todos' }));
+    h.backend.announcements.set('mine', ann({ title: 'Para terreno', audience: ['u1', 'u9'], groupIds: ['g1'] }));
+    h.backend.announcements.set('other', ann({ title: 'Para jefaturas', audience: ['u9'], groupIds: ['g2'] }));
+    await h.app.refreshAnnouncements(0);
+    expect((await h.app.status()).announcements.map((a) => a.title).sort()).toEqual(['Para terreno', 'Para todos']);
+  });
+
+  it('a scheduled announcement is neither shown nor notified until its time, then once', async () => {
+    h.backend.announcements.set('later', ann({ title: 'Mañana', createdAt: NOW - 60_000, publishAt: NOW + 10 * 60_000 }));
+    await h.app.refreshAnnouncements(0);
+    expect((await h.app.status()).announcements).toEqual([]);
+    expect(h.chrome.world.notifications.has('announcement:later')).toBe(false);
+
+    // Its time comes while the cache is still fresh: notified from the cache, without reading again.
+    vi.setSystemTime(NOW + 10 * 60_000);
+    const fetches = h.backend.announcementFetches;
+    await h.app.refreshAnnouncements(60 * 60_000);
+    expect(h.backend.announcementFetches).toBe(fetches);
+    expect(h.chrome.world.notifications.get('announcement:later')).toMatchObject({ title: 'Recursos Humanos: Mañana' });
+    const s = await h.app.status();
+    expect(s.announcements.map((a) => [a.title, a.publishAt])).toEqual([['Mañana', NOW + 10 * 60_000]]);
+
+    h.chrome.world.notifications.clear();
+    await h.app.refreshAnnouncements(0);
+    expect(h.chrome.world.notifications.has('announcement:later')).toBe(false);
+  });
+
+  it('a cache from before 0.2.29 (no publishAt) reads as sent at createdAt', () => {
+    const c = announcementCacheFromJSON({
+      uid: 'u1',
+      fetchedAt: 1,
+      items: [{ id: 'a', title: 't', body: 'b', authorName: 'RRHH', createdAt: 5 }],
+      readIds: [],
+      notified: [],
+    });
+    expect(c?.items[0]?.publishAt).toBe(5);
   });
 });

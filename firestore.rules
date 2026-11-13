@@ -16,8 +16,9 @@ rules_version = '2';
 //   requests new ones as `pending` and withdraws them while still pending
 //   (spec 2026-10-22-solicitud-ausencias); only an admin approves or rejects.
 // - `announcements` (spec 2026-11-05-comunicados) are published, archived
-//   and deleted by an admin and read by every active person, who confirms
-//   the reading once in `announcementReads`.
+//   and deleted by an admin and read by every active person in its audience
+//   (everyone or some groups), who confirms the reading once in
+//   `announcementReads`. Since 0.2.29 they can be scheduled (`publishAt`).
 // - `groups` (spec 2026-11-13-grupos-y-comunicados-agendados): named groups
 //   of people, written by an admin; a person reads the groups she is in.
 // - `celebrations/{uid}` (birthdays and work anniversaries, spec
@@ -545,29 +546,59 @@ service cloud.firestore {
 
     // ---------- announcements (spec 2026-11-05-comunicados) ----------
 
-    // Same limits as packages/shared/src/announcements.ts.
+    // Same limits as packages/shared/src/announcements.ts. `publishAt`,
+    // `audience` and `groupIds` (spec 2026-11-13-grupos-y-comunicados-agendados)
+    // are missing in announcements published before 0.2.29.
     function validAnnouncement(d) {
-      return d.keys().hasOnly(['title', 'body', 'authorName', 'createdAt', 'createdBy', 'archivedAt'])
+      return d.keys().hasOnly(['title', 'body', 'authorName', 'createdAt', 'createdBy', 'archivedAt', 'publishAt', 'audience', 'groupIds'])
         && d.keys().hasAll(['title', 'body', 'authorName', 'createdAt', 'createdBy', 'archivedAt'])
         && d.title is string && d.title.trim().size() > 0 && d.title.size() <= 120
         && d.body is string && d.body.trim().size() > 0 && d.body.size() <= 4000
         && d.authorName is string && d.authorName.trim().size() > 0 && d.authorName.size() <= 80
         && d.createdAt is int && d.createdBy is string
-        && isNullableInt(d.archivedAt);
+        && isNullableInt(d.archivedAt)
+        && (!('publishAt' in d) || (d.publishAt is int && d.publishAt <= d.createdAt + 366 * 24 * 60 * 60 * 1000))
+        && (!('audience' in d) || (d.audience is list && d.audience.size() > 0 && d.audience.size() <= 500))
+        && (!('groupIds' in d) || (d.groupIds is list && d.groupIds.size() <= 50));
     }
 
-    // Every active person reads them (the extension shows them); an admin
-    // publishes, archives/unarchives (nothing else changes) and deletes.
+    // Who sees it: everyone ('*') or the uids copied from the chosen groups.
+    // The extension queries `where('audience', 'array-contains-any', ['*', uid])`.
+    // Announcements from before 0.2.29 (no `audience`) are read only by
+    // admins until the portal adds the field (`audience: ['*']`): a fallback
+    // for the missing field made the rules accept unfiltered list queries.
+    function forMe(d) {
+      return d.audience.hasAny(['*', request.auth.uid]);
+    }
+
+    // Every active person in the audience reads them (the extension shows
+    // them once `publishAt` passed); an admin publishes or schedules,
+    // archives/unarchives, edits a scheduled one before it is sent, and deletes.
     match /announcements/{id} {
-      allow read: if isActive();
+      allow read: if isAdmin() || (isActive() && forMe(resource.data));
       allow create: if isAdmin()
         && validAnnouncement(incoming())
+        && incoming().keys().hasAll(['publishAt', 'audience', 'groupIds'])
         && incoming().createdBy == request.auth.uid
         && incoming().archivedAt == null
-        && notFuture(incoming().createdAt);
+        && notFuture(incoming().createdAt)
+        && incoming().publishAt >= incoming().createdAt;
       allow update: if isAdmin()
         && validAnnouncement(incoming())
-        && changedKeys().hasOnly(['archivedAt']);
+        && (
+          changedKeys().hasOnly(['archivedAt'])
+          // A scheduled one (not sent yet) changes its text, time or recipients.
+          || ('publishAt' in resource.data
+              && resource.data.publishAt > request.time.toMillis()
+              && changedKeys().hasOnly(['title', 'body', 'authorName', 'publishAt', 'audience', 'groupIds'])
+              && incoming().publishAt >= incoming().createdAt)
+          // Announcements from before 0.2.29 get the new fields (portal, once).
+          || (!('audience' in resource.data)
+              && changedKeys().hasOnly(['publishAt', 'audience', 'groupIds'])
+              && incoming().publishAt == resource.data.createdAt
+              && incoming().audience == ['*']
+              && incoming().groupIds == [])
+        );
       allow delete: if isAdmin();
     }
 

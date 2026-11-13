@@ -1357,9 +1357,20 @@ function announcement(overrides: Partial<Announcement> = {}): Announcement {
     createdAt: NOW,
     createdBy: 'admin',
     archivedAt: null,
+    publishAt: NOW,
+    audience: ['*'],
+    groupIds: [],
     ...overrides,
   };
 }
+
+/** Announcement from before 0.2.29 (no publishAt / audience / groupIds). */
+function legacyAnnouncement(): Announcement {
+  const { publishAt: _p, audience: _a, groupIds: _g, ...rest } = announcement();
+  return rest;
+}
+
+const FUTURE = Date.now() + 2 * 24 * 60 * 60 * 1000;
 
 function read(uid: string, overrides: Partial<AnnouncementRead> = {}): AnnouncementRead {
   return { announcementId: 'n1', uid, readAt: NOW, ...overrides };
@@ -1401,9 +1412,62 @@ describe('announcements', () => {
   it('active people read them; disabled ones and strangers do not', async () => {
     await seed(env, { 'announcements/n1': announcement() });
     await assertSucceeds(db('alice').doc('announcements/n1').get());
-    await assertSucceeds(db('alice').collection('announcements').orderBy('createdAt', 'desc').limit(30).get());
+    await assertSucceeds(
+      db('alice').collection('announcements').where('audience', 'array-contains-any', ['*', 'alice']).orderBy('publishAt', 'desc').limit(30).get(),
+    );
     await assertFails(db('dave').doc('announcements/n1').get());
     await assertFails(db(null).doc('announcements/n1').get());
+  });
+
+  it('a group announcement is read only by its audience (and admins)', async () => {
+    await seed(env, { 'announcements/n1': announcement({ audience: ['alice'], groupIds: ['g1'] }), 'announcements/n2': announcement() });
+    await assertSucceeds(db('alice').doc('announcements/n1').get());
+    await assertFails(db('bob').doc('announcements/n1').get());
+    await assertSucceeds(db('admin').doc('announcements/n1').get());
+    const q = (uid: string) =>
+      db(uid).collection('announcements').where('audience', 'array-contains-any', ['*', uid]).orderBy('publishAt', 'desc').limit(30).get();
+    await assertSucceeds(q('alice'));
+    await assertSucceeds(q('bob'));
+    // Someone else's uid in the query, or no filter (extensions before 0.2.29), is refused.
+    await assertFails(db('bob').collection('announcements').where('audience', 'array-contains-any', ['*', 'alice']).get());
+    await assertFails(db('bob').collection('announcements').orderBy('createdAt', 'desc').limit(30).get());
+    await assertSucceeds(db('admin').collection('announcements').orderBy('createdAt', 'desc').get());
+  });
+
+  it('an admin schedules one and edits it until it is sent', async () => {
+    const ref = db('admin').doc('announcements/n1');
+    await assertSucceeds(ref.set(announcement({ publishAt: FUTURE, audience: ['alice', 'bob'], groupIds: ['g1'] })));
+    await assertSucceeds(ref.update({ title: 'Otro', publishAt: FUTURE + 1000, audience: ['alice'], groupIds: ['g2'] }));
+    await assertFails(ref.update({ createdBy: 'bob' }));
+    await assertFails(ref.update({ publishAt: NOW - 1 }));
+    // Sent ones are not edited.
+    await assertSucceeds(db('admin').doc('announcements/n2').set(announcement()));
+    await assertFails(db('admin').doc('announcements/n2').update({ title: 'Otro' }));
+    await assertFails(db('admin').doc('announcements/n2').update({ audience: ['alice'] }));
+  });
+
+  it('rejects malformed delivery fields', async () => {
+    const put = (a: Record<string, unknown>) => db('admin').doc('announcements/n1').set({ ...announcement(), ...a });
+    await assertFails(put({ publishAt: NOW - 1000 }));
+    await assertFails(put({ publishAt: NOW + 400 * 24 * 60 * 60 * 1000 }));
+    await assertFails(put({ audience: [] }));
+    await assertFails(put({ audience: Array.from({ length: 501 }, (_, i) => `u${i}`) }));
+    await assertFails(put({ groupIds: 'g1' }));
+    // New ones carry the three fields.
+    await assertFails(db('admin').doc('announcements/n1').set(legacyAnnouncement()));
+  });
+
+  it('old announcements get the new fields once, for everyone', async () => {
+    await seed(env, { 'announcements/old': legacyAnnouncement() });
+    const ref = db('admin').doc('announcements/old');
+    // Only admins see it until it has the fields.
+    await assertFails(db('alice').doc('announcements/old').get());
+    await assertSucceeds(ref.get());
+    await assertFails(ref.update({ publishAt: NOW, audience: ['alice'], groupIds: [] }));
+    await assertFails(ref.update({ publishAt: NOW + 5, audience: ['*'], groupIds: [] }));
+    await assertFails(db('alice').doc('announcements/old').update({ publishAt: NOW, audience: ['*'], groupIds: [] }));
+    await assertSucceeds(ref.update({ publishAt: NOW, audience: ['*'], groupIds: [] }));
+    await assertSucceeds(db('alice').doc('announcements/old').get());
   });
 
   it('the person confirms the reading once, for herself', async () => {

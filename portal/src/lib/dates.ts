@@ -241,12 +241,13 @@ export function describeRange(range: DateRange): string {
   return `${formatShortDate(range.fromDate)} – ${formatShortDate(range.toDate)}`;
 }
 
-/** "hoy 14:32", "ayer 18:10", "27-09-2026 18:10". */
+/** "hoy 14:32", "ayer 18:10", "mañana 09:00", "27-09-2026 18:10". */
 export function formatRelativeDateTime(ms: number, now: number, timeZone: string = DEFAULT_TIME_ZONE): string {
   const date = zonedDate(ms, timeZone);
   const today = zonedDate(now, timeZone);
   const time = formatTime(ms, timeZone);
   if (date === today) return `hoy ${time}`;
   if (date === addDays(today, -1)) return `ayer ${time}`;
+  if (date === addDays(today, 1)) return `mañana ${time}`;
   return `${formatShortDate(date)} ${time}`;
 }

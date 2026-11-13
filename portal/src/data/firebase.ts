@@ -412,6 +412,9 @@ export function createFirebaseBackend(): Backend {
       await setDoc(target, announcement);
       return target.id;
     },
+    async updateAnnouncement(id, patch) {
+      await updateDoc(doc(db, COLLECTIONS.announcements, id), patch);
+    },
     async setAnnouncementArchived(id, archivedAt) {
       await updateDoc(doc(db, COLLECTIONS.announcements, id), { archivedAt });
     },

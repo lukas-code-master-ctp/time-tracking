@@ -746,6 +746,8 @@ input[type='password'],
 input[type='text'],
 input[type='number'],
 input[type='date'],
+input[type='search'],
+input[type='datetime-local'],
 select {
   min-height: 38px;
   padding: 8px 12px;
@@ -3513,4 +3515,89 @@ input[type='time'][aria-invalid='true'] {
 
 .group-item .person-name {
   overflow-wrap: anywhere;
+}
+
+/* Comunicados: para quién y cuándo (spec 2026-11-13-grupos-y-comunicados-agendados). */
+.delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  max-width: 680px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.delivery {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.delivery legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.delivery .segmented {
+  justify-self: start;
+}
+
+.delivery input[type='datetime-local'] {
+  max-width: 260px;
+}
+
+.group-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+
+.group-chip:hover {
+  border-color: var(--muted);
+}
+
+.group-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--surface-2));
+  color: var(--accent);
+}
+
+.group-chip input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.announcement-item.editing {
+  background: var(--surface-2);
+}
+
+@media (max-width: 640px) {
+  .delivery-grid {
+    grid-template-columns: 1fr;
+  }
 }

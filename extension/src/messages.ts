@@ -206,7 +206,7 @@ export interface StatusView {
    * Internal announcements the person has not confirmed yet, oldest first
    * (spec 2026-11-05-comunicados); [] when there are none or before joining.
    */
-  announcements: { id: string; title: string; body: string; authorName: string; createdAt: number }[];
+  announcements: { id: string; title: string; body: string; authorName: string; createdAt: number; publishAt: number }[];
   /**
    * Team birthdays and work anniversaries of today and the next 7 days
    * (spec 2026-11-05-cumpleanos-aniversarios), soonest first; `self`: the

@@ -253,12 +253,14 @@ export class FakeBackend implements Remote {
     this.absences.delete(id);
   }
 
-  async listAnnouncements(max: number): Promise<WithId<unknown>[]> {
+  async listAnnouncements(uid: string, max: number): Promise<WithId<unknown>[]> {
     this.check();
     this.announcementFetches++;
+    // Like the query: only documents with `audience` containing '*' or uid, newest publishAt first.
     return [...this.announcements.entries()]
+      .filter(([, a]) => Array.isArray(a.audience) && (a.audience.includes('*') || a.audience.includes(uid)))
       .map(([id, a]) => ({ ...structuredClone(a), id }))
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .sort((a, b) => (b.publishAt ?? 0) - (a.publishAt ?? 0))
       .slice(0, max);
   }
   async listAnnouncementReads(uid: string): Promise<string[]> {

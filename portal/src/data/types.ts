@@ -91,6 +91,14 @@ export interface DataSource {
   listAnnouncementReads(): Promise<AnnouncementRead[]>;
   /** Publishes a new announcement; returns its id. */
   createAnnouncement(announcement: Announcement): Promise<string>;
+  /**
+   * Changes a scheduled announcement (text, time, recipients) or adds the
+   * fields of 0.2.29 to an old one (spec 2026-11-13-grupos-y-comunicados-agendados).
+   */
+  updateAnnouncement(
+    id: string,
+    patch: Partial<Pick<Announcement, 'title' | 'body' | 'authorName' | 'publishAt' | 'audience' | 'groupIds'>>,
+  ): Promise<void>;
   /** Archives (a time) or brings back (null) an announcement. */
   setAnnouncementArchived(id: string, archivedAt: number | null): Promise<void>;
   deleteAnnouncement(id: string): Promise<void>;
