@@ -44,6 +44,12 @@ export function useSession(): SessionApi {
   return s;
 }
 
+/**
+ * Who may enter: the admin portal (default) or any active person (the phone
+ * page of the field, spec 2026-11-13-minuta-terreno).
+ */
+export type Access = 'admin' | 'member';
+
 /** Signed-in admin (only valid inside the authenticated layout). */
 export function useAdmin(): { uid: string; profile: UserProfile } {
   const { state } = useSession();
@@ -55,7 +61,15 @@ export function useAdmin(): { uid: string; profile: UserProfile } {
  * Sign-in flow: Firebase Auth user → `joinOrg` → admin check. Only an active
  * admin reaches the portal; anyone else sees "Sin acceso".
  */
-export function BackendProvider({ backend, children }: { backend: Backend; children: ReactNode }) {
+export function BackendProvider({
+  backend,
+  access = 'admin',
+  children,
+}: {
+  backend: Backend;
+  access?: Access;
+  children: ReactNode;
+}) {
   const [state, setState] = useState<SessionState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
@@ -66,7 +80,7 @@ export function BackendProvider({ backend, children }: { backend: Backend; child
       try {
         const profile = await backend.auth.joinOrg();
         if (ticket !== current) return;
-        if (profile.role !== 'admin' || profile.status !== 'active') {
+        if (profile.status !== 'active' || (access === 'admin' && profile.role !== 'admin')) {
           setState({
             status: 'noAccess',
             user,
@@ -95,7 +109,7 @@ export function BackendProvider({ backend, children }: { backend: Backend; child
       current++;
       unsubscribe();
     };
-  }, [backend, attempt]);
+  }, [backend, access, attempt]);
 
   const signIn = useCallback(async () => {
     try {

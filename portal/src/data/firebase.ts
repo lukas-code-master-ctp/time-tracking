@@ -68,6 +68,7 @@ import {
   type AnnouncementRead,
   type Celebration,
   type DailyReport,
+  type DailyReportDraft,
   type Invitation,
   type MoodWeek,
   isFeedback,
@@ -407,6 +408,28 @@ export function createFirebaseBackend(): Backend {
         if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
         throw err;
       }
+    },
+    async listMyGroupIds(uid) {
+      try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.groups), where('memberUids', 'array-contains', uid)));
+        return snap.docs.map((d) => d.id);
+      } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
+    async getDailyReport(docId) {
+      const snap = await getDoc(doc(db, COLLECTIONS.dailyReports, docId));
+      return snap.exists() ? readDailyReport(snap.data()) : null;
+    },
+    async putDailyReport(docId, report) {
+      await setDoc(doc(db, COLLECTIONS.dailyReports, docId), report);
+    },
+    async draftDailyReport(audio, mimeType) {
+      const call = httpsCallable<{ audio: string; mimeType: string }, DailyReportDraft>(functions, 'draftDailyReport', {
+        timeout: 130_000,
+      });
+      return (await call({ audio, mimeType })).data;
     },
     async listMoodWeeks() {
       try {

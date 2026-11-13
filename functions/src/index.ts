@@ -19,6 +19,8 @@
  *   `OPENROUTER_API_KEY` (asked by `firebase deploy` the first time) and env
  *   `DAILY_REPORT_MODEL` (optional, default `google/gemini-2.5-flash`). The
  *   emulator never calls OpenRouter: it answers a fixed draft.
+ * - Daily report reminders (spec 2026-11-13-minuta-terreno): the email links
+ *   to `PORTAL_URL` + `/terreno` (default `https://app.mipegahr.cl`).
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -31,6 +33,7 @@ import { defineSecret, defineString } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import {
   COLLECTIONS,
+  DAILY_REPORT_FIELD_PATH,
   DEFAULT_TIME_ZONE,
   FUNCTIONS_REGION,
   SCHEDULER_REGION,
@@ -57,6 +60,7 @@ import { autoCloseStaleSessionsCore } from './core/autoClose.js';
 import { kioskPunchCore } from './core/kiosk.js';
 import { draftDailyReportCore, type DraftModel } from './core/dailyReportDraft.js';
 import { OPENROUTER_SECRET_NAME, dailyReportModel, openRouterModel } from './core/openrouter.js';
+import { sendDailyReportRemindersCore } from './core/dailyReportReminder.js';
 
 initializeApp();
 setGlobalOptions({ region: FUNCTIONS_REGION, maxInstances: 10 });
@@ -234,5 +238,31 @@ export const weeklyCelebrationsDigest = onSchedule(
       logger,
     });
     logger.info('Resumen semanal de cumpleaños terminado', result);
+  },
+);
+
+// Spec 2026-11-13-minuta-terreno: people in the field (no computer, no
+// extension) get an email with the link to the phone page once their
+// schedule ends, when they have not sent today's daily report.
+export const dailyReportReminders = onSchedule(
+  {
+    schedule: 'every 15 minutes',
+    timeZone: DEFAULT_TIME_ZONE,
+    region: SCHEDULER_REGION,
+    secrets: EMAIL_SECRETS,
+  },
+  async () => {
+    const portal = (process.env.PORTAL_URL?.trim() || 'https://app.mipegahr.cl').replace(/\/+$/, '');
+    const result = await sendDailyReportRemindersCore({
+      db: getFirestore(),
+      now: Date.now(),
+      link: `${portal}${DAILY_REPORT_FIELD_PATH}`,
+      config: resendConfig(),
+      isEmulator: isEmulator(),
+      emailEnabled: EMAIL_ENABLED,
+      send: sendEmail,
+      logger,
+    });
+    if (result.reminded.length > 0) logger.info('Recordatorios de minuta enviados', result);
   },
 );

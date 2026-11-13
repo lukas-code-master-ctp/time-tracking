@@ -12,6 +12,7 @@ import type {
   AttendanceSettings,
   Celebration,
   DailyReport,
+  DailyReportDraft,
   Kiosk,
   Invitation,
   MoodWeek,
@@ -121,6 +122,14 @@ export interface DataSource {
    * spec 2026-11-13-minuta-diaria. `[]` while the rules are not deployed.
    */
   listDailyReports(fromDate: string, toDate: string): Promise<WithId<DailyReport>[]>;
+  /** Ids of the groups whose members include `uid` (phone page of the field, spec 2026-11-13-minuta-terreno). */
+  listMyGroupIds(uid: string): Promise<string[]>;
+  /** `dailyReports/{docId}` when it exists and is valid, otherwise null. */
+  getDailyReport(docId: string): Promise<DailyReport | null>;
+  /** Writes the whole `dailyReports/{docId}` (create, or a correction the same day). */
+  putDailyReport(docId: string, report: DailyReport): Promise<void>;
+  /** Calls `draftDailyReport`: transcript and draft of a recording (base64). */
+  draftDailyReport(audio: string, mimeType: string): Promise<DailyReportDraft>;
   /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
   listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
   /**

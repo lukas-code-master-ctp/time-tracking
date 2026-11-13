@@ -39,6 +39,8 @@ export const COLLECTIONS = {
   dailyReports: 'dailyReports',
   /** `dailyReportDrafts/{uid_YYYY-MM-DD}`: AI drafts used that day (written by `draftDailyReport`). */
   dailyReportDrafts: 'dailyReportDrafts',
+  /** `dailyReportReminders/{uid_YYYY-MM-DD}`: reminder email sent that day (written by `dailyReportReminders`). */
+  dailyReportReminders: 'dailyReportReminders',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

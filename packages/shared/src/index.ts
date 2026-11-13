@@ -22,3 +22,4 @@ export * from './feedback.js';
 export * from './sessions.js';
 export * from './attendance.js';
 export * from './dailyReports.js';
+export * from './wav.js';
