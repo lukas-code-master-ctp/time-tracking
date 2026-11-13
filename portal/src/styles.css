@@ -3803,3 +3803,158 @@ input[type='time'][aria-invalid='true'] {
 .section-subtitle {
   margin: 0 0 12px;
 }
+
+/* ---------- phone page of the field (/terreno, spec 2026-11-13-minuta-terreno) ---------- */
+
+.field-page {
+  --mic-halo: rgb(220 38 38 / 0.18);
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  background: var(--bg);
+}
+
+body:has(.field-page) {
+  background: var(--bg);
+}
+
+.field-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.field-hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.field-date {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.field-date::first-letter {
+  text-transform: uppercase;
+}
+
+.field-card {
+  display: grid;
+  gap: 14px;
+}
+
+.field-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.field-card > p {
+  margin: 0;
+}
+
+.field-card .field {
+  max-width: none;
+}
+
+.field-record {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 8px 0 4px;
+}
+
+.field-mic {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 24px -6px rgb(38 51 107 / 0.45);
+  transition:
+    background-color 0.18s var(--ease),
+    box-shadow 0.08s linear,
+    transform 0.12s var(--ease);
+}
+
+.field-mic:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.field-mic.recording {
+  background: var(--danger);
+  color: #fff;
+}
+
+.field-mic:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.field-mic .spinner {
+  width: 34px;
+  height: 34px;
+  border-color: rgb(255 255 255 / 0.35);
+  border-top-color: currentColor;
+}
+
+.field-mic-label {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.field-card textarea {
+  min-height: 160px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  /* 16px: iPhone does not zoom into the field. */
+  font: 16px/1.5 var(--font);
+  resize: vertical;
+}
+
+.field-card textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.field-send {
+  min-height: 48px;
+  font-size: 16px;
+  width: 100%;
+}
+
+.field-install {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.field-install p {
+  margin: 0;
+}
+
+.auth-field .auth-card {
+  max-width: 440px;
+}

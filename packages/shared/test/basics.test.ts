@@ -125,6 +125,7 @@ describe('collections', () => {
       attendancePhotos: 'attendancePhotos',
       dailyReports: 'dailyReports',
       dailyReportDrafts: 'dailyReportDrafts',
+      dailyReportReminders: 'dailyReportReminders',
     });
   });
 

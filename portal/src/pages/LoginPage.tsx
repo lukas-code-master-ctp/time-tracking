@@ -23,23 +23,40 @@ function Brand() {
   );
 }
 
+/** Admin portal, or the phone page of the people in the field (spec 2026-11-13-minuta-terreno). */
+export type AuthVariant = 'admin' | 'field';
+
 /** Two columns on wide screens: the sticky note with what the portal does, and the form. */
-function AuthLayout({ children }: { children: ReactNode }) {
+function AuthLayout({ variant = 'admin', children }: { variant?: AuthVariant; children: ReactNode }) {
   useLightTheme();
   return (
-    <main className="auth-page">
+    <main className={`auth-page${variant === 'field' ? ' auth-field' : ''}`}>
       <aside className="auth-aside" aria-hidden="true">
-        <div className="auth-note">
-          <p className="auth-note-kicker">Portal de administración</p>
-          <p className="auth-note-title">
-            Todo el equipo, <span className="auth-note-mark">en una hoja</span>
-          </p>
-          <ul>
-            <li>Horas, actividad y pausas activas de cada persona</li>
-            <li>Ausencias, comunicados y pulso de ánimo</li>
-            <li>Invitaciones, horarios y permisos</li>
-          </ul>
-        </div>
+        {variant === 'field' ? (
+          <div className="auth-note">
+            <p className="auth-note-kicker">Personas en terreno</p>
+            <p className="auth-note-title">
+              Tu minuta del día, <span className="auth-note-mark">desde el celular</span>
+            </p>
+            <ul>
+              <li>Graba un audio contando tu día</li>
+              <li>La minuta se arma sola y tú la revisas</li>
+              <li>Llega directo a tu empresa</li>
+            </ul>
+          </div>
+        ) : (
+          <div className="auth-note">
+            <p className="auth-note-kicker">Portal de administración</p>
+            <p className="auth-note-title">
+              Todo el equipo, <span className="auth-note-mark">en una hoja</span>
+            </p>
+            <ul>
+              <li>Horas, actividad y pausas activas de cada persona</li>
+              <li>Ausencias, comunicados y pulso de ánimo</li>
+              <li>Invitaciones, horarios y permisos</li>
+            </ul>
+          </div>
+        )}
       </aside>
       <div className="auth-main">
         <div className="auth-card">
@@ -150,7 +167,9 @@ const TITLES: Record<Mode, { title: string; lead: string }> = {
   },
 };
 
-export function LoginPage() {
+const FIELD_LEAD = 'Entra con tu correo de la empresa para enviar la minuta de tu día.';
+
+export function LoginPage({ variant = 'admin' }: { variant?: AuthVariant }) {
   const { state, signIn, signInWithPassword, createPasswordAccount, sendPasswordReset, clearMessage, signInDev } =
     useSession();
   const [mode, setMode] = useState<Mode>('signIn');
@@ -212,11 +231,12 @@ export function LoginPage() {
     if (signInDev && devEmail.trim()) void run(() => signInDev(devEmail.trim()));
   };
 
-  const { title, lead } = TITLES[mode];
+  const { title } = TITLES[mode];
+  const lead = variant === 'field' && mode === 'signIn' ? FIELD_LEAD : TITLES[mode].lead;
   const placeholder = `nombre@${ALLOWED_DOMAINS[0] ?? 'empresa.cl'}`;
 
   return (
-    <AuthLayout>
+    <AuthLayout variant={variant}>
       <div className="auth-head">
         <h1>{title}</h1>
         <p className="muted">{lead}</p>
@@ -334,12 +354,12 @@ export function LoginPage() {
   );
 }
 
-export function NoAccessPage() {
+export function NoAccessPage({ variant = 'admin' }: { variant?: AuthVariant }) {
   const { state, signOut, retry } = useSession();
   const message = state.status === 'noAccess' ? state.message : '';
   const email = state.status === 'noAccess' ? state.user.email : null;
   return (
-    <AuthLayout>
+    <AuthLayout variant={variant}>
       <div className="auth-head">
         <h1>Sin acceso</h1>
         {email ? <p className="muted">Sesión iniciada como {email}.</p> : null}

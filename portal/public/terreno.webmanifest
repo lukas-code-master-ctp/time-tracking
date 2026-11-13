@@ -1,0 +1,16 @@
+{
+  "name": "Minuta · Mi Pega HR",
+  "short_name": "Minuta",
+  "description": "Envía la minuta de tu día desde el celular.",
+  "lang": "es-CL",
+  "start_url": "/terreno",
+  "scope": "/terreno",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#26336b",
+  "icons": [
+    { "src": "/terreno/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/terreno/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/terreno/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

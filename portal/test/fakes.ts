@@ -11,6 +11,7 @@ import {
   type AttendanceSettings,
   type Celebration,
   type DailyReport,
+  type DailyReportDraft,
   type Kiosk,
   type Invitation,
   type MoodWeek,
@@ -56,6 +57,8 @@ export interface FakeDb {
   groups?: WithId<PersonGroup>[];
   /** Daily reports (optional). */
   dailyReports?: WithId<DailyReport>[];
+  /** What `draftDailyReport` answers (optional). */
+  draft?: DailyReportDraft;
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
   /** Anonymous comments (optional). */
@@ -116,6 +119,17 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
       db.feedback = (db.feedback ?? []).filter((f) => f.id !== id);
     },
     listDailyReports: async (from, to) => (db.dailyReports ?? []).filter((r) => r.date >= from && r.date <= to),
+    listMyGroupIds: async (uid) => (db.groups ?? []).filter((g) => g.memberUids.includes(uid)).map((g) => g.id),
+    getDailyReport: async (docId) => {
+      const r = (db.dailyReports ?? []).find((x) => x.id === docId);
+      if (!r) return null;
+      const { id: _id, ...report } = r;
+      return report;
+    },
+    putDailyReport: async (docId, report) => {
+      db.dailyReports = [...(db.dailyReports ?? []).filter((r) => r.id !== docId), { ...report, id: docId }];
+    },
+    draftDailyReport: async () => db.draft ?? { transcript: 'Hoy visité a dos clientes.', text: '- Visité a dos clientes.' },
     listPendingAbsences: async () => (db.absences ?? []).filter((a) => a.status === 'pending'),
     saveAbsence: async (id, absence) => {
       const newId = id ?? `abs-${(db.absences ?? []).length + 1}`;

@@ -6,8 +6,9 @@
  * draft with AI (OpenRouter); the person reviews it and sends it. Pure.
  */
 
-import type { EpochMs, OrgConfig } from './types.js';
-import { isValidDateKey } from './schedule.js';
+import type { Absence, EpochMs, OrgConfig, WeekSchedule } from './types.js';
+import { isValidDateKey, planForDay } from './schedule.js';
+import { absenceCoversDate, absenceStatus, isFullDayAbsence } from './absences.js';
 
 /** Characters of the report the person sends. */
 export const DAILY_REPORT_MAX_CHARS = 4000;
@@ -185,4 +186,50 @@ export function readDailyReport(raw: unknown): DailyReport | null {
     createdAt: d.createdAt!,
     updatedAt: d.updatedAt!,
   };
+}
+
+// ---------- people in the field (spec 2026-11-13-minuta-terreno) ----------
+
+/**
+ * Portal page where people without a computer (in the field) send the report
+ * from their phone: `app.mipegahr.cl/terreno`.
+ */
+export const DAILY_REPORT_FIELD_PATH = '/terreno';
+
+/**
+ * The reminder email goes out after the end of the person's schedule, within
+ * this window (a run of the job that was missed still sends it; later than
+ * this it is no longer useful).
+ */
+export const DAILY_REPORT_REMINDER_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+/** `dailyReportReminders/{uid_YYYY-MM-DD}`: the reminder email of that day was sent (only the function writes it). */
+export interface DailyReportReminder {
+  uid: string;
+  date: string;
+  sentAt: EpochMs;
+}
+
+/**
+ * True when the reminder email is due for a person asked for the report:
+ * her schedule of `date` ended less than {@link DAILY_REPORT_REMINDER_WINDOW_MS}
+ * ago, it is not a day off or a holiday, she has no approved full-day
+ * absence that day, and she has not sent the report nor got the reminder.
+ */
+export function dailyReportReminderDue(p: {
+  now: EpochMs;
+  date: string;
+  week: WeekSchedule | null;
+  holidays: readonly string[];
+  absences: readonly Pick<Absence, 'startDate' | 'endDate' | 'startTime' | 'endTime' | 'status'>[];
+  sent: boolean;
+  reminded: boolean;
+}): boolean {
+  if (p.sent || p.reminded) return false;
+  const span = planForDay(p.date, p.week, p.holidays).span;
+  if (!span || p.now < span.end || p.now >= span.end + DAILY_REPORT_REMINDER_WINDOW_MS) return false;
+  const away = p.absences.some(
+    (a) => absenceStatus(a) === 'approved' && isFullDayAbsence(a) && absenceCoversDate(a, p.date),
+  );
+  return !away;
 }

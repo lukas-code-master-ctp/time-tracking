@@ -11,7 +11,7 @@ import './minuta.css';
 import { DAILY_REPORT_AUDIO_SAMPLE_RATE, DAILY_REPORT_MAX_AUDIO_SECONDS, DAILY_REPORT_MAX_CHARS, type DailyReport } from '@timetracking/shared';
 import type { PopupResponse } from '../messages';
 import { send } from '../ui/dom';
-import { recordingToWav, toBase64 } from './wav';
+import { recordingToWav, toBase64 } from '@timetracking/shared';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const statusBox = $<HTMLElement>('status');
