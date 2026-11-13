@@ -13,6 +13,7 @@ import {
   type Kiosk,
   type Invitation,
   type MoodWeek,
+  type Feedback,
   type OrgConfig,
   type PersonSchedule,
   type ScheduleConfig,
@@ -49,6 +50,8 @@ export interface FakeDb {
   attendancePhotos?: WithId<AttendancePhoto>[];
   /** Mood pulse counters (optional). */
   moodWeeks?: WithId<MoodWeek>[];
+  /** Anonymous comments (optional). */
+  feedback?: WithId<Feedback>[];
 }
 
 export function emptyDb(): FakeDb {
@@ -96,6 +99,10 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     listAbsences: async (fromDate, toDate, uid) =>
       (db.absences ?? []).filter((a) => (!uid || a.uid === uid) && absenceOverlapsRange(a, fromDate, toDate)),
     listMoodWeeks: async () => db.moodWeeks ?? [],
+    listFeedback: async (fromWeek: string) => (db.feedback ?? []).filter((f) => f.week >= fromWeek),
+    deleteFeedback: async (id: string) => {
+      db.feedback = (db.feedback ?? []).filter((f) => f.id !== id);
+    },
     listPendingAbsences: async () => (db.absences ?? []).filter((a) => a.status === 'pending'),
     saveAbsence: async (id, absence) => {
       const newId = id ?? `abs-${(db.absences ?? []).length + 1}`;

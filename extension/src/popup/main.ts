@@ -12,7 +12,8 @@
  *   this person), internal announcements waiting for "Confirmo que lo
  *   leí" (spec 2026-11-05-comunicados), team birthdays and work
  *   anniversaries (today and the next 7 days, when recorded in the
- *   portal), what is being
+ *   portal), an anonymous comment about the day (spec
+ *   2026-11-13-comentarios-anonimos), what is being
  *   measured, pending uploads, sign out.
  *
  * Outside Chrome the popup closes when Google's window opens, so the result
@@ -27,7 +28,17 @@ import { getTheme, nextTheme, setTheme, THEME_LABEL } from '../ui/theme';
 import { clock, el, hoursMinutes, percent, send, workDayElapsed } from '../ui/dom';
 import { usesGoogleAccountChooser } from '../browser';
 import { ALLOWED_DOMAINS } from '../env';
-import { exerciseArt, exerciseById, MOOD_OPTIONS, type MoodScore } from '@timetracking/shared';
+import {
+  exerciseArt,
+  exerciseById,
+  FEEDBACK_MAX_LENGTH,
+  FEEDBACK_TONE_EMOJI,
+  FEEDBACK_TONE_LABEL,
+  FEEDBACK_TONES,
+  MOOD_OPTIONS,
+  type FeedbackTone,
+  type MoodScore,
+} from '@timetracking/shared';
 
 const root = document.getElementById('app') as HTMLElement;
 let busy = false;
@@ -168,9 +179,11 @@ function focusKey(): string | null {
 
 function restoreFocus(k: string | null): void {
   if (!k) return;
-  for (const node of root.querySelectorAll<HTMLElement>('button, input')) {
+  for (const node of root.querySelectorAll<HTMLElement>('button, input, textarea')) {
     if (keyOf(node) === k && !(node as HTMLButtonElement).disabled) {
       node.focus();
+      // The comment being typed keeps its caret across re-renders.
+      if (node instanceof HTMLTextAreaElement) node.setSelectionRange(feedbackCaret, feedbackCaret);
       return;
     }
   }
@@ -349,6 +362,7 @@ function renderReady(s: StatusView): void {
   if (s.announcements.length > 0) root.append(renderAnnouncement(s.announcements));
 
   if (!on && s.mood?.pending) root.append(renderMood());
+  if (s.feedback && !s.feedback.sentToday) root.append(renderFeedback());
   if (s.breaks) root.append(renderBreaks(s.breaks, on));
   if (s.celebrations.length > 0) root.append(renderCelebrations(s.celebrations));
 
@@ -509,6 +523,113 @@ async function answerMood(score: MoodScore | null): Promise<void> {
   await act({ type: 'mood.answer', score });
   if (score !== null && !lastError) {
     lastInfo = '¡Gracias! Tu respuesta se guardó sin tu nombre.';
+    lastRendered = key();
+    render();
+  }
+}
+
+// ---------- anonymous comment (spec 2026-11-13-comentarios-anonimos) ----------
+
+/** The form stays open, with its draft, across re-renders until sent or cancelled. */
+let feedbackOpen = false;
+let feedbackTone: FeedbackTone | null = null;
+let feedbackDraft = '';
+let feedbackCaret = 0;
+
+/** "¿Algo que contar de tu día?": one quiet row that opens a short form. */
+function renderFeedback(): HTMLElement {
+  if (!feedbackOpen) {
+    const open = el('button', { type: 'button', className: 'feedback-open', id: 'feedback-open', disabled: busy }, [
+      el('span', { className: 'feedback-icon', ariaHidden: 'true', textContent: '💬' }),
+      el('span', { className: 'feedback-open-text' }, [
+        el('span', { className: 'feedback-title', textContent: '¿Algo que contar de tu día?' }),
+        el('span', { className: 'small muted', textContent: 'Bueno o por mejorar. Es anónimo.' }),
+      ]),
+      el('span', { className: 'feedback-chevron', ariaHidden: 'true', textContent: '›' }),
+    ]);
+    open.addEventListener('click', () => {
+      feedbackOpen = true;
+      render();
+      document.getElementById('feedback-text')?.focus();
+    });
+    return el('section', { className: 'card feedback' }, [open]);
+  }
+
+  const tones = FEEDBACK_TONES.map((t) => {
+    const pressed = feedbackTone === t;
+    const b = el('button', {
+      type: 'button',
+      className: `feedback-tone ${t}${pressed ? ' chosen' : ''}`,
+      id: `feedback-tone-${t}`,
+      disabled: busy,
+    }, [el('span', { ariaHidden: 'true', textContent: FEEDBACK_TONE_EMOJI[t] }), ` ${FEEDBACK_TONE_LABEL[t]}`]);
+    b.setAttribute('aria-pressed', String(pressed));
+    b.addEventListener('click', () => {
+      feedbackTone = t;
+      render();
+    });
+    return b;
+  });
+  const group = el('div', { className: 'feedback-tones', role: 'group' }, tones);
+  group.setAttribute('aria-label', 'Tipo de comentario');
+
+  const counter = el('span', { className: 'small muted feedback-count' });
+  const send = button(inFlight === 'feedback.send' ? 'Enviando…' : 'Enviar', 'primary feedback-send', () => void sendFeedback());
+  const update = (): void => {
+    const length = feedbackDraft.trim().length;
+    counter.textContent = `${feedbackDraft.length}/${FEEDBACK_MAX_LENGTH}`;
+    send.disabled = busy || !feedbackTone || length === 0;
+  };
+  const text = el('textarea', {
+    id: 'feedback-text',
+    className: 'feedback-text',
+    rows: 3,
+    maxLength: FEEDBACK_MAX_LENGTH,
+    placeholder: '¿Qué pasó? Evita datos que te identifiquen si no quieres que te reconozcan.',
+    disabled: busy,
+    value: feedbackDraft,
+  });
+  text.setAttribute('aria-label', 'Tu comentario');
+  text.addEventListener('input', () => {
+    feedbackDraft = text.value;
+    feedbackCaret = text.selectionStart;
+    update();
+  });
+  text.addEventListener('keyup', () => (feedbackCaret = text.selectionStart));
+  text.addEventListener('click', () => (feedbackCaret = text.selectionStart));
+  update();
+
+  const cancel = el('button', { type: 'button', className: 'link quiet', textContent: 'Cancelar', disabled: busy });
+  cancel.addEventListener('click', () => {
+    resetFeedback();
+    render();
+  });
+
+  return el('section', { className: 'card feedback open', ariaLabel: 'Comentario anónimo' }, [
+    el('div', { className: 'feedback-title', textContent: 'Cuenta algo de tu día' }),
+    group,
+    text,
+    el('div', { className: 'feedback-foot' }, [counter, el('span', { className: 'actions' }, [cancel, send])]),
+    el('p', {
+      className: 'small muted feedback-note',
+      textContent: 'Es anónimo: tu empresa lee el texto con la semana, sin tu nombre ni el día. Uno por día.',
+    }),
+  ]);
+}
+
+function resetFeedback(): void {
+  feedbackOpen = false;
+  feedbackTone = null;
+  feedbackDraft = '';
+  feedbackCaret = 0;
+}
+
+async function sendFeedback(): Promise<void> {
+  if (!feedbackTone) return;
+  await act({ type: 'feedback.send', tone: feedbackTone, text: feedbackDraft });
+  if (!lastError) {
+    resetFeedback();
+    lastInfo = '¡Gracias! Tu comentario se guardó sin tu nombre.';
     lastRendered = key();
     render();
   }

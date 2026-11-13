@@ -164,6 +164,12 @@ describe('config/org', () => {
     await assertFails(admin.doc('config/org').set({ ...orgConfig(), moodPulseEnabled: 1 } as unknown as OrgConfig));
   });
 
+  it('feedbackEnabled is optional and must be a bool', async () => {
+    const admin = db('admin');
+    await assertSucceeds(admin.doc('config/org').set(orgConfig({ feedbackEnabled: true })));
+    await assertFails(admin.doc('config/org').set({ ...orgConfig(), feedbackEnabled: 'si' } as unknown as OrgConfig));
+  });
+
   it('active break settings are optional, with bounded integer minutes', async () => {
     const admin = db('admin');
     await assertSucceeds(
@@ -1276,6 +1282,58 @@ describe('mood pulse', () => {
     await assertFails(db('admin').doc(`moodVotes/alice_${WEEK}`).get());
     await assertFails(db('admin').collection('moodVotes').get());
     await assertFails(db('bob').doc(`moodVotes/alice_${WEEK}`).get());
+  });
+});
+
+// ---------- anonymous comments ----------
+
+describe('anonymous feedback', () => {
+  const WEEK = '2026-W46';
+  /** One comment as the extension sends it: the day added to the vote + the comment. */
+  function comment(uid: string, dates: string[], data: Record<string, unknown>, week = WEEK) {
+    const f = db(uid);
+    const b = f.batch();
+    b.set(f.doc(`feedbackVotes/${uid}_${week}`), { uid, week, dates });
+    b.set(f.collection('feedback').doc(), data);
+    return b.commit();
+  }
+  const ok = { week: WEEK, tone: 'positive', text: 'Buen almuerzo de equipo' };
+
+  it('accepts one comment per person and day', async () => {
+    await assertSucceeds(comment('alice', ['2026-11-13'], ok));
+    await assertSucceeds(comment('bob', ['2026-11-13'], { ...ok, tone: 'negative' }));
+    await assertSucceeds(comment('alice', ['2026-11-13', '2026-11-14'], ok));
+    await assertFails(comment('alice', ['2026-11-13', '2026-11-14'], ok));
+    await assertFails(comment('alice', ['2026-11-14', '2026-11-13'], ok));
+  });
+
+  it('rejects comments without a new day, with a uid or other fields, bad tone, empty or long text', async () => {
+    await assertFails(db('alice').collection('feedback').add(ok));
+    await assertFails(comment('alice', ['2026-11-13'], { ...ok, uid: 'alice' }));
+    await assertFails(comment('alice', ['2026-11-13'], { ...ok, date: '2026-11-13' }));
+    await assertFails(comment('alice', ['2026-11-13'], { ...ok, tone: 'neutral' }));
+    await assertFails(comment('alice', ['2026-11-13'], { ...ok, text: '' }));
+    await assertFails(comment('alice', ['2026-11-13'], { ...ok, text: 'x'.repeat(501) }));
+    await assertFails(comment('alice', ['2026-11-13'], { ...ok, week: '2026-W45' }));
+    await assertFails(comment('dave', ['2026-11-13'], ok));
+    await assertSucceeds(comment('alice', ['2026-11-13'], { ...ok, text: 'x'.repeat(500) }));
+  });
+
+  it('admins read and delete comments but never the votes; nobody edits a comment', async () => {
+    await seed(env, {
+      'feedback/c1': ok,
+      [`feedbackVotes/alice_${WEEK}`]: { uid: 'alice', week: WEEK, dates: ['2026-11-13'] },
+    });
+    await assertSucceeds(db('admin').collection('feedback').get());
+    await assertFails(db('alice').collection('feedback').get());
+    await assertFails(db('alice').doc('feedback/c1').get());
+    await assertFails(db('admin').doc('feedback/c1').update({ text: 'otro' }));
+    await assertFails(db('alice').doc('feedback/c1').delete());
+    await assertSucceeds(db('alice').doc(`feedbackVotes/alice_${WEEK}`).get());
+    await assertFails(db('admin').doc(`feedbackVotes/alice_${WEEK}`).get());
+    await assertFails(db('admin').collection('feedbackVotes').get());
+    await assertFails(db('alice').doc(`feedbackVotes/alice_${WEEK}`).delete());
+    await assertSucceeds(db('admin').doc('feedback/c1').delete());
   });
 });
 

@@ -23,6 +23,10 @@ export const COLLECTIONS = {
   moodWeeks: 'moodWeeks',
   /** `moodVotes/{uid_YYYY-Www}`: days the person answered the mood pulse (never what). */
   moodVotes: 'moodVotes',
+  /** `feedback/{autoId}`: anonymous comments about the day (feedback.ts), no uid. */
+  feedback: 'feedback',
+  /** `feedbackVotes/{uid_YYYY-Www}`: days the person left a comment (never which). */
+  feedbackVotes: 'feedbackVotes',
   /** `attendanceSettings/{uid}`: RUT and attendance mode (extension, kiosk or both). */
   attendanceSettings: 'attendanceSettings',
   /** `kiosks/{tokenHash}`: devices allowed to mark attendance with a RUT. */

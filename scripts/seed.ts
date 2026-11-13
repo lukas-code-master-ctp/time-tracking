@@ -136,6 +136,22 @@ async function main(): Promise<void> {
   const moodWeeks = lastWeeks(dateKey(now), moodSamples.length);
   await Promise.all(moodWeeks.map((w, i) => db.doc(`${COLLECTIONS.moodWeeks}/${w}`).set(moodSamples[i]!)));
 
+  // Anonymous comments of the last 3 weeks (fixed ids, replaced on every run).
+  const feedbackWeeks = lastWeeks(dateKey(now), 3);
+  const feedbackSamples: { week: number; tone: 'positive' | 'negative'; text: string }[] = [
+    { week: 2, tone: 'positive', text: 'El almuerzo de equipo del miércoles estuvo muy bueno. Gracias por organizarlo.' },
+    { week: 2, tone: 'negative', text: 'La VPN se cayó toda la mañana y no pude entrar al sistema de facturación hasta las 12.' },
+    { week: 2, tone: 'positive', text: 'Me ayudaron mucho con el cierre de mes, se nota cuando trabajamos coordinados.' },
+    { week: 1, tone: 'negative', text: 'Hubo tres reuniones seguidas sin agenda; terminé el día sin avanzar en lo mío.' },
+    { week: 1, tone: 'positive', text: 'Buena la capacitación de Excel, ojalá se repita.' },
+    { week: 0, tone: 'negative', text: 'El aire acondicionado del segundo piso sigue sin funcionar.' },
+  ];
+  await Promise.all(
+    feedbackSamples.map((f, i) =>
+      db.doc(`${COLLECTIONS.feedback}/seed-${i}`).set({ week: feedbackWeeks[f.week]!, tone: f.tone, text: f.text }),
+    ),
+  );
+
   const existingCreatedAt = async (uid: string, fallback: number): Promise<number> => {
     const v = (await db.doc(`${COLLECTIONS.users}/${uid}`).get()).get('createdAt') as unknown;
     return typeof v === 'number' ? v : fallback;

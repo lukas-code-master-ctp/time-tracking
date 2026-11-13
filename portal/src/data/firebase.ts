@@ -67,6 +67,7 @@ import {
   type Celebration,
   type Invitation,
   type MoodWeek,
+  isFeedback,
   type OrgConfig,
   type PersonSchedule,
   type ScreenshotMeta,
@@ -377,6 +378,22 @@ export function createFirebaseBackend(): Backend {
         if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
         throw err;
       }
+    },
+    async listFeedback(fromWeek) {
+      try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.feedback), where('week', '>=', fromWeek)));
+        return snap.docs.flatMap((d) => {
+          const v = d.data();
+          return isFeedback(v) ? [{ week: v.week, tone: v.tone, text: v.text, id: d.id }] : [];
+        });
+      } catch (err) {
+        // Rules of the anonymous comments not deployed yet: the page shows none.
+        if ((err as { code?: unknown } | null)?.code === 'permission-denied') return [];
+        throw err;
+      }
+    },
+    async deleteFeedback(id) {
+      await deleteDoc(doc(db, COLLECTIONS.feedback, id));
     },
     async createAnnouncement(announcement) {
       const target = doc(collection(db, COLLECTIONS.announcements));

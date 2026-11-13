@@ -8,6 +8,7 @@ import { CelebrationsPage } from './pages/CelebrationsPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { LoginPage, NoAccessPage, SplashPage } from './pages/LoginPage';
 import { MemberPage } from './pages/MemberPage';
+import { FeedbackPage } from './pages/FeedbackPage';
 import { MoodPage } from './pages/MoodPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TeamPage } from './pages/TeamPage';
@@ -39,6 +40,7 @@ export function App() {
             <Route path="pausa-activa" element={<ActiveBreaksPage />} />
             <Route path="comunicados" element={<AnnouncementsPage />} />
             <Route path="animo" element={<MoodPage />} />
+            <Route path="comentarios" element={<FeedbackPage />} />
             <Route path="configuracion" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

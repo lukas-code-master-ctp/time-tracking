@@ -452,6 +452,151 @@ body {
   }
 }
 
+/* Anonymous comment: one quiet row that opens a short form. */
+.feedback {
+  padding: 0;
+  overflow: hidden;
+}
+
+.feedback-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.feedback-open:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.feedback-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.feedback-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.feedback-open-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.feedback-title {
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.feedback-chevron {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.feedback.open {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.feedback-tones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.feedback-tone {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.feedback-tone:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.feedback-tone.positive.chosen {
+  background: var(--ok-soft);
+  border-color: var(--ok);
+}
+
+.feedback-tone.negative.chosen {
+  background: var(--warn-soft);
+  border-color: var(--warn-text);
+  color: var(--warn-text);
+}
+
+.feedback-tone:focus-visible,
+.feedback-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.feedback-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.feedback-text::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.feedback-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.feedback-foot .actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feedback-send {
+  height: 32px;
+  padding: 0 14px;
+}
+
+.feedback-note {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback-tone {
+    transition: none;
+  }
+}
+
 /* iOS-style switch on a real checkbox (keyboard and screen readers keep working). */
 .switch {
   flex: none;

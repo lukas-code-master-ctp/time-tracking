@@ -14,6 +14,7 @@ import type {
   Kiosk,
   Invitation,
   MoodWeek,
+  Feedback,
   OrgConfig,
   PersonSchedule,
   Role,
@@ -98,6 +99,13 @@ export interface DataSource {
   saveCelebration(uid: string, celebration: Celebration): Promise<void>;
   /** Every `moodWeeks/{YYYY-Www}` (anonymous counters of the mood pulse). `[]` while the rules are not deployed. */
   listMoodWeeks(): Promise<WithId<MoodWeek>[]>;
+  /**
+   * Valid anonymous comments (spec 2026-11-13-comentarios-anonimos) of the
+   * ISO weeks `fromWeek` onwards. `[]` while the rules are not deployed.
+   */
+  listFeedback(fromWeek: string): Promise<WithId<Feedback>[]>;
+  /** Removes a comment (moderation). */
+  deleteFeedback(id: string): Promise<void>;
   /**
    * Every valid `attendanceSettings/{uid}` (id = uid): RUT and attendance mode
    * (spec 2026-11-10-marcaciones). `[]` while the rules are not deployed.

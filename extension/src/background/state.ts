@@ -85,6 +85,8 @@ export interface OrgConfigCache {
   activeBreaks?: ActiveBreakSettings;
   /** Mood pulse of the organization. Missing in caches before 0.2.16 (= off). */
   moodPulse?: boolean;
+  /** Anonymous comments of the organization. Missing in caches before 0.2.27 (= off). */
+  feedback?: boolean;
   fetchedAt: number;
 }
 
@@ -129,6 +131,12 @@ export interface Meta {
    */
   mood: MoodState | null;
   /**
+   * Anonymous comment of today (spec 2026-11-13-comentarios-anonimos): the
+   * day the person last sent one (one a day). Another day or user counts as
+   * none. Missing before 0.2.27.
+   */
+  feedback: FeedbackState | null;
+  /**
    * How the signed-in user marks attendance (spec 2026-11-10-marcaciones),
    * read with the schedule. `kiosk`: only on the kiosk at the entrance, so
    * the popup has no "Iniciar jornada". Missing before 0.2.20 (= extension).
@@ -155,6 +163,19 @@ export interface MoodState {
   status: 'pending' | 'done';
 }
 
+export interface FeedbackState {
+  uid: string;
+  /** `YYYY-MM-DD` (America/Santiago) of the last comment sent. */
+  date: string;
+}
+
+function feedbackStateFromJSON(raw: unknown): FeedbackState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const f = raw as Partial<FeedbackState>;
+  if (typeof f.uid !== 'string' || typeof f.date !== 'string') return null;
+  return { uid: f.uid, date: f.date };
+}
+
 function moodStateFromJSON(raw: unknown): MoodState | null {
   if (!raw || typeof raw !== 'object') return null;
   const m = raw as Partial<MoodState>;
@@ -179,6 +200,7 @@ export function defaultMeta(): Meta {
     announcements: null,
     celebrations: null,
     mood: null,
+    feedback: null,
     attendance: null,
   };
 }
@@ -293,6 +315,7 @@ export class StateStore {
     this.meta.announcements = announcementCacheFromJSON(this.meta.announcements);
     this.meta.celebrations = celebrationsCacheFromJSON(this.meta.celebrations);
     this.meta.mood = moodStateFromJSON(this.meta.mood);
+    this.meta.feedback = feedbackStateFromJSON(this.meta.feedback);
     this.meta.attendance = attendanceCacheFromJSON(this.meta.attendance);
     this.daily = dailyFromJSON(data[STORAGE_KEYS.daily]);
     this.shotPlan = shotPlanFromJSON(data[STORAGE_KEYS.shotPlan]);

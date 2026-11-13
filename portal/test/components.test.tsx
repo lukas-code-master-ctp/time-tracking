@@ -424,6 +424,7 @@ describe('SettingsForm', () => {
       activeBreakTimes: ['11:00', '16:00'],
       activeBreakMinutes: 5,
       moodPulseEnabled: false,
+      feedbackEnabled: false,
     });
     expect(await screen.findByRole('status')).toHaveTextContent('Configuración guardada');
   });

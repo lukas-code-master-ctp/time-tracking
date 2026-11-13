@@ -52,6 +52,7 @@ import {
   ORG_CONFIG_DOC_ID,
   SCHEDULE_CONFIG_DOC_ID,
   readCelebration,
+  feedbackVoteDocId,
   moodCountKey,
   moodVoteDocId,
   type Absence,
@@ -59,6 +60,7 @@ import {
   type AnnouncementRead,
   type ActivitySlot,
   type Celebration,
+  type FeedbackTone,
   type MoodScore,
   type OrgConfig,
   type ScreenshotMeta,
@@ -138,6 +140,13 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
       const batch = writeBatch(db);
       batch.set(doc(db, COLLECTIONS.moodVotes, moodVoteDocId(uid, week)), { uid, week, dates: arrayUnion(date) }, { merge: true });
       batch.set(doc(db, COLLECTIONS.moodWeeks, week), { [moodCountKey(score)]: increment(1) }, { merge: true });
+      await batch.commit();
+    },
+    async putFeedback(uid: string, week: string, date: string, tone: FeedbackTone, text: string) {
+      // Same pairing as the mood pulse; the comment itself carries no uid.
+      const batch = writeBatch(db);
+      batch.set(doc(db, COLLECTIONS.feedbackVotes, feedbackVoteDocId(uid, week)), { uid, week, dates: arrayUnion(date) }, { merge: true });
+      batch.set(doc(collection(db, COLLECTIONS.feedback)), { week, tone, text });
       await batch.commit();
     },
     async fetchOrgConfig() {

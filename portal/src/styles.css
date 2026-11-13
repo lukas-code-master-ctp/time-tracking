@@ -3381,3 +3381,58 @@ input[type='time'][aria-invalid='true'] {
 .field > .btn.small-btn {
   justify-self: start;
 }
+
+/* ---------- anonymous comments (spec 2026-11-13-comentarios-anonimos) ---------- */
+
+.feedback-weeks {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+
+.feedback-week-label {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.feedback-week .list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.feedback-item {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+
+.feedback-item .chip {
+  flex: none;
+  min-width: 9.5em;
+  margin-top: 2px;
+}
+
+.feedback-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.feedback-delete {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .feedback-item {
+    flex-wrap: wrap;
+  }
+  .feedback-text {
+    flex-basis: 100%;
+    order: 3;
+  }
+  .feedback-delete {
+    margin-left: auto;
+  }
+}
