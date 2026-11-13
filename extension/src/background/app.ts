@@ -29,9 +29,10 @@ import {
   attendanceModeOf,
   dateKey,
   MAX_SESSION_MS,
-  exerciseById,
+  breakItemById,
   exerciseInstructions,
   isoWeekKey,
+  videoThumbnail,
   readActiveBreakSettings,
   readMoodPulseEnabled,
   readFeedbackEnabled,
@@ -53,6 +54,7 @@ import {
   validateAbsence,
   type Absence,
   type ActiveBreakSettings,
+  type BreakVideo,
   type Celebration,
   type OrgConfig,
   type UserProfile,
@@ -287,12 +289,21 @@ export class App {
     });
     if (!user || !due) return;
     let config: OrgConfig | null;
+    // The videos of the breaks (config/breakVideos): unreadable, the ones cached stay.
+    const videosRead = this.backend.fetchBreakVideos().then(
+      (doc) => ({ doc }),
+      (err: unknown) => {
+        console.warn(`[timetracking] no se pudieron leer los videos de pausa activa (${errorCode(err)})`);
+        return null;
+      },
+    );
     try {
       config = await this.backend.fetchOrgConfig();
     } catch (err) {
       console.warn(`[timetracking] no se pudo leer config/org (${errorCode(err)})`);
       return;
     }
+    const videos = await videosRead;
     // Daily report (spec 2026-11-13-minuta-diaria): asked of the members of its groups.
     const reportSettings = readDailyReportSettings(config);
     let dailyReport: boolean | null = false;
@@ -305,13 +316,17 @@ export class App {
       }
     }
     await this.store.run(async () => {
+      const prev = this.store.meta.org?.uid === user.uid ? this.store.meta.org.activeBreaks : undefined;
+      const activeBreaks = videos
+        ? readActiveBreakSettings(config, videos.doc)
+        : { ...readActiveBreakSettings(config), videos: prev?.videos ?? [], videoMode: prev?.videoMode ?? 'alternate' };
       this.store.meta.org = {
         uid: user.uid,
         // Missing doc or fields: the safe defaults (no screenshots).
         screenshotsEnabled: config?.screenshotsEnabled === true,
         blurScreenshots: config?.blurScreenshots !== false,
         pauseTimerAtLunch: config?.pauseTimerAtLunch === true,
-        activeBreaks: readActiveBreakSettings(config),
+        activeBreaks,
         moodPulse: readMoodPulseEnabled(config),
         feedback: readFeedbackEnabled(config),
         dailyReport:
@@ -772,14 +787,14 @@ export class App {
         await this.store.save('queue');
       }
       await this.store.save('meta');
-      return { prompt: r.prompt, replaced: r.replaced, durationMinutes: settings?.durationMinutes ?? 0 };
+      return { prompt: r.prompt, replaced: r.replaced, durationMinutes: settings?.durationMinutes ?? 0, videos: settings?.videos ?? [] };
     });
     if (!out) return;
     if (out.replaced) {
       await chrome.notifications.clear(breakNotificationId(out.replaced.at)).catch(() => undefined);
       void this.sync.kick();
     }
-    if (out.prompt) await this.showBreak(out.prompt, out.durationMinutes);
+    if (out.prompt) await this.showBreak(out.prompt, out.durationMinutes, out.videos);
   }
 
   /** Today's working windows for the `daily` active breaks (inside store.run). */
@@ -789,8 +804,8 @@ export class App {
     return breakWindows(this.scheduleOf(uid), at, dayStartedAt);
   }
 
-  private async showBreak(prompt: BreakPrompt, durationMinutes: number): Promise<void> {
-    const { title, message } = breakText(prompt, durationMinutes);
+  private async showBreak(prompt: BreakPrompt, durationMinutes: number, videos: readonly BreakVideo[]): Promise<void> {
+    const { title, message } = breakText(prompt, durationMinutes, videos);
     try {
       await chrome.notifications.create(breakNotificationId(prompt.at), {
         type: 'basic',
@@ -1115,7 +1130,25 @@ export class App {
       return;
     }
     await chrome.notifications.clear(notificationId).catch(() => undefined);
+    // A video break: the click opens the video (the break stays pending in the popup to mark it).
+    const video = await this.pendingBreakVideo(parseBreakNotificationId(notificationId));
+    if (video) {
+      await chrome.tabs.create({ url: video.url });
+      return;
+    }
     await this.openPopup();
+  }
+
+  /** The video of the pending break shown at `promptAt`, or null (not pending, or an exercise). */
+  private async pendingBreakVideo(promptAt: number | null): Promise<BreakVideo | null> {
+    if (promptAt === null) return null;
+    return this.store.run(() => {
+      const { breaks, org } = this.store.meta;
+      const pending = breaks?.pending;
+      if (!pending || pending.at !== promptAt || org?.uid !== breaks?.uid) return null;
+      const item = breakItemById(pending.exercise, org?.activeBreaks?.videos ?? []);
+      return item?.kind === 'video' ? item.video : null;
+    });
   }
 
   /** The action popup (Chrome 127+); otherwise the same page in a tab. */
@@ -1483,7 +1516,9 @@ export class App {
     const state = meta.breaks?.uid === uid ? meta.breaks : null;
     const enabled = !meta.breakOptOut.includes(uid);
     const pending = enabled && state?.pending ? state.pending : null;
-    const exercise = pending ? exerciseById(pending.exercise) : null;
+    const item = pending ? breakItemById(pending.exercise, settings.videos ?? []) : null;
+    const exercise = item?.kind === 'exercise' ? item.exercise : null;
+    const video = item?.kind === 'video' ? item.video : null;
     return {
       mode: settings.mode ?? 'interval',
       intervalMinutes: settings.intervalMinutes,
@@ -1494,9 +1529,14 @@ export class App {
       pending: pending
         ? {
             at: pending.at,
-            title: exercise?.title ?? 'Pausa activa',
-            text: exercise ? exerciseInstructions(exercise, settings.durationMinutes) : 'Levántate y estira el cuerpo unos minutos.',
+            title: video?.title ?? exercise?.title ?? 'Pausa activa',
+            text: video
+              ? 'Un video de tu empresa para esta pausa: ábrelo y síguelo. Al terminar, márcala como tomada.'
+              : exercise
+                ? exerciseInstructions(exercise, settings.durationMinutes)
+                : 'Levántate y estira el cuerpo unos minutos.',
             exercise: exercise?.id ?? null,
+            video: video ? { url: video.url, thumbnail: videoThumbnail(video.url) } : null,
           }
         : null,
       nextAt: enabled && session ? nextBreakAt(state, settings, this.breakWindowsOf(uid, this.now())) : null,

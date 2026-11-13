@@ -65,6 +65,7 @@ import {
   type DailyReport,
   type DailyReportDraft,
   type MoodScore,
+  BREAK_VIDEOS_DOC_ID,
   type OrgConfig,
   type ScreenshotMeta,
   type Session,
@@ -155,6 +156,10 @@ export function createFirestoreBackend(h: FirebaseHandles): Remote {
     async fetchOrgConfig() {
       const snap = await getDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID));
       return snap.exists() ? (snap.data() as OrgConfig) : null;
+    },
+    async fetchBreakVideos() {
+      const snap = await getDoc(doc(db, COLLECTIONS.config, BREAK_VIDEOS_DOC_ID));
+      return snap.exists() ? snap.data() : null;
     },
     async fetchSchedule(uid: string) {
       const [config, person, attendance] = await Promise.all([

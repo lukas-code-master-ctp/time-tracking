@@ -329,4 +329,43 @@ describe('active breaks (extension)', () => {
     expect(breakNotifications()).toEqual([]);
     expect((await h.app.status()).breaks).toBeNull();
   });
+
+  it('videos of the company: every other break a video, the click opens it, and it is stored as video:<id>', async () => {
+    const video = { id: 'vid001', title: 'Rutina de hombros', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
+    h.backend.breakVideos = { videos: [video], mode: 'alternate', updatedAt: 1, updatedBy: 'admin' };
+    await h.app.refreshOrgConfig(0);
+    await h.app.session.start();
+    await pulsesUntil(T0 + 46 * MIN);
+    // The first break is an exercise.
+    expect((await h.app.status()).breaks?.pending).toMatchObject({ title: exerciseAt(0).title, video: null });
+    await h.app.handlePopup({ type: 'breaks.answer', answer: 'taken' });
+    await pulsesUntil(T0 + 92 * MIN);
+    const shown = breakNotifications()[1]!;
+    expect(shown.options.message).toBe('Video: Rutina de hombros. Haz clic aquí para verlo y síguelo.');
+    expect((await h.app.status()).breaks?.pending).toMatchObject({
+      title: 'Rutina de hombros',
+      exercise: null,
+      video: { url: video.url, thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg' },
+    });
+    for (const l of h.chrome.events.notificationClicked.listeners) l(shown.id);
+    await h.settle();
+    expect(h.chrome.world.openedTabs).toEqual([video.url]);
+    expect(h.chrome.world.popupOpened).toBe(0);
+    // Still pending: marked from the popup after watching it.
+    await h.app.handlePopup({ type: 'breaks.answer', answer: 'taken' });
+    expect([...h.backend.breaks.values()].map((b) => b.exercise)).toEqual([exerciseAt(0).id, 'video:vid001']);
+  });
+
+  it('videos: an unreadable config/breakVideos keeps the cached ones', async () => {
+    const video = { id: 'vid001', title: 'Rutina', url: 'https://vimeo.com/1' };
+    h.backend.breakVideos = { videos: [video], mode: 'always', updatedAt: 1, updatedBy: 'admin' };
+    await h.app.refreshOrgConfig(0);
+    expect(h.app.store.meta.org?.activeBreaks).toMatchObject({ videos: [video], videoMode: 'always' });
+    vi.spyOn(h.backend, 'fetchBreakVideos').mockRejectedValueOnce(new Error('permission-denied'));
+    await h.app.refreshOrgConfig(0);
+    expect(h.app.store.meta.org?.activeBreaks).toMatchObject({ videos: [video], videoMode: 'always' });
+    h.backend.breakVideos = null;
+    await h.app.refreshOrgConfig(0);
+    expect(h.app.store.meta.org?.activeBreaks).toMatchObject({ videos: [], videoMode: 'alternate' });
+  });
 });

@@ -118,6 +118,36 @@ service cloud.firestore {
         && validDomainAt(list, 9);
     }
 
+    // A video of `config/breakVideos` (a non-string field errors, which denies too).
+    function validBreakVideo(v) {
+      return v.keys().hasOnly(['id', 'title', 'url']) && v.keys().size() == 3
+        && v.id.matches('[A-Za-z0-9_-]{1,24}')
+        && v.title.size() >= 1 && v.title.size() <= 80
+        && v.url.matches('https://[^ ]{1,492}');
+    }
+
+    // Video `i` (or none at that position).
+    function validBreakVideoAt(list, i) {
+      return list.size() <= i || validBreakVideo(list[i]);
+    }
+
+    // `config/breakVideos` (spec 2026-11-13-videos-pausa-activa): 0–10 https
+    // links for the active breaks. Its own document: inside config/org the 10
+    // videos plus the domains go over the 1000 expressions of a request.
+    function validBreakVideosConfig(d) {
+      return d.keys().hasOnly(['videos', 'mode', 'updatedAt', 'updatedBy'])
+        && d.keys().hasAll(['videos', 'mode', 'updatedAt', 'updatedBy'])
+        && d.videos is list && d.videos.size() <= 10
+        && validBreakVideoAt(d.videos, 0) && validBreakVideoAt(d.videos, 1)
+        && validBreakVideoAt(d.videos, 2) && validBreakVideoAt(d.videos, 3)
+        && validBreakVideoAt(d.videos, 4) && validBreakVideoAt(d.videos, 5)
+        && validBreakVideoAt(d.videos, 6) && validBreakVideoAt(d.videos, 7)
+        && validBreakVideoAt(d.videos, 8) && validBreakVideoAt(d.videos, 9)
+        && d.mode in ['alternate', 'always']
+        && d.updatedAt is int
+        && d.updatedBy == request.auth.uid;
+    }
+
     function validOrgConfig(d) {
       return d.keys().hasOnly(['allowedDomains', 'screenshotsEnabled', 'blurScreenshots',
                                 'screenshotRetentionDays', 'pauseTimerAtLunch',
@@ -245,7 +275,8 @@ service cloud.firestore {
       allow read: if isActive();
       allow create, update: if isAdmin()
         && ((docId == 'org' && validOrgConfig(incoming()))
-            || (docId == 'schedule' && validScheduleConfig(incoming())));
+            || (docId == 'schedule' && validScheduleConfig(incoming()))
+            || (docId == 'breakVideos' && validBreakVideosConfig(incoming())));
       // An admin may delete the general schedule ("Eliminar horario" in the
       // portal): without it everything works as before the schedules (the
       // extension measures whenever the work day is open). config/org is

@@ -28,6 +28,8 @@ import type { AuthApi, AuthUser, Backend, DataSource } from '../src/data/types';
 
 export interface FakeDb {
   config: OrgConfig | null;
+  /** `config/breakVideos`. */
+  breakVideos?: unknown;
   /** `config/schedule` (null = no schedule). */
   schedule: ScheduleConfig | null;
   /** `schedules/{uid}` by uid. */
@@ -69,6 +71,10 @@ export function fakeData(db: FakeDb): DataSource & { [K in keyof DataSource]: Re
     getOrgConfig: async () => db.config,
     saveOrgConfig: async (c) => {
       db.config = c;
+    },
+    getBreakVideos: async () => db.breakVideos ?? null,
+    saveBreakVideos: async (c) => {
+      db.breakVideos = c;
     },
     getScheduleConfig: async () => db.schedule,
     saveScheduleConfig: async (c) => {

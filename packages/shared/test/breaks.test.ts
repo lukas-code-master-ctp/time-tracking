@@ -20,7 +20,7 @@ import {
 
 describe('active breaks', () => {
   it('reads the settings of config/org: off and defaults when missing or invalid', () => {
-    const defaults = { enabled: false, mode: 'interval', intervalMinutes: 60, perDay: 3, times: [], durationMinutes: 5 };
+    const defaults = { enabled: false, mode: 'interval', intervalMinutes: 60, perDay: 3, times: [], durationMinutes: 5, videos: [], videoMode: 'alternate' };
     expect(readActiveBreakSettings(null)).toEqual(defaults);
     expect(readActiveBreakSettings({ activeBreaksEnabled: true, activeBreakIntervalMinutes: 90, activeBreakMinutes: 3 })).toEqual({
       ...defaults,

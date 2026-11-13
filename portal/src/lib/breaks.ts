@@ -5,13 +5,13 @@
  */
 import { breakTargets, normalizeBreakTimes, planForDay, type ActiveBreakSettings } from '@timetracking/shared';
 import { formatTime } from './dates';
-import type { ActiveBreaksForm } from './payloads';
+import type { ActiveBreaksForm, BreakVideosForm } from './payloads';
 import type { EffectiveSchedule } from './schedule';
 
 /** Length of the day the extension assumes without a schedule (extension/src/background/schedule.ts). */
 export const NO_SCHEDULE_BREAK_DAY_MS = 9 * 3_600_000;
 
-export function settingsOfForm(form: ActiveBreaksForm): ActiveBreakSettings {
+export function settingsOfForm(form: ActiveBreaksForm, videos?: BreakVideosForm): ActiveBreakSettings {
   return {
     enabled: form.activeBreaksEnabled,
     mode: form.activeBreakMode,
@@ -19,6 +19,8 @@ export function settingsOfForm(form: ActiveBreaksForm): ActiveBreakSettings {
     perDay: form.activeBreaksPerDay,
     times: normalizeBreakTimes(form.activeBreakTimes.filter((t) => t !== '')) ?? [],
     durationMinutes: form.activeBreakMinutes,
+    videos: videos?.videos ?? [],
+    videoMode: videos?.mode ?? 'alternate',
   };
 }
 

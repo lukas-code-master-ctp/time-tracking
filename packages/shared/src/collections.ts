@@ -46,6 +46,8 @@ export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 /** Document id of the single organization config: `config/org`. */
 export const ORG_CONFIG_DOC_ID = 'org';
 
+/** Document id of the videos of the company for the active breaks: `config/breakVideos`. */
+export const BREAK_VIDEOS_DOC_ID = 'breakVideos';
 /** Document id of the general working hours: `config/schedule`. */
 export const SCHEDULE_CONFIG_DOC_ID = 'schedule';
 

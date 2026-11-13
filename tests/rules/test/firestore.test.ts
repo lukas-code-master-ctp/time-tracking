@@ -338,6 +338,52 @@ const BAD_DAYS: [string, unknown][] = [
   ['list', ['09:00', '18:30']],
 ];
 
+describe('config/breakVideos', () => {
+  const doc = 'config/breakVideos';
+  const video = (i: number) => ({ id: `vid${i}`, title: `Video ${i}`, url: `https://www.youtube.com/watch?v=abc${i}` });
+  const videos = (over: Record<string, unknown> = {}) => ({
+    videos: Array.from({ length: 10 }, (_, i) => video(i)),
+    mode: 'alternate',
+    updatedAt: NOW,
+    updatedBy: 'admin',
+    ...over,
+  });
+
+  it('active members read it; an admin writes 0 to 10 https videos', async () => {
+    await seed(env, { [doc]: videos() });
+    await assertSucceeds(db('alice').doc(doc).get());
+    await assertFails(db('dave').doc(doc).get());
+    await assertFails(db(null).doc(doc).get());
+    await assertSucceeds(db('admin').doc(doc).set(videos({ mode: 'always' })));
+    await assertSucceeds(db('admin').doc(doc).set(videos({ videos: [] })));
+    await assertFails(db('alice').doc(doc).set(videos({ updatedBy: 'alice' })));
+    await assertFails(db('admin').doc(doc).delete());
+  });
+
+  it('rejects invalid videos', async () => {
+    const admin = db('admin');
+    for (const bad of [
+      { videos: [...videos().videos, video(10)] },
+      { videos: [{ ...video(0), url: 'http://vimeo.com/1' }] },
+      { videos: [{ ...video(0), url: 'https://vimeo.com/a b' }] },
+      { videos: [{ ...video(0), url: `https://x.cl/${'a'.repeat(500)}` }] },
+      { videos: [{ ...video(0), title: '' }] },
+      { videos: [{ ...video(0), title: 'x'.repeat(81) }] },
+      { videos: [{ ...video(0), title: 7 }] },
+      { videos: [{ ...video(0), id: 'v 1' }] },
+      { videos: [{ ...video(0), extra: 1 }] },
+      { videos: [{ id: 'v1', title: 'Hombros' }] },
+      { videos: [video(0), 'x'] },
+      { videos: 'x' },
+      { mode: 'never' },
+      { updatedBy: 'alice' },
+      { extra: true },
+    ]) {
+      await assertFails(admin.doc(doc).set(videos(bad)));
+    }
+  });
+});
+
 describe('config/schedule', () => {
   const doc = 'config/schedule';
 

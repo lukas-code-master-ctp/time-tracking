@@ -71,6 +71,7 @@ import {
   type Invitation,
   type MoodWeek,
   isFeedback,
+  BREAK_VIDEOS_DOC_ID,
   type OrgConfig,
   type PersonSchedule,
   type ScreenshotMeta,
@@ -166,6 +167,13 @@ export function createFirebaseBackend(): Backend {
     },
     async saveOrgConfig(config) {
       await setDoc(doc(db, COLLECTIONS.config, ORG_CONFIG_DOC_ID), config);
+    },
+    async getBreakVideos() {
+      const snap = await getDoc(doc(db, COLLECTIONS.config, BREAK_VIDEOS_DOC_ID));
+      return snap.exists() ? snap.data() : null;
+    },
+    async saveBreakVideos(config) {
+      await setDoc(doc(db, COLLECTIONS.config, BREAK_VIDEOS_DOC_ID), config);
     },
     async getScheduleConfig() {
       const snap = await getDoc(doc(db, COLLECTIONS.config, SCHEDULE_CONFIG_DOC_ID));

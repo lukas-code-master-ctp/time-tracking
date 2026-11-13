@@ -10,6 +10,7 @@ import {
   absenceIntervalsForDay,
   activityPercent,
   exerciseById,
+  parseVideoBreakId,
   meetingSecondsOf,
   slotsBetween,
   type Absence,
@@ -273,7 +274,7 @@ function breaksIn(slotStart: number, breaks: readonly ActiveBreak[], timeZone: s
     .sort((a, b) => a.start - b.start)
     .map((b) => ({
       rangeLabel: `${formatTime(b.start, timeZone)}–${formatTime(b.end, timeZone)}`,
-      exercise: exerciseById(b.exercise)?.title ?? '',
+      exercise: exerciseById(b.exercise)?.title ?? (parseVideoBreakId(b.exercise) !== null ? 'Video de la empresa' : ''),
       from: (Math.max(b.start, slotStart) - slotStart) / SLOT_MS,
       to: (Math.min(b.end, end) - slotStart) / SLOT_MS,
     }));

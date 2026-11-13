@@ -668,6 +668,22 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
     toggle,
     el('span', { className: 'sr-only', textContent: 'Recordarme las pausas activas' }),
   ]);
+  if (b.pending?.video) {
+    const video = b.pending.video;
+    return el('section', { className: 'card breaks due', role: 'status' }, [
+      el('div', { className: 'breaks-head' }, [el('span', { className: 'eyebrow', textContent: 'Pausa activa · Video' })]),
+      videoButton(b.pending.title, video),
+      el('div', { className: 'breaks-copy' }, [
+        el('div', { className: 'breaks-title', textContent: b.pending.title }),
+        el('div', { className: 'small muted', textContent: `${videoSite(video.url)} · se abre en una pestaña nueva` }),
+        el('p', { className: 'small', textContent: b.pending.text }),
+      ]),
+      el('div', { className: 'row' }, [
+        button('Tomé la pausa', 'primary', () => void act({ type: 'breaks.answer', answer: 'taken' })),
+        button('En 10 min', '', () => void act({ type: 'breaks.answer', answer: 'postponed' })),
+      ]),
+    ]);
+  }
   if (b.pending) {
     return el('section', { className: 'card breaks due', role: 'status' }, [
       el('div', { className: 'breaks-head' }, [el('span', { className: 'eyebrow', textContent: 'Pausa activa' })]),
@@ -702,6 +718,38 @@ function renderBreaks(b: NonNullable<StatusView['breaks']>, on: boolean): HTMLEl
     ]),
     sw,
   ]);
+}
+
+/**
+ * A video of the company (spec 2026-11-13-videos-pausa-activa): its
+ * thumbnail (YouTube) or a play tile, opening the video in a new tab.
+ * Title and URL come from the admin: textContent / attributes only.
+ */
+function videoButton(title: string, video: { url: string; thumbnail: string | null }): HTMLElement {
+  const play = el('span', { className: 'video-play' });
+  play.setAttribute('aria-hidden', 'true');
+  const thumb = el('span', { className: `video-thumb${video.thumbnail ? '' : ' empty'}` }, [play]);
+  if (video.thumbnail) {
+    const img = el('img', { src: video.thumbnail, alt: '', referrerPolicy: 'no-referrer' });
+    // Offline or removed: the play tile.
+    img.addEventListener('error', () => {
+      img.remove();
+      thumb.classList.add('empty');
+    });
+    thumb.prepend(img);
+  }
+  const b = el('button', { type: 'button', className: 'video-open', ariaLabel: `Ver el video ${title} (se abre en una pestaña nueva)` }, [thumb]);
+  b.addEventListener('click', () => void chrome.tabs.create({ url: video.url }));
+  return b;
+}
+
+/** "youtube.com", "vimeo.com". */
+function videoSite(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
 }
 
 /**
