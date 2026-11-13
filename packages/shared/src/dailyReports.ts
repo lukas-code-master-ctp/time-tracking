@@ -6,7 +6,7 @@
  * draft with AI (OpenRouter); the person reviews it and sends it. Pure.
  */
 
-import type { Absence, EpochMs, OrgConfig, WeekSchedule } from './types.js';
+import type { Absence, EpochMs, OrgConfig, UserProfile, WeekSchedule } from './types.js';
 import { isValidDateKey, planForDay } from './schedule.js';
 import { absenceCoversDate, absenceStatus, isFullDayAbsence } from './absences.js';
 
@@ -98,9 +98,21 @@ export function readDailyReportSettings(config: Partial<OrgConfig> | null | unde
   return { enabled: config?.dailyReportEnabled === true, groupIds: [...new Set(ids)].slice(0, DAILY_REPORT_MAX_GROUPS) };
 }
 
-/** True when a person in `memberOf` (ids of her groups) must send the report. */
-export function requiresDailyReport(settings: DailyReportSettings, memberOf: readonly string[]): boolean {
-  return settings.enabled && settings.groupIds.some((id) => memberOf.includes(id));
+/** True for a person marked "Terreno" in the portal (missing = office). */
+export function isFieldWorker(profile: Pick<UserProfile, 'workplace'> | null | undefined): boolean {
+  return profile?.workplace === 'field';
+}
+
+/**
+ * True when a person must send the report: the report is on and she works in
+ * the field, or she is in one of the chosen groups (`memberOf`: ids of her groups).
+ */
+export function requiresDailyReport(
+  settings: DailyReportSettings,
+  memberOf: readonly string[],
+  profile?: Pick<UserProfile, 'workplace'> | null,
+): boolean {
+  return settings.enabled && (isFieldWorker(profile) || settings.groupIds.some((id) => memberOf.includes(id)));
 }
 
 export type DailyReportIssue = 'uid' | 'date' | 'text' | 'source' | 'transcript' | 'times';

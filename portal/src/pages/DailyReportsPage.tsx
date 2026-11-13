@@ -1,7 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import {
-  DAILY_REPORT_FIELD_PATH,
+  isFieldWorker,
   membersOf,
   readDailyReportSettings,
   sortGroups,
@@ -56,10 +56,6 @@ export function DailyReportsSettings({ enabled, groupIds, groups, onSave }: Dail
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
-    if (on && known.length === 0) {
-      setStatus({ ok: false, text: 'Elige al menos un grupo.' });
-      return;
-    }
     setBusy(true);
     try {
       await onSave(on, known);
@@ -88,17 +84,18 @@ export function DailyReportsSettings({ enabled, groupIds, groups, onSave }: Dail
           <span className="muted small block">
             Cuando alguien de los grupos elegidos cierra su jornada, la extensión le recuerda enviar una minuta de su día. La
             puede escribir o grabar un audio de hasta 4 minutos: la IA lo transcribe y arma la minuta, que la persona revisa
-            antes de enviarla. El audio no se guarda. Quien no tiene computador la envía desde el celular en{' '}
-            <a href={DAILY_REPORT_FIELD_PATH} target="_blank" rel="noreferrer">
-              {window.location.host || 'app.mipegahr.cl'}
-              {DAILY_REPORT_FIELD_PATH}
-            </a>{' '}
-            y recibe un correo con el enlace al terminar su horario.
+            antes de enviarla. El audio no se guarda. Las personas de terreno entran desde el celular a{' '}
+            {window.location.host || 'app.mipegahr.cl'} con su correo, llegan directo a su minuta y reciben un correo con
+            el enlace al terminar su horario.
           </span>
         </span>
       </label>
       <fieldset disabled={!on}>
-        <legend>Grupos que envían minuta</legend>
+        <legend>Quiénes envían minuta</legend>
+        <p className="muted small">
+          Las personas marcadas como <strong>Terreno</strong> en <Link to="/colaboradores">Colaboradores</Link> siempre la
+          envían. Además puedes pedírsela a grupos de oficina.
+        </p>
         {groups.length === 0 ? (
           <p className="muted small">
             Aún no hay grupos. Créalos en <Link to="/colaboradores/grupos">Colaboradores › Grupos</Link> (por ejemplo,
@@ -160,7 +157,7 @@ export function DayReports({ people, reports }: DayReportsProps) {
     if (!!ra !== !!rb) return ra ? -1 : 1;
     return nameOf(a).localeCompare(nameOf(b), 'es');
   });
-  if (rows.length === 0) return <Empty title="Nadie envía minuta">Activa la minuta y elige al menos un grupo.</Empty>;
+  if (rows.length === 0) return <Empty title="Nadie envía minuta">Activa la minuta y marca personas como Terreno en Colaboradores, o elige un grupo.</Empty>;
   return (
     <ul className="list report-list">
       {rows.map((p) => {
@@ -220,7 +217,8 @@ export function DailyReportsPage() {
   const day = useLoad(() => data.listDailyReports(date, date), [data, date]);
 
   const settings = readDailyReportSettings(load.data?.config ?? null);
-  const asked = new Set(settings.enabled ? membersOf(load.data?.groups ?? [], settings.groupIds) : []);
+  const field = (load.data?.users ?? []).filter((u) => isFieldWorker(u)).map((u) => u.id);
+  const asked = new Set(settings.enabled ? [...field, ...membersOf(load.data?.groups ?? [], settings.groupIds)] : []);
   const senders = new Set((day.data ?? []).map((r) => r.uid));
   const people = (load.data?.users ?? []).filter(
     (u) => senders.has(u.id) || (asked.has(u.id) && u.status === 'active'),

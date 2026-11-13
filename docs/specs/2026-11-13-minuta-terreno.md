@@ -41,3 +41,15 @@ crea `dailyReportReminders` y pide `OPENROUTER_API_KEY` si aún no existe.
 - Notificaciones push en el celular (requiere Firebase Cloud Messaging y clave VAPID).
 - Marcar inicio y cierre de jornada desde el celular.
 - WhatsApp (nota de voz) como segunda vía.
+
+## Oficina o terreno por persona (pedido de Lukas, mismo día)
+
+- `users/{uid}.workplace`: `'office' | 'field'` (falta = oficina). Lo cambia un administrador en
+  Colaboradores › Personas (selector "Oficina / Terreno", solo para colaboradores; nunca el propio).
+  Reglas: el admin puede cambiar `role`, `status` y `workplace` de otros.
+- Una persona de terreno entra por el login normal de `app.mipegahr.cl` y llega directo a su minuta
+  (estado de sesión `field`). `/terreno` sigue funcionando (es el `start_url` del ícono).
+- Con la minuta activa, las personas de terreno **siempre** la envían; los grupos quedan para pedírsela
+  además a gente de oficina (se puede activar sin grupos). `requiresDailyReport(settings, grupos, perfil)`.
+  El recordatorio por correo y `draftDailyReport` las incluyen.
+- Requiere desplegar reglas (`firestore:rules`) y functions.

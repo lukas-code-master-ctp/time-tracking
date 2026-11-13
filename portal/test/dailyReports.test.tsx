@@ -65,8 +65,6 @@ describe('Minutas', () => {
     db.groups = [group('g1', 'Terreno', ['ana']), group('g2', 'Oficina', ['beto'])];
     renderApp(backendOf(db, ADMIN));
     await userEvent.click(await screen.findByLabelText(/Pedir la minuta del día/));
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-    expect(await screen.findByText('Elige al menos un grupo.')).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/Terreno/));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(await screen.findByText(/Configuración guardada/)).toBeInTheDocument();

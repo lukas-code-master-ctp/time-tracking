@@ -7,6 +7,7 @@ import { AttendancePage } from './pages/AttendancePage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { CelebrationsPage } from './pages/CelebrationsPage';
 import { DailyReportsPage } from './pages/DailyReportsPage';
+import { FieldReport } from './pages/FieldPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { InvitationsPage } from './pages/InvitationsPage';
 import { LoginPage, NoAccessPage, SplashPage } from './pages/LoginPage';
@@ -16,7 +17,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { TeamPage } from './pages/TeamPage';
 import { UsersPage } from './pages/UsersPage';
 
-/** Gate: only an active admin (per `joinOrg`) reaches the routes. */
+/** Gate: only an active admin (per `joinOrg`) reaches the routes; people in the field get their page. */
 export function App() {
   const { state } = useSession();
   switch (state.status) {
@@ -28,6 +29,9 @@ export function App() {
       return <LoginPage />;
     case 'noAccess':
       return <NoAccessPage />;
+    case 'field':
+      // Spec 2026-11-13-minuta-terreno: same sign-in, the daily report page.
+      return <FieldReport uid={state.user.uid} profile={state.profile} />;
     case 'ready':
       return (
         <Routes>

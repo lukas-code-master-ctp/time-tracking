@@ -31,6 +31,7 @@ beforeEach(async () => {
     'users/ana': user(),
     'users/beto': user(),
     'users/dani': user('disabled'),
+    'users/fabi': { ...user(), workplace: 'field' },
     'config/org': { dailyReportEnabled: true, dailyReportGroupIds: ['terreno'] },
     'groups/terreno': { name: 'Terreno', memberUids: ['ana', 'dani'] },
   });
@@ -44,6 +45,10 @@ describe('draftDailyReportCore', () => {
   it('drafts for a member of the groups and counts it', async () => {
     expect(await run('ana', { audio: AUDIO, mimeType: 'audio/wav' })).toEqual({ transcript: 'Hoy visité Maipú.', text: '- Visité Maipú.' });
     expect(await getDoc('dailyReportDrafts/ana_2026-11-13')).toMatchObject({ uid: 'ana', count: 1 });
+  });
+
+  it('drafts for a person in the field outside the groups', async () => {
+    expect((await run('fabi', { audio: AUDIO, mimeType: 'audio/wav' })).text).toBe('- Visité Maipú.');
   });
 
   it('refuses people outside the groups, disabled ones and bad audio, without calling the model', async () => {

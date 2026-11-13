@@ -666,6 +666,15 @@ describe('users', () => {
     await assertFails(admin.doc('users/admin').update({ role: 'member' }));
   });
 
+  it('admin marks others as office or field (spec minuta-terreno), nobody else', async () => {
+    const admin = db('admin');
+    await assertSucceeds(admin.doc('users/alice').update({ workplace: 'field' }));
+    await assertSucceeds(admin.doc('users/alice').update({ workplace: 'office' }));
+    await assertFails(admin.doc('users/alice').update({ workplace: 'home' }));
+    await assertFails(admin.doc('users/admin').update({ workplace: 'field' }));
+    await assertFails(db('alice').doc('users/alice').update({ workplace: 'field' }));
+  });
+
   it('disabled admin cannot change users', async () => {
     await assertFails(db('eve').doc('users/alice').update({ role: 'admin' }));
     await assertFails(db('eve').doc('users/eve').update({ status: 'active' }));

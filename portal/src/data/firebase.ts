@@ -216,6 +216,9 @@ export function createFirebaseBackend(): Backend {
     async updateUser(uid, patch) {
       await updateDoc(doc(db, COLLECTIONS.users, uid), { role: patch.role, status: patch.status });
     },
+    async setWorkplace(uid, workplace) {
+      await updateDoc(doc(db, COLLECTIONS.users, uid), { workplace });
+    },
     async listInvitations() {
       const snap = await getDocs(collection(db, COLLECTIONS.invitations));
       return snap.docs.map((d) => ({ ...(d.data() as Invitation), id: d.id }));
