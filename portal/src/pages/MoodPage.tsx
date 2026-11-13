@@ -19,6 +19,7 @@ import { addDays, zonedDate } from '../lib/dates';
 import { errorMessage } from '../lib/messages';
 import { buildOrgConfig, orgConfigToForm } from '../lib/payloads';
 import { useLoad } from '../lib/useLoad';
+import { FeedbackSection } from './FeedbackPage';
 
 /** Weeks in the chart. */
 export const MOOD_WEEKS_SHOWN = 12;
@@ -220,7 +221,8 @@ export function MoodPage() {
 
   return (
     <>
-      <PageHeader title="Pulso de ánimo" subtitle="Cómo se siente el equipo al cerrar el día, en forma anónima" />
+      <PageHeader title="Ánimo y comentarios" subtitle="Cómo se siente el equipo y qué cuenta de su día, en forma anónima" />
+      <h2 className="section-title">Pulso de ánimo</h2>
       {load.error && load.data === undefined ? (
         <section className="card">
           <ErrorState error={load.error} onRetry={load.reload} />
@@ -235,8 +237,9 @@ export function MoodPage() {
             <SettingsForm
               enabled={enabled}
               onSave={async (on) => {
-                // The rest of config/org as saved: this page only changes the mood pulse.
-                const full = { ...orgConfigToForm(load.data?.config ?? null, ALLOWED_DOMAINS), moodPulseEnabled: on };
+                // The rest of config/org as saved now (the comments switch is on the same page).
+                const fresh = await data.getOrgConfig();
+                const full = { ...orgConfigToForm(fresh, ALLOWED_DOMAINS), moodPulseEnabled: on };
                 await data.saveOrgConfig(buildOrgConfig(full, uid, Date.now(), profile.email));
                 load.reload();
               }}
@@ -245,7 +248,7 @@ export function MoodPage() {
           <MoodSummaryStats weeks={weeks} counters={counters} />
           <section className="card" aria-labelledby="h-mood-weeks">
             <div className="card-head">
-              <h2 id="h-mood-weeks">Semana a semana</h2>
+              <h2 id="h-mood-weeks">Ánimo semana a semana</h2>
             </div>
             <MoodLegend />
             <MoodWeeksTable weeks={weeks} counters={counters} />
@@ -256,6 +259,7 @@ export function MoodPage() {
           </section>
         </>
       )}
+      <FeedbackSection />
     </>
   );
 }

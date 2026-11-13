@@ -9,7 +9,7 @@ import {
   type WithId,
 } from '@timetracking/shared';
 import { ConfirmDialog } from '../components/Modal';
-import { Empty, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
+import { Empty, ErrorState, Loading, Stat } from '../components/ui';
 import { useAdmin, useData } from '../data/context';
 import { ALLOWED_DOMAINS } from '../env';
 import { zonedDate } from '../lib/dates';
@@ -131,7 +131,8 @@ interface Loaded {
   items: WithId<Feedback>[];
 }
 
-export function FeedbackPage() {
+/** Anonymous comments, shown on the "Ánimo y comentarios" page under the mood pulse. */
+export function FeedbackSection() {
   const data = useData();
   const { uid, profile } = useAdmin();
   const weeks = lastWeeks(zonedDate(Date.now()), FEEDBACK_WEEKS_SHOWN);
@@ -169,7 +170,10 @@ export function FeedbackPage() {
 
   return (
     <>
-      <PageHeader title="Comentarios" subtitle="Lo que el equipo cuenta de su día, bueno o por mejorar, sin nombres" />
+      <h2 className="section-title" id="comentarios">
+        Comentarios anónimos
+      </h2>
+      <p className="muted section-subtitle">Lo que el equipo cuenta de su día, bueno o por mejorar, sin nombres.</p>
       {load.error && load.data === undefined ? (
         <section className="card">
           <ErrorState error={load.error} onRetry={load.reload} />
@@ -184,8 +188,9 @@ export function FeedbackPage() {
             <SettingsForm
               enabled={enabled}
               onSave={async (on) => {
-                // The rest of config/org as saved: this page only changes the comments.
-                const full = { ...orgConfigToForm(load.data?.config ?? null, ALLOWED_DOMAINS), feedbackEnabled: on };
+                // The rest of config/org as saved now (the mood pulse switch is on the same page).
+                const fresh = await data.getOrgConfig();
+                const full = { ...orgConfigToForm(fresh, ALLOWED_DOMAINS), feedbackEnabled: on };
                 await data.saveOrgConfig(buildOrgConfig(full, uid, Date.now(), profile.email));
                 load.reload();
               }}
@@ -198,7 +203,7 @@ export function FeedbackPage() {
           </div>
           <section className="card" aria-labelledby="h-feedback">
             <div className="card-head">
-              <h2 id="h-feedback">Semana a semana</h2>
+              <h2 id="h-feedback">Comentarios semana a semana</h2>
               <div className="segmented" role="group" aria-label="Filtrar">
                 {FILTERS.map((f) => (
                   <button
