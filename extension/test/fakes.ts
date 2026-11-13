@@ -61,6 +61,8 @@ export class FakeBackend implements Remote {
   celebrations = new Map<string, Celebration>();
   celebrationFetches = 0;
   org: OrgConfig | null = { ...ORG };
+  /** `config/breakVideos` (raw). */
+  breakVideos: unknown = null;
   orgFetches = 0;
   /** Raw `config/schedule` (null = missing). */
   schedule: unknown = null;
@@ -181,6 +183,10 @@ export class FakeBackend implements Remote {
     this.calls.push({ op: 'putFeedback', uid, week, date, tone, text });
     this.feedbackVotes.set(key, [...dates, date]);
     this.feedback.push({ week, tone, text });
+  }
+  async fetchBreakVideos(): Promise<unknown> {
+    this.check();
+    return this.breakVideos;
   }
   async fetchOrgConfig(): Promise<OrgConfig | null> {
     this.check();

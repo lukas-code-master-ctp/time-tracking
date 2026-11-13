@@ -7,12 +7,21 @@ import {
   EXERCISE_ZONES,
   DEFAULT_ACTIVE_BREAK_TIMES,
   MAX_ACTIVE_BREAK_TIMES,
+  MAX_BREAK_VIDEOS,
+  MAX_BREAK_VIDEO_TITLE,
   breakClosing,
   breakPlanSize,
-  dailyExercise,
+  dailyBreakItem,
   exerciseArt,
   exerciseInstructions,
+  newBreakVideoId,
+  normalizeVideoTitle,
+  normalizeVideoUrl,
+  videoSite,
+  videoThumbnail,
   type ActiveBreakExercise,
+  type BreakItem,
+  type BreakVideo,
   type ActiveBreakSettings,
   type OrgConfig,
   type PersonSchedule,
@@ -27,7 +36,17 @@ import { ALLOWED_DOMAINS } from '../env';
 import { plannedBreakSlots, settingsOfForm } from '../lib/breaks';
 import { formatLongDate, formatRelativeDateTime, formatTime, isValidDate, zonedDate } from '../lib/dates';
 import { errorMessage } from '../lib/messages';
-import { activeBreaksForm, buildOrgConfig, orgConfigToForm, validateBreakTimes, type ActiveBreaksForm } from '../lib/payloads';
+import {
+  activeBreaksForm,
+  breakVideosForm,
+  buildBreakVideosConfig,
+  buildOrgConfig,
+  orgConfigToForm,
+  sameBreakVideos,
+  validateBreakTimes,
+  type ActiveBreaksForm,
+  type BreakVideosForm,
+} from '../lib/payloads';
 import { SOURCE_LABEL, scheduleFor, type ScheduleContext } from '../lib/schedule';
 import { useLoad } from '../lib/useLoad';
 
@@ -39,12 +58,15 @@ function withCurrent(options: readonly number[], current: number): number[] {
 interface FormProps {
   form: ActiveBreaksForm;
   onChange(form: ActiveBreaksForm): void;
+  /** The videos of the company (`config/breakVideos`), saved with the same button. */
+  videos: BreakVideosForm;
+  onVideosChange(videos: BreakVideosForm): void;
   /** Saves the fields. Throws on failure. */
-  onSave(form: ActiveBreaksForm): Promise<void>;
+  onSave(form: ActiveBreaksForm, videos: BreakVideosForm): Promise<void>;
 }
 
-/** "Pausa activa": the settings of `config/org` for the active breaks. */
-export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) {
+/** "Pausa activa": the settings of `config/org` for the active breaks, and the videos. */
+export function ActiveBreaksSettingsForm({ form, onChange, videos, onVideosChange, onSave }: FormProps) {
   const id = useId();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
@@ -75,7 +97,7 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
     }
     setBusy(true);
     try {
-      await onSave(form);
+      await onSave(form, videos);
       setStatus({ ok: true, text: 'Configuración guardada. La extensión la aplica en unos minutos.' });
     } catch (err) {
       setStatus({ ok: false, text: errorMessage(err) });
@@ -225,6 +247,19 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
           </p>
         ) : null}
       </fieldset>
+      <BreakVideosField
+        videos={videos.videos}
+        mode={videos.mode}
+        disabled={!form.activeBreaksEnabled}
+        onVideos={(v) => {
+          onVideosChange({ ...videos, videos: v });
+          setStatus(null);
+        }}
+        onMode={(m) => {
+          onVideosChange({ ...videos, mode: m });
+          setStatus(null);
+        }}
+      />
       {status ? (
         <p className={`banner ${status.ok ? 'ok' : 'error'}`} role={status.ok ? 'status' : 'alert'}>
           {status.text}
@@ -238,6 +273,213 @@ export function ActiveBreaksSettingsForm({ form, onChange, onSave }: FormProps) 
     </form>
   );
 }
+
+interface VideosProps {
+  videos: readonly BreakVideo[];
+  mode: ActiveBreakSettings['videoMode'];
+  disabled: boolean;
+  onVideos(videos: BreakVideo[]): void;
+  onMode(mode: NonNullable<ActiveBreakSettings['videoMode']>): void;
+}
+
+/**
+ * "Videos de la empresa" (spec 2026-11-13-videos-pausa-activa): links the
+ * extension shows in the breaks, saved with the rest of the form.
+ */
+export function BreakVideosField({ videos, mode, disabled, onVideos, onMode }: VideosProps) {
+  const id = useId();
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const full = videos.length >= MAX_BREAK_VIDEOS;
+
+  const add = (): void => {
+    const t = normalizeVideoTitle(title);
+    const u = normalizeVideoUrl(url);
+    if (!u) {
+      setError('Pega el enlace completo del video, que empiece con https:// (YouTube, Vimeo, Google Drive, etc.).');
+      return;
+    }
+    if (!t) {
+      setError(`Ponle un nombre al video (hasta ${MAX_BREAK_VIDEO_TITLE} caracteres).`);
+      return;
+    }
+    if (videos.some((v) => v.url === u)) {
+      setError('Ese video ya está en la lista.');
+      return;
+    }
+    onVideos([...videos, { id: newBreakVideoId(), title: t, url: u }]);
+    setTitle('');
+    setUrl('');
+    setError(null);
+  };
+
+  const move = (i: number, d: -1 | 1): void => {
+    const next = [...videos];
+    [next[i], next[i + d]] = [next[i + d]!, next[i]!];
+    onVideos(next);
+  };
+
+  return (
+    <div className="break-videos">
+      <fieldset disabled={disabled}>
+        <legend className="strong">Videos de la empresa</legend>
+        <p className="muted small">
+          Ancla tus propios videos de pausa activa (por ejemplo, de YouTube, Vimeo o Google Drive). La extensión los muestra
+          en las pausas y cada persona lo abre en una pestaña nueva. Si el video es privado, todos deben tener acceso.
+        </p>
+        {videos.length > 0 ? (
+          <>
+            <ul className="break-video-list plain" aria-label="Videos anclados">
+              {videos.map((v, i) => (
+                <li key={v.id} className="break-video-item">
+                  <VideoThumb url={v.url} />
+                  <span className="break-video-text">
+                    <span className="strong block">{v.title}</span>
+                    <a className="small" href={v.url} target="_blank" rel="noreferrer noopener">
+                      {videoSite(v.url)}
+                    </a>
+                  </span>
+                  <span className="break-video-actions">
+                    <button type="button" className="btn small-btn" aria-label={`Subir ${v.title}`} disabled={i === 0} onClick={() => move(i, -1)}>
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn small-btn"
+                      aria-label={`Bajar ${v.title}`}
+                      disabled={i === videos.length - 1}
+                      onClick={() => move(i, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="btn small-btn"
+                      aria-label={`Quitar ${v.title}`}
+                      onClick={() => onVideos(videos.filter((x) => x.id !== v.id))}
+                    >
+                      Quitar
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="field">
+              <label htmlFor={`${id}-video-mode`}>Cuándo mostrarlos</label>
+              <select
+                id={`${id}-video-mode`}
+                value={mode ?? 'alternate'}
+                onChange={(e) => onMode(e.target.value === 'always' ? 'always' : 'alternate')}
+              >
+                <option value="alternate">Intercalados: una pausa video, la siguiente un ejercicio</option>
+                <option value="always">En todas las pausas, en lugar de los ejercicios</option>
+              </select>
+            </div>
+          </>
+        ) : null}
+        {full ? (
+          <p className="muted small">Llegaste al máximo de {MAX_BREAK_VIDEOS} videos. Quita uno para agregar otro.</p>
+        ) : (
+          <div className="break-video-add">
+            <div className="field">
+              <label htmlFor={`${id}-video-title`}>Nombre</label>
+              <input
+                id={`${id}-video-title`}
+                type="text"
+                value={title}
+                maxLength={MAX_BREAK_VIDEO_TITLE}
+                placeholder="Rutina de hombros con Camila"
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  setError(null);
+                }}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`${id}-video-url`}>Enlace</label>
+              <input
+                id={`${id}-video-url`}
+                type="url"
+                inputMode="url"
+                value={url}
+                placeholder="https://www.youtube.com/watch?v=…"
+                aria-invalid={error ? true : undefined}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    add();
+                  }
+                }}
+              />
+            </div>
+            <button type="button" className="btn" onClick={add}>
+              Agregar video
+            </button>
+          </div>
+        )}
+        {error ? (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {videos.length > 0 ? <p className="muted small">Los cambios se aplican al guardar.</p> : null}
+      </fieldset>
+    </div>
+  );
+}
+
+/** Thumbnail of a video (YouTube) or a play tile. Decorative. */
+export function VideoThumb({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = failed ? null : videoThumbnail(url);
+  return (
+    <span className={`video-thumb${src ? '' : ' empty'}`} aria-hidden="true">
+      {src ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : null}
+      <span className="video-play" />
+    </span>
+  );
+}
+
+/** Drawing + title + text of what a break suggests. */
+function BreakItemRow({ item, heading, durationMinutes }: { item: BreakItem; heading: string; durationMinutes: number }) {
+  if (item.kind === 'video') {
+    return (
+      <>
+        <VideoThumb url={item.video.url} />
+        <span>
+          <span className="strong">
+            {heading}: {item.video.title}
+          </span>
+          <span className="muted small block">
+            Video de la empresa ·{' '}
+            <a href={item.video.url} target="_blank" rel="noreferrer noopener">
+              {videoSite(item.video.url)}
+            </a>
+          </span>
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      <ExerciseArt exercise={item.exercise} />
+      <span>
+        <span className="strong">
+          {heading}: {item.exercise.title}
+        </span>
+        <span className="muted small block">{exerciseInstructions(item.exercise, durationMinutes)}</span>
+      </span>
+    </>
+  );
+}
+
+const itemTitle = (item: BreakItem | undefined): string =>
+  !item ? '' : item.kind === 'video' ? `Video: ${item.video.title}` : item.exercise.title;
 
 interface TimesProps {
   settings: ActiveBreakSettings;
@@ -266,20 +508,17 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
     .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email, 'es'));
   if (active.length === 0) return <Empty title="Aún no hay colaboradores activos" />;
   const size = breakPlanSize(settings);
-  const plan = Array.from({ length: size }, (_, i) => dailyExercise(date, i, size));
+  const plan = Array.from({ length: size }, (_, i) => dailyBreakItem(settings, date, i));
   return (
     <>
       <ol className="break-plan plain" aria-label="Plan del día">
-        {plan.map((ex, i) => (
+        {plan.map((item, i) => (
           <li key={i} className="break-plan-item">
-            <ExerciseArt exercise={ex} />
-            <span>
-              <span className="strong">
-                Pausa {i + 1}
-                {fixed ? ` · ${settings.times[i]}` : ''}: {ex.title}
-              </span>
-              <span className="muted small block">{exerciseInstructions(ex, settings.durationMinutes)}</span>
-            </span>
+            <BreakItemRow
+              item={item}
+              heading={`Pausa ${i + 1}${fixed ? ` · ${settings.times[i]}` : ''}`}
+              durationMinutes={settings.durationMinutes}
+            />
           </li>
         ))}
       </ol>
@@ -307,7 +546,7 @@ export function BreakTimesTable({ settings, users, schedules, date }: TimesProps
                       : 'No trabaja este día'
                     : slots.map((t) => (
                         <span key={t.at} className="block">
-                          {formatTime(t.at)} · {plan[t.index]?.title}
+                          {formatTime(t.at)} · {itemTitle(plan[t.index])}
                         </span>
                       ))}
               </span>
@@ -373,6 +612,7 @@ export function ExerciseCatalog({ mode, durationMinutes }: { mode: ActiveBreakSe
 
 interface Loaded {
   config: OrgConfig | null;
+  videos: BreakVideosForm;
   users: WithId<UserProfile>[];
   general: ScheduleConfig | null;
   persons: WithId<PersonSchedule>[];
@@ -384,17 +624,24 @@ export function ActiveBreaksPage() {
   const today = zonedDate(Date.now());
   const [date, setDate] = useState(today);
   const load = useLoad<Loaded>(async () => {
-    const [config, users, general, persons] = await Promise.all([
+    const [config, videosDoc, users, general, persons] = await Promise.all([
       data.getOrgConfig(),
+      // Unreadable (rules before the videos): none.
+      data.getBreakVideos().catch(() => null),
       data.listUsers(),
       data.getScheduleConfig(),
       data.listPersonSchedules(),
     ]);
-    return { config, users, general, persons };
+    return { config, videos: breakVideosForm(videosDoc), users, general, persons };
   }, [data]);
   const [form, setForm] = useState<ActiveBreaksForm>(() => activeBreaksForm(null));
   const config = load.data?.config;
   useEffect(() => setForm(activeBreaksForm(config ?? null)), [config]);
+  const [videos, setVideos] = useState<BreakVideosForm>(() => breakVideosForm(null));
+  const savedVideos = load.data?.videos;
+  useEffect(() => {
+    if (savedVideos) setVideos(savedVideos);
+  }, [savedVideos]);
 
   const schedules: ScheduleContext | null = load.data
     ? { config: load.data.general, persons: new Map(load.data.persons.map(({ id, ...p }) => [id, p])) }
@@ -424,10 +671,15 @@ export function ActiveBreaksPage() {
             <ActiveBreaksSettingsForm
               form={form}
               onChange={setForm}
-              onSave={async (fields) => {
+              videos={videos}
+              onVideosChange={setVideos}
+              onSave={async (fields, nextVideos) => {
                 // The rest of config/org as saved: this page only changes the active breaks.
                 const full = { ...orgConfigToForm(load.data?.config ?? null, ALLOWED_DOMAINS), ...fields };
                 await data.saveOrgConfig(buildOrgConfig(full, uid, Date.now(), profile.email));
+                if (!load.data || !sameBreakVideos(nextVideos, load.data.videos)) {
+                  await data.saveBreakVideos(buildBreakVideosConfig(nextVideos, uid, Date.now()));
+                }
                 load.reload();
               }}
             />
@@ -453,7 +705,7 @@ export function ActiveBreaksPage() {
               {formatLongDate(date)}. Son horas aproximadas: si la persona está en una reunión o fuera del computador, el
               aviso se corre; y quien desactivó los recordatorios en su extensión no los recibe.
             </p>
-            <BreakTimesTable settings={settingsOfForm(form)} users={load.data.users} schedules={schedules} date={date} />
+            <BreakTimesTable settings={settingsOfForm(form, videos)} users={load.data.users} schedules={schedules} date={date} />
           </section>
           <section className="card" aria-labelledby="h-exercises">
             <h2 id="h-exercises">Ejercicios</h2>

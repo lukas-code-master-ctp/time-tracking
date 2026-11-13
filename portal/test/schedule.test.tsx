@@ -729,6 +729,54 @@ describe('Pausa activa', () => {
     expect(data.config).not.toHaveProperty('activeBreaksPerDay');
   });
 
+  it('own page: videos of the company, added, reordered and saved in config/breakVideos, in the plan of the day', async () => {
+    const data = db();
+    const backend = backendOf(data, ADMIN);
+    renderApp(backend, '/pausa-activa');
+    await userEvent.click(await screen.findByLabelText(/Recordar pausas activas/));
+    await userEvent.selectOptions(screen.getByLabelText('Frecuencia'), 'daily');
+    await userEvent.selectOptions(screen.getByLabelText('Veces al día', { selector: 'select' }), '2');
+    // Not a valid https link.
+    await userEvent.type(screen.getByLabelText('Nombre'), 'Hombros');
+    await userEvent.type(screen.getByLabelText('Enlace'), 'http://vimeo.com/1');
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar video' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/https:\/\//);
+    await userEvent.clear(screen.getByLabelText('Enlace'));
+    await userEvent.type(screen.getByLabelText('Enlace'), 'youtu.be/dQw4w9WgXcQ');
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar video' }));
+    await userEvent.type(screen.getByLabelText('Nombre'), 'Espalda');
+    await userEvent.type(screen.getByLabelText('Enlace'), 'https://vimeo.com/123{Enter}');
+    const anchored = screen.getByRole('list', { name: 'Videos anclados' });
+    expect(within(anchored).getAllByRole('listitem').map((li) => li.querySelector('.strong')?.textContent)).toEqual(['Hombros', 'Espalda']);
+    await userEvent.click(screen.getByRole('button', { name: 'Subir Espalda' }));
+    expect(within(anchored).getAllByRole('listitem').map((li) => li.querySelector('.strong')?.textContent)).toEqual(['Espalda', 'Hombros']);
+    // Interleaved: on 2026-09-29 the plan has one exercise and one video.
+    const plan = within(screen.getByRole('list', { name: 'Plan del día' }))
+      .getAllByRole('listitem')
+      .map((li) => li.querySelector('.strong')?.textContent ?? '');
+    expect(plan.filter((t) => t.includes('Espalda') || t.includes('Hombros'))).toHaveLength(1);
+    await userEvent.selectOptions(screen.getByLabelText('Cuándo mostrarlos'), 'always');
+    expect(
+      within(screen.getByRole('list', { name: 'Plan del día' }))
+        .getAllByRole('listitem')
+        .map((li) => li.querySelector('.strong')?.textContent),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/Espalda|Hombros/), expect.stringMatching(/Espalda|Hombros/)]));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(backend.data.saveBreakVideos).toHaveBeenCalled());
+    expect(data.breakVideos).toEqual({
+      videos: [
+        { id: expect.stringMatching(/^[a-z0-9]{10}$/), title: 'Espalda', url: 'https://vimeo.com/123' },
+        { id: expect.stringMatching(/^[a-z0-9]{10}$/), title: 'Hombros', url: 'https://youtu.be/dQw4w9WgXcQ' },
+      ],
+      mode: 'always',
+      updatedAt: NOW,
+      updatedBy: ADMIN.id,
+    });
+    // config/org does not carry them.
+    expect(Object.keys(data.config!).filter((k) => k.toLowerCase().includes('video'))).toEqual([]);
+  });
+
   it('collaborator: the planned breaks of the day in the summary and on the timeline', async () => {
     const data = db();
     data.config = { ...data.config!, activeBreaksEnabled: true, activeBreakMode: 'daily', activeBreaksPerDay: 2 };

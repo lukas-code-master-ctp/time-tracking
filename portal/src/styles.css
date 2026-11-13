@@ -744,6 +744,7 @@ a {
 input[type='email'],
 input[type='password'],
 input[type='text'],
+input[type='url'],
 input[type='number'],
 input[type='date'],
 input[type='search'],
@@ -3515,6 +3516,123 @@ input[type='time'][aria-invalid='true'] {
 
 .group-item .person-name {
   overflow-wrap: anywhere;
+}
+
+/* Videos of the company in the active breaks (spec 2026-11-13-videos-pausa-activa). */
+.break-videos {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.break-videos fieldset {
+  gap: 10px;
+}
+
+.break-videos legend {
+  margin-bottom: 4px;
+}
+
+.break-videos fieldset p {
+  margin: 0;
+}
+
+.break-video-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.break-video-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.break-video-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.break-video-text .strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.break-video-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.break-video-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.break-video-add .field {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .break-video-add {
+    grid-template-columns: 1fr;
+  }
+
+  .break-video-item {
+    flex-wrap: wrap;
+  }
+}
+
+.video-thumb {
+  position: relative;
+  flex: none;
+  display: block;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.break-plan-item .video-thumb {
+  width: 114px;
+}
+
+.video-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgb(15 23 42 / 0.72);
+}
+
+.video-play::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 55%;
+  transform: translate(-50%, -50%);
+  border-style: solid;
+  border-width: 5px 0 5px 8px;
+  border-color: transparent transparent transparent #fff;
 }
 
 /* Comunicados: para quién y cuándo (spec 2026-11-13-grupos-y-comunicados-agendados). */

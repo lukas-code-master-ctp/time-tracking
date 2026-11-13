@@ -18,13 +18,14 @@
  */
 import {
   DEFAULT_TIME_ZONE,
-  breakPlanSize,
+  breakItemAt,
+  breakItemById,
+  breakItemId,
   breakTargets,
-  dailyExercise,
+  dailyBreakItem,
   dateKey,
-  exerciseAt,
-  exerciseById,
   exerciseInstructions,
+  type BreakVideo,
   type ActiveBreak,
   type ActiveBreakSettings,
   type ActiveBreakStatus,
@@ -155,9 +156,9 @@ export function breakTick(prev: BreakState | null, input: BreakTickInput): Break
   for (const t of targets) if (t.at > state.doneUntil! && t.at <= now) target = t.index;
   const due = daily ? target !== -1 : now - state.workSince >= intervalMs;
   if (!due || quiet || input.inMeeting) return none;
-  // `daily`: the exercise of the plan of the day (the same for everyone); `interval`: this device's rotation.
-  const exercise = daily ? dailyExercise(date, target, breakPlanSize(settings)) : exerciseAt(state.shown);
-  const prompt: BreakPrompt = { at: now, sessionId: input.sessionId, exercise: exercise.id };
+  // `daily`: the exercise (or video) of the plan of the day, the same for everyone; `interval`: this device's rotation.
+  const item = daily ? dailyBreakItem(settings, date, target) : breakItemAt(state.shown, settings);
+  const prompt: BreakPrompt = { at: now, sessionId: input.sessionId, exercise: breakItemId(item) };
   const replaced = state.pending;
   state.pending = prompt;
   state.shown += 1;
@@ -243,10 +244,18 @@ export function parseBreakNotificationId(id: string): number | null {
 /** Buttons of the notification, in order (index of `onButtonClicked`). */
 export const BREAK_BUTTONS = ['Tomé la pausa', 'En 10 min'] as const;
 
-export function breakText(prompt: BreakPrompt, durationMinutes: number): { title: string; message: string } {
-  const ex = exerciseById(prompt.exercise);
+export function breakText(
+  prompt: BreakPrompt,
+  durationMinutes: number,
+  videos: readonly BreakVideo[] = [],
+): { title: string; message: string } {
+  const item = breakItemById(prompt.exercise, videos);
   return {
     title: `Pausa activa · ${durationMinutes} min`,
-    message: ex ? `${ex.title}. ${exerciseInstructions(ex, durationMinutes)}` : 'Levántate y estira el cuerpo unos minutos.',
+    message: !item
+      ? 'Levántate y estira el cuerpo unos minutos.'
+      : item.kind === 'video'
+        ? `Video: ${item.video.title}. Haz clic aquí para verlo y síguelo.`
+        : `${item.exercise.title}. ${exerciseInstructions(item.exercise, durationMinutes)}`,
   };
 }

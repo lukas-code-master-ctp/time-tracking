@@ -5,6 +5,15 @@
 import { DEFAULT_TIME_ZONE } from './collections.js';
 import { zonedDateTimeToMs } from './schedule.js';
 import { ACTIVE_BREAK_EXERCISES, EXERCISE_ZONES, type ActiveBreakExercise } from './exercises.js';
+import {
+  parseVideoBreakId,
+  readBreakVideoMode,
+  readBreakVideos,
+  videoRotation,
+  type BreakItem,
+  type BreakVideo,
+  type BreakVideoMode,
+} from './breakVideos.js';
 
 /**
  * How the reminders are spread: `interval` after `intervalMinutes` of
@@ -27,6 +36,13 @@ export interface ActiveBreakSettings {
   times: string[];
   /** How long the break lasts (also: away this long counts as a break). */
   durationMinutes: number;
+  /**
+   * Videos of the company (spec 2026-11-13-videos-pausa-activa); [] = only
+   * the exercises. Optional: missing in extension caches before 0.2.30.
+   */
+  videos?: BreakVideo[];
+  /** How the videos mix with the exercises. */
+  videoMode?: BreakVideoMode;
 }
 
 /** Choices offered by the portal. */
@@ -66,8 +82,11 @@ function intIn(v: unknown, min: number, max: number): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 }
 
-/** Settings stored in a `config/org` document; missing or invalid fields = off / defaults. */
-export function readActiveBreakSettings(config: unknown): ActiveBreakSettings {
+/**
+ * Settings stored in a `config/org` document, with the videos of
+ * `config/breakVideos` (`videosDoc`); missing or invalid fields = off / defaults.
+ */
+export function readActiveBreakSettings(config: unknown, videosDoc: unknown = null): ActiveBreakSettings {
   const c = (config && typeof config === 'object' ? config : {}) as {
     activeBreaksEnabled?: unknown;
     activeBreakMode?: unknown;
@@ -91,6 +110,8 @@ export function readActiveBreakSettings(config: unknown): ActiveBreakSettings {
     durationMinutes: intIn(c.activeBreakMinutes, MIN_ACTIVE_BREAK_MINUTES, MAX_ACTIVE_BREAK_MINUTES)
       ? c.activeBreakMinutes
       : DEFAULT_ACTIVE_BREAK_MINUTES,
+    videos: readBreakVideos(videosDoc),
+    videoMode: readBreakVideoMode(videosDoc),
   };
 }
 
@@ -238,4 +259,38 @@ export function dailyExercise(date: string, index: number, perDay: number): Acti
 /** Exercise by id (unknown ids, e.g. from a newer version: null). */
 export function exerciseById(id: string): ActiveBreakExercise | null {
   return ACTIVE_BREAK_EXERCISES.find((e) => e.id === id) ?? null;
+}
+
+type VideoSettings = Pick<ActiveBreakSettings, 'videos' | 'videoMode'>;
+
+/** The `n`-th break of the rotation (`interval` mode), with the videos of the company. */
+export function breakItemAt(n: number, settings: VideoSettings | null): BreakItem {
+  return videoRotation(n, settings?.videos ?? [], settings?.videoMode ?? 'alternate', exerciseAt);
+}
+
+/**
+ * `daily` and `times` modes: what the `index`-th break of `date` suggests,
+ * the same for everyone (like `dailyExercise`, with the videos).
+ */
+export function dailyBreakItem(
+  settings: Pick<ActiveBreakSettings, 'mode' | 'perDay' | 'times'> & VideoSettings,
+  date: string,
+  index: number,
+): BreakItem {
+  const day = Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
+  return breakItemAt(day * Math.max(1, breakPlanSize(settings)) + index, settings);
+}
+
+/**
+ * What `breaks/{id}.exercise` points at: an exercise, a video of `videos`,
+ * or null (unknown id, or a video removed since).
+ */
+export function breakItemById(id: string, videos: readonly BreakVideo[] = []): BreakItem | null {
+  const videoId = parseVideoBreakId(id);
+  if (videoId !== null) {
+    const video = videos.find((v) => v.id === videoId);
+    return video ? { kind: 'video', video } : null;
+  }
+  const exercise = exerciseById(id);
+  return exercise ? { kind: 'exercise', exercise } : null;
 }

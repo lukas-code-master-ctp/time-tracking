@@ -16,9 +16,14 @@ import {
   normalizeDomain,
   normalizeDomainList,
   readActiveBreakSettings,
+  readBreakVideoMode,
+  readBreakVideos,
   readMoodPulseEnabled,
   readFeedbackEnabled,
   type ActiveBreakMode,
+  type BreakVideo,
+  type BreakVideoMode,
+  type BreakVideosConfig,
   type Invitation,
   type OrgConfig,
   type UserProfile,
@@ -178,6 +183,32 @@ export function activeBreaksForm(config: OrgConfig | null): ActiveBreaksForm {
     activeBreaksPerDay: b.perDay,
     activeBreakTimes: b.times.length > 0 ? b.times : [...DEFAULT_ACTIVE_BREAK_TIMES],
     activeBreakMinutes: b.durationMinutes,
+  };
+}
+
+/** The videos of the company for the breaks (`config/breakVideos`, spec 2026-11-13-videos-pausa-activa). */
+export interface BreakVideosForm {
+  /** Already valid (the page adds them one by one). */
+  videos: BreakVideo[];
+  mode: BreakVideoMode;
+}
+
+export function breakVideosForm(doc: unknown): BreakVideosForm {
+  return { videos: readBreakVideos(doc), mode: readBreakVideoMode(doc) };
+}
+
+/** Same videos, order and mode (nothing to save). */
+export function sameBreakVideos(a: BreakVideosForm, b: BreakVideosForm): boolean {
+  return a.mode === b.mode && JSON.stringify(a.videos) === JSON.stringify(b.videos);
+}
+
+/** `config/breakVideos` as the rules accept it. */
+export function buildBreakVideosConfig(form: BreakVideosForm, uid: string, now: number): BreakVideosConfig {
+  return {
+    videos: form.videos.map(({ id, title, url }) => ({ id, title, url })),
+    mode: form.mode,
+    updatedAt: Math.floor(now),
+    updatedBy: uid,
   };
 }
 

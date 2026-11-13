@@ -15,6 +15,7 @@ import type {
   Invitation,
   MoodWeek,
   Feedback,
+  BreakVideosConfig,
   OrgConfig,
   PersonGroup,
   PersonSchedule,
@@ -38,6 +39,9 @@ export interface DataSource {
   getOrgConfig(): Promise<OrgConfig | null>;
   /** Writes the whole `config/org` (the 6 fields). */
   saveOrgConfig(config: OrgConfig): Promise<void>;
+  /** `config/breakVideos`, raw (read it with `breakVideosForm`); null when it does not exist. */
+  getBreakVideos(): Promise<unknown>;
+  saveBreakVideos(config: BreakVideosConfig): Promise<void>;
 
   /** `config/schedule` when it exists and is valid (`readScheduleConfig`), otherwise null. */
   getScheduleConfig(): Promise<ScheduleConfig | null>;

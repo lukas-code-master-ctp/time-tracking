@@ -199,7 +199,17 @@ export interface StatusView {
     durationMinutes: number;
     enabled: boolean;
     /** `exercise`: id in the library (draws its animation; null when unknown to this version). */
-    pending: { at: number; title: string; text: string; exercise: string | null } | null;
+    /**
+     * `video`: a video of the company (spec 2026-11-13-videos-pausa-activa),
+     * opened in a new tab; `thumbnail` only for YouTube.
+     */
+    pending: {
+      at: number;
+      title: string;
+      text: string;
+      exercise: string | null;
+      video: { url: string; thumbnail: string | null } | null;
+    } | null;
     nextAt: number | null;
   } | null;
   /**
